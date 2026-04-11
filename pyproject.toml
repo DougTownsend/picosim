@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arm-sim"
+version = "0.1.0"
+description = "ARMv6-M (Cortex-M0+) simulator for teaching ARM assembly"
+requires-python = ">=3.8"
+dependencies = [
+    "pyelftools",
+    "capstone",
+]
+
+[project.scripts]
+picosim = "picosim.sim:main"
+
+[tool.setuptools]
+packages = ["picosim"]
+
+[tool.setuptools.package-data]
+picosim = ["*.s", "*.ld"]
