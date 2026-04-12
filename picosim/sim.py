@@ -443,14 +443,10 @@ def main():
 
     if args.time:
         import time
-        insn_count = 0
         t_start = time.perf_counter()
         try:
-            while not cpu.halted:
-                cpu.step()
-                cpu.check_halt()
-                insn_count += 1
-        except SimulatorError as e:
+            insn_count = cpu._core.run()
+        except RuntimeError as e:
             print(f"ERROR: {e}", file=sys.stderr); sys.exit(1)
         except SystemExit as e:
             sys.exit(e.code)
@@ -459,10 +455,8 @@ def main():
         print(f"Executed {insn_count:,} instructions in {elapsed:.4f}s  ({ips:,.0f} insn/s)")
     elif args.run:
         try:
-            while not cpu.halted:
-                cpu.step()
-                cpu.check_halt()
-        except SimulatorError as e:
+            cpu._core.run()
+        except RuntimeError as e:
             print(f"ERROR: {e}", file=sys.stderr); sys.exit(1)
         except SystemExit as e:
             sys.exit(e.code)
