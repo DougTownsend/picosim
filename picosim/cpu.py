@@ -36,7 +36,7 @@ class SimulatorError(Exception):
 
 class CPU:
     def __init__(self, memory, entry, asm_map, sym_map, trace=False):
-        self.mem     = memory          # bytearray, 64 KiB
+        self.memory  = memory          # Memory object (unified read/write interface)
         self.asm_map = asm_map
         self.sym_map = sym_map
         self.trace   = trace
@@ -56,6 +56,7 @@ class CPU:
         self.steps       = 0
         self._itstate    = 0   # IT block state (simple support)
         self._insn_addr  = 0   # address of the currently-executing instruction
+        self.gpio        = None  # GPIO object kept for display/interactive use
 
     # ── register accessors ────────────────────────────────────────────────────
 
@@ -86,31 +87,25 @@ class CPU:
         else:
             self.regs[n] = u32(v)
 
-    # ── memory access ─────────────────────────────────────────────────────────
+    # ── peripheral registration ───────────────────────────────────────────────
 
-    def mem_read8(self, addr):
-        addr &= 0xFFFF
-        return self.mem[addr]
+    def add_peripheral(self, block):
+        """Register a MemoryBlock peripheral with the memory system."""
+        self.memory.add_block(block)
 
-    def mem_read16(self, addr):
-        addr &= 0xFFFF
-        return struct.unpack_from('<H', self.mem, addr)[0]
+    # ── memory access — all routed through the Memory object ──────────────────
 
-    def mem_read32(self, addr):
-        addr &= 0xFFFF
-        return struct.unpack_from('<I', self.mem, addr)[0]
+    @property
+    def mem(self):
+        """Raw bytearray backing the flat RAM (for slice operations in _svc)."""
+        return self.memory._ram.data
 
-    def mem_write8(self, addr, val):
-        addr &= 0xFFFF
-        self.mem[addr] = val & 0xFF
-
-    def mem_write16(self, addr, val):
-        addr &= 0xFFFF
-        struct.pack_into('<H', self.mem, addr, val & 0xFFFF)
-
-    def mem_write32(self, addr, val):
-        addr &= 0xFFFF
-        struct.pack_into('<I', self.mem, addr, u32(val))
+    def mem_read8(self, addr):    return self.memory.read8(addr)
+    def mem_read16(self, addr):   return self.memory.read16(addr)
+    def mem_read32(self, addr):   return self.memory.read32(addr)
+    def mem_write8(self, addr, val):   self.memory.write8(addr, val)
+    def mem_write16(self, addr, val):  self.memory.write16(addr, val)
+    def mem_write32(self, addr, val):  self.memory.write32(addr, val)
 
     # ── flags ─────────────────────────────────────────────────────────────────
 

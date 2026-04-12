@@ -41,6 +41,14 @@ def load_elf(path):
         for section in elf.iter_sections():
             if isinstance(section, SymbolTableSection):
                 for sym in section.iter_symbols():
+                    # Skip absolute symbols (.equ constants): they have small
+                    # numeric values that collide with code addresses.
+                    if sym['st_shndx'] == 'SHN_ABS':
+                        continue
+                    # Skip ARM mapping symbols ($t/$d/$a): GAS emits these at
+                    # the same addresses as user labels and would overwrite them.
+                    if sym.name.startswith('$'):
+                        continue
                     if sym.name and sym['st_value']:
                         addr = sym['st_value'] & 0xFFFFFFFE
                         sym_map[addr] = sym.name
@@ -96,15 +104,18 @@ def print_state(cpu, asm_map, sym_map):
     print(f"  NZCV: {cpu.N}{cpu.Z}{cpu.C}{cpu.V}")
     # current instruction
     pc = cpu.pc
-    sym = sym_map.get(pc, "")
-    sym_str = f" <{sym}>" if sym else ""
+    label = sym_map.get(pc, "")
     asm = asm_map.get(pc, "???")
-    print(f"  PC 0x{pc:04X}{sym_str}: {asm}")
+    print(f"  PC 0x{pc:04X}: {asm}")
+    print(f"  PC Label: {label if label else 'N/A'}")
+    # GPIO (only shown when pins have been configured)
+    if cpu.gpio is not None and cpu.gpio.any_configured():
+        print(cpu.gpio.display())
 
 
 # ── Interactive shell ──────────────────────────────────────────────────────────
 
-def run_interactive(cpu, asm_map, sym_map):
+def run_interactive(cpu, asm_map, sym_map, label_map):
     print("ARMv6-M Simulator  (type 'h' for help)")
     print_state(cpu, asm_map, sym_map)
 
@@ -129,17 +140,18 @@ def run_interactive(cpu, asm_map, sym_map):
 
         elif op in ('h', 'help', '?'):
             print(
-                "  s / step [n]    step n instructions (default 1)\n"
-                "  r / run         run until halt or breakpoint\n"
-                "  p / print       print registers\n"
-                "  x <addr> [n]    examine memory: n words at hex addr\n"
-                "  b <addr>        set breakpoint at hex addr\n"
-                "  db <addr>       delete breakpoint\n"
-                "  lb              list breakpoints\n"
-                "  d [addr] [n]    disassemble n instructions at addr\n"
-                "  reg <rN> <val>  set register (e.g.  reg r0 42)\n"
-                "  q / quit        quit\n"
-                "  <enter>         repeat last command"
+                "  s / step [n]      step n instructions (default 1)\n"
+                "  r / run           run until halt or breakpoint\n"
+                "  p / print         print registers\n"
+                "  x <addr> [n]      examine memory: n words at hex addr\n"
+                "  b <addr>          set breakpoint at hex addr\n"
+                "  db <addr>         delete breakpoint\n"
+                "  lb                list breakpoints\n"
+                "  d [addr] [n]      disassemble n instructions at addr\n"
+                "  reg <rN> <val>    set register (e.g.  reg r0 42)\n"
+                "  gpio <pin> 0|1|z  drive an input pin high/low/floating\n"
+                "  q / quit          quit\n"
+                "  <enter>           repeat last command"
             )
 
         elif op in ('s', 'step'):
@@ -197,12 +209,21 @@ def run_interactive(cpu, asm_map, sym_map):
 
         elif op == 'b':
             if len(parts) < 2:
-                print("  Usage: b <addr_hex>"); continue
+                print("  Usage: b <addr_hex|label>"); continue
             if not hasattr(run_interactive, '_bp'):
                 run_interactive._bp = set()
-            addr_b = int(parts[1], 16)
+            arg = parts[1]
+            try:
+                addr_b = int(arg, 16)
+            except ValueError:
+                if arg in label_map:
+                    addr_b = label_map[arg]
+                else:
+                    print(f"  Unknown label '{arg}'"); continue
             run_interactive._bp.add(addr_b)
-            print(f"  Breakpoint set at 0x{addr_b:04X}")
+            lbl = sym_map.get(addr_b, "")
+            lbl_str = f" <{lbl}>" if lbl else ""
+            print(f"  Breakpoint set at 0x{addr_b:04X}{lbl_str}")
 
         elif op == 'db':
             bp = getattr(run_interactive, '_bp', set())
@@ -247,6 +268,26 @@ def run_interactive(cpu, asm_map, sym_map):
             else:
                 print(f"  Unknown register: {rname}")
 
+        elif op == 'gpio':
+            if cpu.gpio is None:
+                print("  GPIO not enabled."); continue
+            if len(parts) < 3:
+                print("  Usage: gpio <pin> 0|1|z"); continue
+            try:
+                pin = int(parts[1])
+                arg = parts[2].lower()
+                if arg == 'z':
+                    value = None
+                elif arg in ('0', '1'):
+                    value = int(arg)
+                else:
+                    print("  Value must be 0, 1, or z"); continue
+                cpu.gpio.set_external(pin, value)
+                state = 'Z' if value is None else str(value)
+                print(f"  GP{pin} = {state}")
+            except ValueError as e:
+                print(f"  {e}")
+
         else:
             print(f"  Unknown command '{op}'.  Type 'h' for help.")
 
@@ -271,6 +312,8 @@ def compile_asm(s_file, elf_file, ld_file, extra_ld_flags=None):
         'arm-none-eabi-gcc',
         '-mcpu=cortex-m0plus', '-mthumb',
         '-nostdlib',
+        '-Wa,--keep-locals',    # keep .L* labels in the assembler object
+        '-Wl,--discard-none',   # prevent the linker from stripping them
         '-T', ld_file,
         '-o', elf_file,
         s_file,
@@ -384,7 +427,19 @@ def main():
     print(f"Loaded '{input_file}'  main=0x{user_entry:04X}  "
           f"{len(asm_map)} instructions disassembled")
 
-    cpu = CPU(memory, os_entry, asm_map, sym_map, trace=args.trace)
+    from .memory import FlatRAM, Memory
+    from .gpio import GPIO
+    ram = FlatRAM(memory)
+    mem = Memory(ram)
+    cpu = CPU(mem, os_entry, asm_map, sym_map, trace=args.trace)
+    gpio = GPIO()
+    cpu.add_peripheral(gpio)
+    cpu.gpio = gpio
+
+    # label_map: name → addr, restricted to addresses that have disassembly.
+    # SHN_ABS symbols (.equ constants) are already excluded from sym_map so
+    # they cannot appear here.
+    label_map = {name: addr for addr, name in sym_map.items() if addr in asm_map}
 
     if args.time:
         import time
@@ -423,7 +478,7 @@ def main():
             cpu.check_halt()
         print_state(cpu, asm_map, sym_map)
     else:
-        run_interactive(cpu, asm_map, sym_map)
+        run_interactive(cpu, asm_map, sym_map, label_map)
 
 
 if __name__ == "__main__":
