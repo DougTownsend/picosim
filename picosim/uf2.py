@@ -14,7 +14,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 
 
 # ── SDK location ───────────────────────────────────────────────────────────────
@@ -103,19 +102,45 @@ def _script_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
+def _cache_dir():
+    """
+    Persistent build cache directory.  Reused across invocations so that
+    cmake/ninja only recompile what changed (primarily asm_main.s and the
+    final link), avoiding repeated picotool downloads and SDK recompilation.
+
+    Uses the platform-appropriate cache location:
+      Linux   ~/.cache/picosim
+      macOS   ~/Library/Caches/picosim
+      Windows %LOCALAPPDATA%\\picosim
+    """
+    try:
+        from platformdirs import user_cache_dir
+        return os.path.join(user_cache_dir("picosim"), "build")
+    except ImportError:
+        return os.path.expanduser("~/.cache/picosim/build")
+
+
+def _write_if_changed(path, content):
+    """Write *content* to *path* only when the file is missing or differs.
+
+    Preserving the mtime when the content is unchanged prevents cmake and
+    ninja from treating the file as modified and triggering a full rebuild.
+    """
+    if isinstance(content, str):
+        content = content.encode()
+    if os.path.isfile(path) and open(path, "rb").read() == content:
+        return  # identical — leave the mtime alone
+    with open(path, "wb") as f:
+        f.write(content)
+
+
 def build_uf2(s_file):
     """
     Build a .uf2 from *s_file* and place it alongside the source file.
 
-    Steps:
-      1. Ensure the pico-sdk is present.
-      2. Create a temporary build directory in the cwd.
-      3. Copy wrapper_main.c and CMakeLists.txt into it.
-      4. Copy the assembly file, renaming the `main:` label to `asm_main:`
-         and injecting `.global asm_main` so C's linker can see the symbol.
-      5. Run cmake + ninja to produce firmware.uf2.
-      6. Move firmware.uf2 next to the original .s file.
-      7. Remove the temporary directory.
+    The build tree is kept at ~/.cache/picosim/build between runs.  cmake and
+    ninja track dependencies, so only asm_main.s and the final link are redone
+    on subsequent calls — the SDK objects and picotool download are cached.
     """
     s_file = os.path.abspath(s_file)
     if not os.path.isfile(s_file):
@@ -134,7 +159,12 @@ def build_uf2(s_file):
             print("Install it with:  pip install cmake ninja", file=sys.stderr)
             return False
 
-    src_dir = _script_dir()
+    src_dir  = _script_dir()
+    cache    = _cache_dir()
+    src_root = cache          # CMakeLists.txt / wrapper_main.c / asm_main.s live here
+    build_dir = os.path.join(cache, "build")
+    os.makedirs(build_dir, exist_ok=True)
+
     wrapper_c  = os.path.join(src_dir, "wrapper_main.c")
     cmake_file = os.path.join(src_dir, "CMakeLists.txt")
 
@@ -142,56 +172,50 @@ def build_uf2(s_file):
     base    = os.path.splitext(os.path.basename(s_file))[0]
     uf2_out = os.path.join(out_dir, base + ".uf2")
 
-    tmp = tempfile.mkdtemp(dir=os.getcwd(), prefix="_picosim_build_")
-    try:
-        # Copy support files
-        shutil.copy(wrapper_c,  tmp)
-        shutil.copy(cmake_file, tmp)
+    # Sync support files into the cache source root — only write when content
+    # changed so cmake/ninja don't see spurious mtime updates.
+    _write_if_changed(os.path.join(src_root, "CMakeLists.txt"),
+                      open(cmake_file, "rb").read())
+    _write_if_changed(os.path.join(src_root, "wrapper_main.c"),
+                      open(wrapper_c,  "rb").read())
 
-        # Copy assembly, renaming `main:` label to `asm_main:` if needed,
-        # and injecting `.global asm_main` so C's linker can see the symbol.
-        asm_src = open(s_file).read()
-        asm_src = re.sub(r'(?m)^(main)(:)', r'asm_main\2', asm_src)
-        asm_src = re.sub(r'(?m)^(asm_main:)', r'.global asm_main\n\1', asm_src)
-        asm_dst = os.path.join(tmp, "asm_main.s")
-        with open(asm_dst, "w") as f:
-            f.write(asm_src)
+    # Write the processed assembly — rename `main:` → `asm_main:` and inject
+    # `.global asm_main` so C's linker can see the symbol across object files.
+    asm_src = open(s_file).read()
+    asm_src = re.sub(r'(?m)^(main)(:)', r'asm_main\2', asm_src)
+    asm_src = re.sub(r'(?m)^(asm_main:)', r'.global asm_main\n\1', asm_src)
+    _write_if_changed(os.path.join(src_root, "asm_main.s"), asm_src)
 
-        # Configure
-        env = os.environ.copy()
-        env["PICO_SDK_PATH"] = sdk
+    env = os.environ.copy()
+    env["PICO_SDK_PATH"] = sdk
 
-        build_dir = os.path.join(tmp, "build")
-        os.makedirs(build_dir)
-
+    # Configure only if no cmake cache exists yet
+    if not os.path.isfile(os.path.join(build_dir, "CMakeCache.txt")):
         print("Configuring with cmake...")
         r = subprocess.run(
-            [cmake, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release", ".."],
+            [cmake, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release", src_root],
             cwd=build_dir, env=env, check=False,
         )
         if r.returncode != 0:
             print("Error: cmake configuration failed.", file=sys.stderr)
             return False
 
-        # Build
-        print("Building with ninja...")
-        r = subprocess.run(
-            [ninja],
-            cwd=build_dir, env=env, check=False,
-        )
-        if r.returncode != 0:
-            print("Error: ninja build failed.", file=sys.stderr)
-            return False
+    # Build (ninja rebuilds only what changed)
+    print("Building with ninja...")
+    r = subprocess.run(
+        [ninja],
+        cwd=build_dir, env=env, check=False,
+    )
+    if r.returncode != 0:
+        print("Error: ninja build failed.", file=sys.stderr)
+        return False
 
-        # Locate and move the .uf2
-        built_uf2 = os.path.join(build_dir, "firmware.uf2")
-        if not os.path.isfile(built_uf2):
-            print("Error: firmware.uf2 was not produced.", file=sys.stderr)
-            return False
+    # Copy the .uf2 to the output location
+    built_uf2 = os.path.join(build_dir, "firmware.uf2")
+    if not os.path.isfile(built_uf2):
+        print("Error: firmware.uf2 was not produced.", file=sys.stderr)
+        return False
 
-        shutil.move(built_uf2, uf2_out)
-        print(f"Created {uf2_out}")
-        return True
-
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+    shutil.copy2(built_uf2, uf2_out)
+    print(f"Created {uf2_out}")
+    return True
