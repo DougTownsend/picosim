@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "arm-sim"
+name = "picosim"
 version = "0.1.0"
 description = "ARMv6-M (Cortex-M0+) simulator for teaching ARM assembly"
 requires-python = ">=3.8"

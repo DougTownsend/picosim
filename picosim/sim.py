@@ -120,9 +120,10 @@ class CPU:
         self.C = 0
         self.V = 0
 
-        self.halted   = False
-        self.steps    = 0
-        self._itstate = 0   # IT block state (simple support)
+        self.halted      = False
+        self.steps       = 0
+        self._itstate    = 0   # IT block state (simple support)
+        self._insn_addr  = 0   # address of the currently-executing instruction
 
     # ── register accessors ────────────────────────────────────────────────────
 
@@ -142,7 +143,9 @@ class CPU:
     def lr(self, v): self.regs[14] = u32(v)
 
     def reg(self, n):
-        if n == 15: return (self.pc + 4) & ~3   # PC reads as PC+4 aligned
+        # ARM pipeline-visible PC = (instruction_addr + 4) aligned to 4 bytes.
+        # self.pc has already advanced past the fetch, so we use _insn_addr.
+        if n == 15: return (self._insn_addr + 4) & ~3
         return self.regs[n]
 
     def set_reg(self, n, v):
@@ -279,6 +282,7 @@ class CPU:
             return
         self.steps += 1
         insn_addr = self.pc
+        self._insn_addr = insn_addr
         if self.trace:
             sym = self.sym_map.get(insn_addr, "")
             sym_str = f" <{sym}>" if sym else ""
@@ -401,8 +405,8 @@ class CPU:
                 self.update_nz(r); self.set_reg(rdn, r)
             elif op == 0x8:  # TST
                 r = a & b; self.update_nz(r)
-            elif op == 0x9:  # NEG/RSB #0
-                r = 0 - a; self.update_nzcv_sub(0, a, r); self.set_reg(rdn, r)
+            elif op == 0x9:  # NEG/RSB #0  — Rd = 0 - Rm  (source is rm, not rdn)
+                r = 0 - b; self.update_nzcv_sub(0, b, r); self.set_reg(rdn, r)
             elif op == 0xA:  # CMP
                 r = a - b; self.update_nzcv_sub(a, b, r)
             elif op == 0xB:  # CMN
@@ -765,7 +769,7 @@ class CPU:
             imm3 = (hw2 >> 12) & 0x7
             imm8 =  hw2        & 0xFF
             imm  = (i << 11) | (imm3 << 8) | imm8
-            rn_val = self.regs[rn] if rn != 15 else self.pc
+            rn_val = self.reg(rn)
             if op4 == 0x0:    # ADD #imm12 / ADR
                 self.set_reg(rd, u32(rn_val + imm))
             elif op4 == 0x4:  # MOV #imm16 (MOVW)
