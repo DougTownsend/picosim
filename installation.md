@@ -50,7 +50,41 @@ pip install -e .
 
 ---
 
-## 3. arm-none-eabi-gcc
+## 3. Git
+
+Git is required only when using `--uf2` (to clone the pico-sdk on first use).
+
+**Linux**
+```bash
+# Debian / Ubuntu
+sudo apt install git
+
+# Fedora / RHEL
+sudo dnf install git
+
+# Arch
+sudo pacman -S git
+```
+
+**macOS**
+```bash
+brew install git
+```
+Or install Xcode Command Line Tools, which includes git:
+```bash
+xcode-select --install
+```
+
+**Windows**
+```powershell
+winget install --id Git.Git -e --source winget
+```
+After installation open a new terminal so the updated PATH takes effect.
+Alternatively download the installer from [git-scm.com](https://git-scm.com/download/win).
+
+---
+
+## 4. arm-none-eabi-gcc
 
 This is the ARM cross-compiler that assembles and links your `.s` files.
 

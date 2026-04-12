@@ -10,7 +10,7 @@
  * works over USB serial on the Pico.
  */
 
-entry:
+asm_main:
     push    {r7, lr}
     sub     sp, #8
     add     r7, sp, #0

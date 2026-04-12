@@ -19,7 +19,7 @@
  *   Branches:      bne, bge, blt, bgt, ble, bmi, bpl, bhi, bcs
  */
 
-main:
+asm_main:
     push    {r4, r5, r6, r7, lr}
     movs    r7, #0              @ r7 = failure counter
 

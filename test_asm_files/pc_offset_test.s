@@ -17,7 +17,7 @@
  * Returns 0 if all four tests pass, otherwise the number of failures.
  */
 
-main:
+asm_main:
     push    {r7, lr}
     movs    r7, #0          @ r7 = failure counter
 

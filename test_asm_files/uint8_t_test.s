@@ -2,7 +2,7 @@
 .cpu cortex-m0plus
 .thumb
 
-main:
+asm_main:
         push    {r7, lr}
         sub     sp, sp, #8
         add     r7, sp, #0

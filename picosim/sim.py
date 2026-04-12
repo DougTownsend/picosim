@@ -326,7 +326,17 @@ def main():
                         help="print instruction trace during execution")
     parser.add_argument("--time", action="store_true",
                         help="run to completion and print execution time and instructions/second")
+    parser.add_argument("--uf2", action="store_true",
+                        help="build a .uf2 image for the Raspberry Pi Pico and exit")
     args = parser.parse_args()
+
+    # ── UF2 build (early exit — does not start the simulator) ────────────────
+    if args.uf2:
+        if not args.input.endswith('.s'):
+            print("Error: --uf2 requires an assembly (.s) input file.", file=sys.stderr)
+            sys.exit(1)
+        from .uf2 import build_uf2
+        sys.exit(0 if build_uf2(args.input) else 1)
 
     # ── Compile OS first (needed to resolve putchar/getchar in user code) ───────
     os_elf_path = ensure_os_elf()
