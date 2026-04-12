@@ -1,0 +1,9 @@
+.*
+build
+*.egg-info
+todo.md
+test_files/*
+*.elf
+picosim/__pycache__
+*.uf2
+*.so
