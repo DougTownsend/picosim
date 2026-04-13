@@ -165,8 +165,9 @@ def build_uf2(s_file):
     build_dir = os.path.join(cache, "build")
     os.makedirs(build_dir, exist_ok=True)
 
-    wrapper_c  = os.path.join(src_dir, "wrapper_main.c")
-    cmake_file = os.path.join(src_dir, "CMakeLists.txt")
+    wrapper_c    = os.path.join(src_dir, "wrapper_main.c")
+    cmake_file   = os.path.join(src_dir, "CMakeLists.txt")
+    peripherals  = os.path.join(src_dir, "peripherals.s")
 
     out_dir = os.path.dirname(s_file)
     base    = os.path.splitext(os.path.basename(s_file))[0]
@@ -175,9 +176,11 @@ def build_uf2(s_file):
     # Sync support files into the cache source root — only write when content
     # changed so cmake/ninja don't see spurious mtime updates.
     _write_if_changed(os.path.join(src_root, "CMakeLists.txt"),
-                      open(cmake_file, "rb").read())
+                      open(cmake_file,  "rb").read())
     _write_if_changed(os.path.join(src_root, "wrapper_main.c"),
-                      open(wrapper_c,  "rb").read())
+                      open(wrapper_c,   "rb").read())
+    _write_if_changed(os.path.join(src_root, "peripherals.s"),
+                      open(peripherals, "rb").read())
 
     # Write the processed assembly — rename `main:` → `asm_main:` and inject
     # `.global asm_main` so C's linker can see the symbol across object files.

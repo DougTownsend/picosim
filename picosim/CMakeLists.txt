@@ -12,6 +12,7 @@ pico_sdk_init()
 
 add_executable(firmware
     wrapper_main.c
+    peripherals.s
     asm_main.s
 )
 

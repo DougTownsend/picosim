@@ -298,7 +298,7 @@ def _script_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-def compile_asm(s_file, elf_file, ld_file, extra_ld_flags=None):
+def compile_asm(s_file, elf_file, ld_file, extra_s_files=None, extra_ld_flags=None):
     """Assemble and link a .s file.  Returns True on success, False on error."""
     import subprocess, shutil
     if shutil.which('arm-none-eabi-gcc') is None:
@@ -318,6 +318,8 @@ def compile_asm(s_file, elf_file, ld_file, extra_ld_flags=None):
         '-o', elf_file,
         s_file,
     ]
+    if extra_s_files:
+        cmd.extend(extra_s_files)
     if extra_ld_flags:
         cmd.extend(extra_ld_flags)
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -387,13 +389,15 @@ def main():
     # ── Assemble user .s file if needed ──────────────────────────────────────
     input_file = args.input
     if input_file.endswith('.s'):
-        base    = input_file[:-2]
-        elf_out = base + '.elf'
-        ld_file = os.path.join(_script_dir(), 'link.ld')
+        base         = input_file[:-2]
+        elf_out      = base + '.elf'
+        ld_file      = os.path.join(_script_dir(), 'link.ld')
+        peripherals  = os.path.join(_script_dir(), 'peripherals.s')
         # --just-symbols lets the linker resolve putchar/getchar from the OS
         just_syms = f'-Wl,--just-symbols={os_elf_path}'
         print(f"Assembling '{input_file}'...")
         if not compile_asm(input_file, elf_out, ld_file,
+                           extra_s_files=[peripherals],
                            extra_ld_flags=[just_syms]):
             sys.exit(1)
         input_file = elf_out
