@@ -96,6 +96,41 @@ def _ninja_exe():
     return shutil.which("ninja")
 
 
+def _arm_gcc():
+    """Return the ARM GCC executable used by the Pico SDK build."""
+    return shutil.which("arm-none-eabi-gcc")
+
+
+def _arm_gxx():
+    """Return the ARM G++ executable used by the Pico SDK build."""
+    return shutil.which("arm-none-eabi-g++")
+
+
+def _arm_toolchain_root(compiler):
+    """Return the GCC toolchain root directory for *compiler*.
+
+    The Pico SDK expects ``PICO_TOOLCHAIN_PATH`` to point at the toolchain
+    root, with the compiler binaries in its ``bin`` directory.  Resolving
+    symlinks matters on macOS, where Homebrew commonly exposes the ARM
+    toolchain through a symlink in its bin directory.
+    """
+    compiler_dir = os.path.dirname(os.path.realpath(compiler))
+    return os.path.dirname(compiler_dir)
+
+
+def _cmake_cache_value(cache_file, name):
+    """Read a named value from a CMake cache, or return ``None``."""
+    prefix = name + ":"
+    try:
+        with open(cache_file, encoding="utf-8") as f:
+            for line in f:
+                if line.startswith(prefix) and "=" in line:
+                    return line.split("=", 1)[1].rstrip("\n")
+    except OSError:
+        pass
+    return None
+
+
 # ── UF2 builder ────────────────────────────────────────────────────────────────
 
 def _script_dir():
@@ -153,17 +188,26 @@ def build_uf2(s_file):
 
     cmake = _cmake_exe()
     ninja = _ninja_exe()
+    arm_gcc = _arm_gcc()
+    arm_gxx = _arm_gxx()
     for name, exe in (("cmake", cmake), ("ninja", ninja)):
         if exe is None:
             print(f"Error: '{name}' not found.", file=sys.stderr)
             print("Install it with:  pip install cmake ninja", file=sys.stderr)
             return False
+    if arm_gcc is None or arm_gxx is None:
+        print("Error: the ARM GNU C/C++ compiler was not found on PATH.",
+              file=sys.stderr)
+        print("Install the ARM GNU Toolchain and make sure its bin directory is on PATH.",
+              file=sys.stderr)
+        return False
 
     src_dir  = _script_dir()
     cache    = _cache_dir()
     src_root = cache          # CMakeLists.txt / wrapper_main.c / asm_main.s live here
     build_dir = os.path.join(cache, "build")
     os.makedirs(build_dir, exist_ok=True)
+    toolchain_root = _arm_toolchain_root(arm_gcc)
 
     wrapper_c    = os.path.join(src_dir, "wrapper_main.c")
     cmake_file   = os.path.join(src_dir, "CMakeLists.txt")
@@ -192,11 +236,47 @@ def build_uf2(s_file):
     env = os.environ.copy()
     env["PICO_SDK_PATH"] = sdk
 
-    # Configure only if no cmake cache exists yet
-    if not os.path.isfile(os.path.join(build_dir, "CMakeCache.txt")):
+    cache_file = os.path.join(build_dir, "CMakeCache.txt")
+    cached_compiler = _cmake_cache_value(cache_file, "CMAKE_C_COMPILER")
+    cached_cxx_compiler = _cmake_cache_value(cache_file, "CMAKE_CXX_COMPILER")
+    cached_toolchain = _cmake_cache_value(cache_file, "PICO_TOOLCHAIN_PATH")
+    expected_compiler = os.path.realpath(arm_gcc)
+    expected_cxx_compiler = os.path.realpath(arm_gxx)
+    cache_is_stale = (
+        cached_compiler is not None
+        and os.path.realpath(cached_compiler) != expected_compiler
+    ) or (
+        cached_cxx_compiler is not None
+        and os.path.realpath(cached_cxx_compiler) != expected_cxx_compiler
+    ) or (
+        cached_toolchain is not None
+        and cached_toolchain != toolchain_root
+    )
+
+    # A failed/old configuration can have cached the macOS host compiler.
+    # CMake cannot safely switch compilers in place, so discard only this
+    # generated build directory and configure it again with the ARM toolchain.
+    if cache_is_stale:
+        print("ARM toolchain changed; reconfiguring...")
+        shutil.rmtree(build_dir)
+        os.makedirs(build_dir, exist_ok=True)
+        cached_compiler = None
+        cached_cxx_compiler = None
+
+    # Configure only if no cmake cache exists yet.  Explicitly selecting both
+    # the compiler family and its path prevents macOS CMake from applying host
+    # compiler/linker settings to the ARM build.
+    if cached_compiler is None or cached_cxx_compiler is None:
         print("Configuring with cmake...")
         r = subprocess.run(
-            [cmake, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release", src_root],
+            [
+                cmake,
+                "-G", "Ninja",
+                "-DCMAKE_BUILD_TYPE=Release",
+                "-DPICO_COMPILER=pico_arm_gcc",
+                f"-DPICO_TOOLCHAIN_PATH={toolchain_root}",
+                src_root,
+            ],
             cwd=build_dir, env=env, check=False,
         )
         if r.returncode != 0:
