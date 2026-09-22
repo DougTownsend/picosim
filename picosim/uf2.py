@@ -230,7 +230,11 @@ def build_uf2(s_file):
     # `.global asm_main` so C's linker can see the symbol across object files.
     asm_src = open(s_file).read()
     asm_src = re.sub(r'(?m)^(main)(:)', r'asm_main\2', asm_src)
-    asm_src = re.sub(r'(?m)^(asm_main:)', r'.global asm_main\n\1', asm_src)
+    asm_src = re.sub(
+        r'(?m)^(asm_main:)',
+        r'.global asm_main\n.type asm_main, %function\n\1',
+        asm_src,
+    )
     _write_if_changed(os.path.join(src_root, "asm_main.s"), asm_src)
 
     env = os.environ.copy()
@@ -302,3 +306,66 @@ def build_uf2(s_file):
     shutil.copy2(built_uf2, uf2_out)
     print(f"Created {uf2_out}")
     return True
+
+
+def _mounted_pico_volume():
+    """Return a mounted BOOTSEL volume, if one is available."""
+    if sys.platform == "darwin":
+        candidates = ["/Volumes/RPI-RP2"]
+    elif os.name == "nt":
+        candidates = [f"{drive}:/" for drive in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"]
+    else:
+        user = os.environ.get("USER") or os.environ.get("LOGNAME")
+        candidates = ["/media/RPI-RP2", "/run/media/RPI-RP2"]
+        if user:
+            candidates.extend([
+                f"/media/{user}/RPI-RP2",
+                f"/run/media/{user}/RPI-RP2",
+            ])
+    for candidate in candidates:
+        if (os.path.isdir(candidate)
+                and os.path.isfile(os.path.join(candidate, "INFO_UF2.TXT"))):
+            return candidate
+    return None
+
+
+def flash_uf2(s_file):
+    """Build *s_file* and upload its UF2 image to a connected Pico."""
+    s_file = os.path.abspath(s_file)
+    if not build_uf2(s_file):
+        return False
+
+    uf2_file = os.path.splitext(s_file)[0] + ".uf2"
+    picotool = shutil.which("picotool")
+    if picotool:
+        print("Uploading with picotool...")
+        try:
+            result = subprocess.run(
+                [picotool, "load", "-f", "-x", uf2_file],
+                check=False,
+                timeout=15,
+            )
+            if result.returncode == 0:
+                print("Uploaded and started on the Pico.")
+                return True
+            print("picotool could not find or access the Pico.", file=sys.stderr)
+        except subprocess.TimeoutExpired:
+            print("picotool timed out waiting for the Pico.", file=sys.stderr)
+
+    volume = _mounted_pico_volume()
+    if volume:
+        try:
+            shutil.copy2(uf2_file, os.path.join(volume, os.path.basename(uf2_file)))
+            print(f"Copied UF2 to {volume}; the Pico will reboot automatically.")
+            return True
+        except OSError as exc:
+            print(f"Error copying UF2 to {volume}: {exc}", file=sys.stderr)
+
+    if picotool is None:
+        print("Error: 'picotool' was not found and no RPI-RP2 volume is mounted.",
+              file=sys.stderr)
+        print("Install it with:  brew install picotool", file=sys.stderr)
+    else:
+        print("Put the Pico in BOOTSEL mode and run the command again.",
+              file=sys.stderr)
+    return False

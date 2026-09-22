@@ -23,6 +23,7 @@ picosim <file.s>           # run interactively
 picosim --run <file.s>     # run to completion
 picosim --trace <file.s>   # run with instruction trace
 picosim --uf2 <file.s>     # build a .uf2 for the Raspberry Pi Pico
+picosim --flash <file.s>   # build and upload a .uf2 to the Pico
 ```
 
 The simulator assembles and links your `.s` file automatically, then starts
@@ -58,7 +59,12 @@ drag-and-drop onto a Pico in bootloader mode:
 
 ```bash
 picosim --uf2 echo_test.s     # produces echo_test.uf2 next to echo_test.s
+picosim --flash echo_test.s   # builds and uploads it to a connected Pico
 ```
+
+`--flash` uses `picotool` when available and can force a running compatible
+Pico into bootloader mode. Alternatively, it copies the UF2 to a mounted
+`RPI-RP2` drive. Install `picotool` with `brew install picotool` if needed.
 
 See [test_asm_files/echo_test.s](test_asm_files/echo_test.s) for a working example.
 

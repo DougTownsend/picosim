@@ -131,3 +131,9 @@ python3 --version              # Python 3.8 or newer
 picosim --help                 # simulator installed and on PATH
 arm-none-eabi-gcc --version    # cross-compiler found
 ```
+
+To use the `--flash` option, install `picotool` as well:
+
+```bash
+brew install picotool
+```

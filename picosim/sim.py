@@ -373,14 +373,19 @@ def main():
                         help="run to completion and print execution time and instructions/second")
     parser.add_argument("--uf2", action="store_true",
                         help="build a .uf2 image for the Raspberry Pi Pico and exit")
+    parser.add_argument("--flash", action="store_true",
+                        help="build and upload a .uf2 image to a Raspberry Pi Pico")
     args = parser.parse_args()
 
-    # ── UF2 build (early exit — does not start the simulator) ────────────────
-    if args.uf2:
+    # ── UF2 build/flash (early exit — does not start the simulator) ──────────
+    if args.uf2 or args.flash:
         if not args.input.endswith('.s'):
-            print("Error: --uf2 requires an assembly (.s) input file.", file=sys.stderr)
+            print("Error: --uf2/--flash requires an assembly (.s) input file.",
+                  file=sys.stderr)
             sys.exit(1)
-        from .uf2 import build_uf2
+        from .uf2 import build_uf2, flash_uf2
+        if args.flash:
+            sys.exit(0 if flash_uf2(args.input) else 1)
         sys.exit(0 if build_uf2(args.input) else 1)
 
     # ── Compile OS first (needed to resolve putchar/getchar in user code) ───────
