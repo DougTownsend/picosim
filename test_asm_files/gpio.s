@@ -17,6 +17,11 @@ asm_main:
     ldr     r1, =gpio_basei
     ldr     r2, =gpio20_offset
     add     r3, r1, r2
+    movs    r4, #3
+    lsls    r4, r4, #12
+    LDR     R5, [R3, #0]
+    OR      R5, R5, R4
+    STR     R5, [R3, #0]
 
 .Lloop:
     bl      getchar         /* r0 = next character from stdin    */
@@ -29,6 +34,8 @@ gpio_basei:
     .word 0x40010004  
 gpio20_offset:
     .word 0xa4
+
+
 
 .Ldone:
     ldr r0, =newline
