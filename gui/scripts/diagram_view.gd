@@ -5,7 +5,9 @@ extends Control
 ## Each wire lists the control signals that make it carry data; for the
 ## selected cycle the active wires and boxes light up, live values are shown
 ## inside the boxes, and every box the cycle changed gets an "old → new"
-## caption.  Hover a box to see what it does.
+## caption.  Hover a box to see what it does; click it for a detailed card
+## (what it does, how it works, what it connects to — from component_info.gd)
+## and its wires are highlighted.
 ##
 ## When a new cycle is shown, a glowing pulse travels along the active wires
 ## in the order data actually flows (source register → gate → bus → loads).
@@ -30,6 +32,9 @@ const C_BUS := Color("4b5363")
 const C_CTRL := Color("c678dd")
 const C_GLOW := Color("bfe6ff")
 const C_GLOW_CTRL := Color("f0c8ff")
+const C_SEL := Color("ffb86c")
+
+const ComponentInfo := preload("res://scripts/component_info.gd")
 
 ## Boxes that capture their inputs at the clock edge: data flowing into them
 ## does not continue out of them in the same cycle.
@@ -160,6 +165,9 @@ var _arrive: Dictionary = {}     # node id → distance at which the pulse reach
 var _total := 0.0                # distance to the end of the last wire
 var _dist := INF                 # how far the pulse has travelled
 var _speed := 0.0                # virtual units per second
+var selected_id := ""            # component whose info card is open
+var card: PanelContainer
+var card_text: RichTextLabel
 
 
 func _ready() -> void:
@@ -169,7 +177,134 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	tooltip_text = " "
 	resized.connect(queue_redraw)
+	resized.connect(_layout_card)
 	set_process(false)
+	_build_card()
+
+
+# ── component info card ─────────────────────────────────────────────────────
+
+func _build_card() -> void:
+	card = PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color("1e2229")
+	sb.border_color = C_SEL.darkened(0.3)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(6)
+	sb.content_margin_left = 12
+	sb.content_margin_right = 8
+	sb.content_margin_top = 8
+	sb.content_margin_bottom = 10
+	sb.shadow_color = Color(0, 0, 0, 0.5)
+	sb.shadow_size = 8
+	card.add_theme_stylebox_override("panel", sb)
+	card.visible = false
+	card.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(card)
+	var v := VBoxContainer.new()
+	card.add_child(v)
+	var head := HBoxContainer.new()
+	v.add_child(head)
+	var hint := Label.new()
+	hint.text = "Component details"
+	hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hint.add_theme_color_override("font_color", C_DIM)
+	hint.add_theme_font_size_override("font_size", 12)
+	head.add_child(hint)
+	var close := Button.new()
+	close.text = "✕"
+	close.flat = true
+	close.focus_mode = Control.FOCUS_NONE
+	close.tooltip_text = "Close (Esc)"
+	close.pressed.connect(func(): select_component(""))
+	head.add_child(close)
+	card_text = RichTextLabel.new()
+	card_text.bbcode_enabled = true
+	card_text.fit_content = false
+	card_text.scroll_active = true
+	card_text.selection_enabled = true
+	card_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	card_text.add_theme_font_override("mono_font", mono)
+	card_text.add_theme_font_size_override("normal_font_size", 14)
+	card_text.add_theme_font_size_override("bold_font_size", 14)
+	card_text.add_theme_font_size_override("mono_font_size", 12)
+	v.add_child(card_text)
+
+
+## Open the info card for a component id (a BOXES key or "bus"); "" closes it.
+func select_component(id: String) -> void:
+	if id != "" and not ComponentInfo.INFO.has(id):
+		id = ""
+	selected_id = id
+	card.visible = id != ""
+	if card.visible:
+		var names := {"bus": "BUS"}
+		for k in BOXES:
+			names[k] = BOXES[k][4]
+		card_text.text = ComponentInfo.bbcode(id, names)
+		card_text.scroll_to_line(0)
+		_layout_card()
+		# the text's height is known once it has been laid out at the card's width
+		await get_tree().process_frame
+		_layout_card()
+	queue_redraw()
+
+
+func _layout_card() -> void:
+	if card == null or not card.visible:
+		return
+	var w := clampf(size.x * 0.42, 280.0, 480.0)
+	var chrome := 58.0
+	var h := minf(card_text.get_content_height() + chrome, size.y - 16.0)
+	h = maxf(h, minf(200.0, size.y - 16.0))
+	# put the card on the side away from the selected component
+	var cx := 0.0
+	if selected_id == "bus":
+		cx = size.x
+	elif BOXES.has(selected_id):
+		cx = _rect(selected_id).get_center().x
+	var x := 8.0 if cx > size.x / 2.0 else size.x - w - 8.0
+	card.position = Vector2(x, 8)
+	card.size = Vector2(w, h)
+
+
+func _hit(at: Vector2) -> String:
+	for id in BOXES:
+		if _rect(id).has_point(at):
+			return id
+	if abs(at.y - _p(0, BUS_Y).y) < 8 * _scale and at.x >= _p(20, 0).x and at.x <= _p(970, 0).x:
+		return "bus"
+	return ""
+
+
+func _gui_input(event: InputEvent) -> void:
+	var mb := event as InputEventMouseButton
+	if mb == null or not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
+		return
+	if not st.get("loaded", false):
+		return
+	var id := _hit(mb.position)
+	select_component("" if id == selected_id else id)
+	accept_event()
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	var k := event as InputEventKey
+	if k and k.pressed and k.keycode == KEY_ESCAPE and selected_id != "":
+		select_component("")
+		get_viewport().set_input_as_handled()
+
+
+## Wires that start or end on the selected component.
+func _selected_wire(w: Array) -> bool:
+	if selected_id == "":
+		return false
+	var pts: Array = w[1]
+	var ends := [pts[0], pts[pts.size() - 1]]
+	if selected_id == "bus":
+		return ends.any(func(q): return is_equal_approx(q[1], BUS_Y))
+	var r := _rect(selected_id).grow(3 * _scale)
+	return ends.any(func(q): return r.has_point(_p(q[0], q[1])))
 
 
 func set_speed(v: int) -> void:
@@ -468,6 +603,11 @@ func _draw() -> void:
 						active_boxes[id] = true
 	for a in _paths:
 		_draw_pulse(a)
+	for w in WIRES:
+		if _selected_wire(w):
+			_arrow(_screen(w[1]), C_SEL, 2.5 * _scale, w[3] == "ctrl")
+	if selected_id == "bus":
+		draw_rect(bus_rect.grow(2 * _scale), C_SEL, false, 2.5 * _scale)
 
 	var decode := str(cycle.get("state", "")) == "DECODE"
 	if _has("BranchTaken=") and _reached("cond"):
@@ -483,8 +623,15 @@ func _draw() -> void:
 		values = post if arrived else pre_values
 		_draw_box(id, active_boxes.has(id), changed_boxes.get(id, []) if arrived else [])
 	values = post
+	if BOXES.has(selected_id):
+		var sr := _rect(selected_id)
+		var sp := _box_poly(sr, BOXES[selected_id][5])
+		if sp.is_empty():
+			draw_rect(sr.grow(3 * _scale), C_SEL, false, 2.5 * _scale)
+		else:
+			draw_polyline(sp + PackedVector2Array([sp[0]]), C_SEL, 3.0 * _scale, true)
 
-	_text(_p(20, H - 8), "Bright wires carry data this cycle · purple dashed = control · yellow = changed at this clock edge · hover a box to learn what it does",
+	_text(_p(20, H - 8), "Bright wires carry data this cycle · purple dashed = control · yellow = changed at this clock edge · hover a box for a summary, click it for details",
 		11, C_DIM)
 
 
@@ -773,7 +920,7 @@ func _hexw(v: int, w: int) -> String:
 func _get_tooltip(at_position: Vector2) -> String:
 	for id in BOXES:
 		if _rect(id).has_point(at_position):
-			return "%s\n%s" % [BOXES[id][4], BOXES[id][6]]
+			return "%s\n%s\n(click for details)" % [BOXES[id][4], BOXES[id][6]]
 	if abs(at_position.y - _p(0, BUS_Y).y) < 8 * _scale:
-		return "BUS\nThe single shared 32-bit bus. Exactly one tri-state gate (GatePC, GateADDR, GateALU, GateMDR, …) drives it in any cycle; any register whose LD signal is asserted captures it at the clock edge."
+		return "BUS\nThe single shared 32-bit bus. Exactly one tri-state gate (GatePC, GateADDR, GateALU, GateMDR, …) drives it in any cycle; any register whose LD signal is asserted captures it at the clock edge.\n(click for details)"
 	return ""

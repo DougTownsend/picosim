@@ -47,7 +47,7 @@ func _ready() -> void:
 	add_child(cols)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 6)
-	v.custom_minimum_size.x = 290
+	v.custom_minimum_size.x = 330
 	cols.add_child(v)
 	var v2 := VBoxContainer.new()
 	v2.add_theme_constant_override("separation", 6)
@@ -61,10 +61,11 @@ func _ready() -> void:
 	insn_label = Label.new()
 	insn_label.add_theme_font_override("font", font)
 	insn_label.add_theme_font_size_override("font_size", 14)
-	insn_label.clip_text = true
+	insn_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	v.add_child(insn_label)
 	progress_label = Label.new()
-	progress_label.clip_text = true
+	progress_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	progress_label.add_theme_font_size_override("font_size", 13)
 	progress_label.add_theme_color_override("font_color", DIM)
 	v.add_child(progress_label)
 
@@ -92,7 +93,7 @@ func _ready() -> void:
 	list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	list.size_flags_stretch_ratio = 0.8
 	list.add_theme_font_override("font", font)
-	list.add_theme_font_size_override("font_size", 13)
+	list.add_theme_font_size_override("font_size", 12)
 	list.item_selected.connect(_on_item_selected)
 	v.add_child(list)
 
@@ -112,7 +113,7 @@ func _ready() -> void:
 	nav.add_child(btn_next)
 
 	state_label = Label.new()
-	state_label.clip_text = true
+	state_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	state_label.add_theme_font_override("font", font)
 	state_label.add_theme_font_size_override("font_size", 17)
 	v2.add_child(state_label)
@@ -131,6 +132,7 @@ func _heading(parent: Control, text: String) -> void:
 	l.text = text
 	l.add_theme_color_override("font_color", DIM)
 	l.add_theme_font_size_override("font_size", 12)
+	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	parent.add_child(l)
 
 
@@ -179,7 +181,7 @@ func update_state(st: Dictionary) -> void:
 			list.set_item_custom_fg_color(idx, DIM)
 			list.set_item_selectable(idx, false)
 	elif not st["in_insn"]:
-		var idx := list.add_item("next: FETCH_ADDR  %s" % _asm_at(int(st["pc"])))
+		var idx := list.add_item(" 0  (next)           FETCH")
 		list.set_item_custom_fg_color(idx, DIM)
 		list.set_item_selectable(idx, false)
 
@@ -190,10 +192,10 @@ func update_state(st: Dictionary) -> void:
 		var a := int(history[0]["insn_addr"])
 		insn_label.text = "%04X:  %s" % [a, _asm_at(a)]
 		progress_label.text = ("cycle %d of %s" % [selected + 1, str(total) if total > 0 else "?"]) if st["in_insn"] \
-			else "completed in %d cycles — next instruction at %04X" % [history.size(), int(st["pc"])]
+			else "done in %d cycles — next insn at %04X" % [history.size(), int(st["pc"])]
 	else:
 		insn_label.text = "%04X:  %s" % [int(st["pc"]), _asm_at(int(st["pc"]))]
-		progress_label.text = "not started — press Step Cycle (F11) to begin its fetch"
+		progress_label.text = "not started — press Step Cycle (F11)"
 	_show_selected()
 
 

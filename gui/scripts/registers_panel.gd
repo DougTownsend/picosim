@@ -2,6 +2,8 @@ extends PanelContainer
 ## R0–R12, SP, LR, PC, the NZCV flags, the datapath's internal registers
 ## (MAR, MDR, IR, IR2) and cycle counters.  Values changed by the last step
 ## are highlighted; register values and flags can be edited in place.
+## Text grows with the panel: drag the splitters to give it more room and the
+## fonts and fields scale up to fill it.
 
 const NAMES := ["R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7",
 	"R8", "R9", "R10", "R11", "R12", "SP", "LR", "PC"]
@@ -15,6 +17,12 @@ var flag_boxes := {}
 var dp_labels := {}
 var info_label: Label
 var font: Font
+var holder: Control
+var content: VBoxContainer
+var base_size := Vector2.ZERO    # content's minimum size at scale 1
+var ui_scale := 1.0
+var _fonts: Array = []           # [control, theme item, base size]
+var _widths: Array = []          # [control, base minimum width]
 
 
 func _ready() -> void:
@@ -28,11 +36,18 @@ func _ready() -> void:
 	sb.content_margin_bottom = 8
 	add_theme_stylebox_override("panel", sb)
 
+	# A plain Control between the panel and the content: it keeps the panel's
+	# minimum size at the unscaled layout, so a scaled-up panel can still be
+	# dragged smaller again.
+	holder = Control.new()
+	holder.clip_contents = true
+	add_child(holder)
 	var v := VBoxContainer.new()
-	add_child(v)
+	content = v
+	holder.add_child(v)
 	var title := Label.new()
 	title.text = "Registers"
-	title.add_theme_font_size_override("font_size", 15)
+	_font(title, 15)
 	v.add_child(title)
 
 	var grid := GridContainer.new()
@@ -43,16 +58,17 @@ func _ready() -> void:
 	for i in 16:
 		var l := Label.new()
 		l.text = NAMES[i]
-		l.custom_minimum_size.x = 34
+		_width(l, 34)
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		l.add_theme_font_override("font", font)
+		_font(l, 14)
 		l.add_theme_color_override("font_color", DIM)
 		grid.add_child(l)
 		var e := LineEdit.new()
 		e.text = "0x00000000"
-		e.custom_minimum_size.x = 104
+		_width(e, 104)
 		e.add_theme_font_override("font", font)
-		e.add_theme_font_size_override("font_size", 14)
+		_font(e, 14)
 		e.tooltip_text = "%s — type a hex (0x…) or decimal value and press Enter" % NAMES[i]
 		e.text_submitted.connect(_on_reg_submitted.bind(i))
 		e.focus_exited.connect(func(): _refresh_reg(i))
@@ -65,11 +81,13 @@ func _ready() -> void:
 	var fl := Label.new()
 	fl.text = "Flags"
 	fl.add_theme_color_override("font_color", DIM)
+	_font(fl, 14)
 	row.add_child(fl)
 	for f in ["N", "Z", "C", "V"]:
 		var cb := CheckBox.new()
 		cb.text = f
 		cb.focus_mode = Control.FOCUS_NONE
+		_font(cb, 14)
 		cb.tooltip_text = {"N": "Negative", "Z": "Zero", "C": "Carry", "V": "Overflow"}[f]
 		cb.toggled.connect(func(on): Backend.send("set_flag", {"flag": f, "value": 1 if on else 0}))
 		row.add_child(cb)
@@ -81,7 +99,7 @@ func _ready() -> void:
 	for n in DP_NAMES:
 		var l := Label.new()
 		l.add_theme_font_override("font", font)
-		l.add_theme_font_size_override("font_size", 13)
+		_font(l, 13)
 		l.tooltip_text = {"MAR": "Memory Address Register", "MDR": "Memory Data Register",
 			"IR": "Instruction Register", "IR2": "Second instruction halfword (32-bit encodings)"}[n]
 		l.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -93,9 +111,43 @@ func _ready() -> void:
 	info_label.custom_minimum_size.y = 36
 	info_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	info_label.add_theme_font_override("font", font)
-	info_label.add_theme_font_size_override("font_size", 13)
+	_font(info_label, 13)
 	info_label.add_theme_color_override("font_color", DIM)
 	v.add_child(info_label)
+
+	# Measure the layout once with placeholder text in the long rows.
+	for n in DP_NAMES:
+		dp_labels[n].text = "%s 0x00000000" % n
+	info_label.text = "Next state: FETCH_ADDR (at instruction boundary)\nInstructions: 0   Cycles: 0"
+	base_size = v.get_combined_minimum_size()
+	info_label.text = ""
+	holder.custom_minimum_size = base_size
+	holder.resized.connect(_fit)
+
+
+func _font(c: Control, base: int) -> void:
+	c.add_theme_font_size_override("font_size", base)
+	_fonts.append([c, base])
+
+
+func _width(c: Control, base: int) -> void:
+	c.custom_minimum_size.x = base
+	_widths.append([c, base])
+
+
+## Scale the content to the largest size that still fits the holder.
+func _fit() -> void:
+	var avail := holder.size
+	var s := clampf(minf(avail.x / base_size.x, avail.y / base_size.y), 1.0, 4.0)
+	if absf(s - ui_scale) > 0.02:
+		ui_scale = s
+		for f in _fonts:
+			f[0].add_theme_font_size_override("font_size", int(round(f[1] * s)))
+		for w in _widths:
+			w[0].custom_minimum_size.x = w[1] * s
+		info_label.custom_minimum_size.y = 36 * s
+	content.position = Vector2.ZERO
+	content.size = Vector2(avail.x, maxf(avail.y, content.get_combined_minimum_size().y))
 
 
 func _on_reg_submitted(text: String, i: int) -> void:

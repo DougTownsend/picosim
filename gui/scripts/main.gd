@@ -16,6 +16,8 @@ const ZOOM_MAX := 3.0
 const ZOOM_STEP := 0.1
 const SETTINGS := "user://settings.cfg"
 const SPEEDS := [1, 2, 4, 8, 16, 50, 200, 1000, 10000, 100000, 0]
+## Optional user guide: if this file is deleted the Guide button just disappears.
+const GUIDE := "res://scripts/guide.gd"
 
 var regs_panel
 var mem_panel
@@ -27,6 +29,8 @@ var zoom := 1.0
 var zoom_label: Button
 var diagram_area: Control
 var right_split: VSplitContainer
+var pico_overlay: Control
+var pico_home: Control
 
 var btn_open: Button
 var btn_reload: Button
@@ -48,6 +52,7 @@ var _screenshot_path := ""
 var _screenshot_frames := 0
 var _demo_cycles := 0
 var _demo_click_pin := 0
+var _demo_component := ""
 
 
 func _ready() -> void:
@@ -69,6 +74,10 @@ func _ready() -> void:
 			_screenshot_path = args[i + 1]
 		if args[i] == "--show-diagram":
 			btn_diagram.button_pressed = true
+		if args[i] == "--select-component" and i + 1 < args.size():
+			_demo_component = args[i + 1]
+		if args[i] == "--pico-full":
+			pico_view.set_fullscreen(true)
 		if args[i] == "--demo-cycles" and i + 1 < args.size():
 			_demo_cycles = int(args[i + 1])
 		if args[i] == "--demo-click-pin" and i + 1 < args.size():
@@ -84,6 +93,9 @@ func _process(_delta: float) -> void:
 	if _demo_click_pin > 0 and Backend.state.get("loaded", false) and _screenshot_frames == 20:
 		pico_view.demo_click(_demo_click_pin)
 		_demo_click_pin = 0
+	if _demo_component != "" and Backend.state.get("loaded", false) and _screenshot_frames == 10:
+		diagram.select_component(_demo_component)
+		_demo_component = ""
 	if _screenshot_path != "" and Backend.state.get("loaded", false):
 		_screenshot_frames += 1
 		if _screenshot_frames == 40:
@@ -133,6 +145,8 @@ func _build_ui() -> void:
 	pico_view.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	pico_view.size_flags_stretch_ratio = 0.9
 	lower.add_child(pico_view)
+	pico_home = lower
+	pico_view.fullscreen_toggled.connect(_on_pico_fullscreen)
 
 	# right column: diagram on top; cycle inspector + console underneath
 	right_split = VSplitContainer.new()
@@ -162,6 +176,12 @@ func _build_ui() -> void:
 	bottom.add_child(console_panel)
 	diagram.visible = false
 	cycle_panel.visible = false
+
+	# Full-window host for the Pico board; pico_view is moved in here on demand.
+	pico_overlay = Control.new()
+	pico_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	pico_overlay.visible = false
+	add_child(pico_overlay)
 
 	file_dialog = FileDialog.new()
 	file_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
@@ -258,6 +278,10 @@ func _build_toolbar() -> Control:
 	btn_diagram.tooltip_text = "Show the datapath and step through each cycle"
 	btn_diagram.toggled.connect(_on_diagram_toggled)
 	bar.add_child(btn_diagram)
+	if ResourceLoader.exists(GUIDE):
+		var guide: Node = load(GUIDE).new()
+		add_child(guide)
+		bar.add_child(_button("Guide", "How to use picosim (F1)", func(): guide.open()))
 	return bar
 
 
@@ -360,6 +384,13 @@ func _on_diagram_toggled(on: bool) -> void:
 	console_panel.set_compact(on)
 
 
+func _on_pico_fullscreen(on: bool) -> void:
+	pico_view.reparent(pico_overlay if on else pico_home, false)
+	if on:
+		pico_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	pico_overlay.visible = on
+
+
 func _unhandled_key_input(event: InputEvent) -> void:
 	var k := event as InputEventKey
 	if k == null or not k.pressed:
@@ -369,6 +400,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	var sim: bool = mode_select.selected == 0
 	match k.keycode:
+		KEY_ESCAPE:
+			if not pico_overlay.visible:
+				return
+			pico_view.set_fullscreen(false)
 		KEY_F11:
 			if sim: _step_cycle()
 		KEY_F10:

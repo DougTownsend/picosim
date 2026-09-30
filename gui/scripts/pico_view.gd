@@ -9,6 +9,9 @@ extends Control
 ## dim "0" when an output or pulled pin is low, and nothing when floating.
 ## Pins changed by the last step get a yellow ring. GP25 lights the on-board
 ## LED. Click an input pin to drive it: Z → 1 → 0 → Z.
+## The ⛶ button in the corner (or Esc to leave) toggles a full-window view.
+
+signal fullscreen_toggled(on: bool)
 
 const W := 1000.0
 const H := 545.0
@@ -72,6 +75,7 @@ var font: Font
 var mono: Font
 var _scale := 1.0
 var _origin := Vector2.ZERO
+var btn_full: Button
 
 
 func _ready() -> void:
@@ -81,6 +85,25 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	tooltip_text = " "
 	resized.connect(queue_redraw)
+
+	btn_full = Button.new()
+	btn_full.text = "⛶ Enlarge"
+	btn_full.toggle_mode = true
+	btn_full.focus_mode = Control.FOCUS_NONE
+	btn_full.tooltip_text = "Show the board full-window (Esc to return)"
+	btn_full.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 6)
+	btn_full.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	btn_full.toggled.connect(_on_full_toggled)
+	add_child(btn_full)
+
+
+func set_fullscreen(on: bool) -> void:
+	btn_full.button_pressed = on
+
+
+func _on_full_toggled(on: bool) -> void:
+	btn_full.text = "✕ Close" if on else "⛶ Enlarge"
+	fullscreen_toggled.emit(on)
 
 
 func update_state(s: Dictionary) -> void:
