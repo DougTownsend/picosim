@@ -22,7 +22,7 @@ asm_main:
     //Step 1 is getting the GPIO ctrl register address into a register (R3)
     ldr     r1, =gpio_basei
     ldr     r2, =gpio20_offset
-    adds     r3, r1, r2'
+    adds     r3, r1, r2
 
     //Step 2 is enabling the output of the GPIO by setting bits 12 and 13 to 1.
     movs    r4, #3

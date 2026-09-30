@@ -12,6 +12,7 @@ dependencies = [
     "capstone",
     "cmake",
     "ninja",
+    "pyserial",
 ]
 
 [project.scripts]

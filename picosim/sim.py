@@ -298,16 +298,12 @@ def _script_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-def compile_asm(s_file, elf_file, ld_file, extra_s_files=None, extra_ld_flags=None):
-    """Assemble and link a .s file.  Returns True on success, False on error."""
+def assemble(s_file, elf_file, ld_file, extra_s_files=None, extra_ld_flags=None):
+    """Assemble and link a .s file.  Returns (ok, message)."""
     import subprocess, shutil
     if shutil.which('arm-none-eabi-gcc') is None:
-        print(
-            "Error: arm-none-eabi-gcc not found on PATH.\n"
-            "See DEPENDENCIES.md for installation instructions.",
-            file=sys.stderr,
-        )
-        return False
+        return False, ("arm-none-eabi-gcc not found on PATH.\n"
+                       "See DEPENDENCIES.md for installation instructions.")
     cmd = [
         'arm-none-eabi-gcc',
         '-mcpu=cortex-m0plus', '-mthumb',
@@ -323,36 +319,61 @@ def compile_asm(s_file, elf_file, ld_file, extra_s_files=None, extra_ld_flags=No
     if extra_ld_flags:
         cmd.extend(extra_ld_flags)
     result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        print("Assembler/linker error:", file=sys.stderr)
-        combined = (result.stderr + result.stdout).strip()
-        if combined:
-            print(combined, file=sys.stderr)
-        return False
-    return True
+    combined = (result.stderr + result.stdout).strip()
+    return result.returncode == 0, combined
+
+
+def compile_asm(s_file, elf_file, ld_file, extra_s_files=None, extra_ld_flags=None):
+    """Assemble and link a .s file.  Returns True on success, False on error."""
+    ok, msg = assemble(s_file, elf_file, ld_file, extra_s_files, extra_ld_flags)
+    if not ok:
+        print("Assembler/linker error:" if 'not found' not in msg else "Error:",
+              file=sys.stderr)
+        if msg:
+            print(msg, file=sys.stderr)
+    return ok
 
 
 def ensure_os_elf():
     """Compile os.s → os.elf if missing or stale.  Returns path to os.elf."""
-    sd     = _script_dir()
-    os_s   = os.path.join(sd, 'os.s')
-    os_ld  = os.path.join(sd, 'os.ld')
-    os_elf = os.path.join(sd, 'os.elf')
-
-    if not os.path.exists(os_s):
-        print(f"Error: OS source '{os_s}' not found.", file=sys.stderr)
+    from .loader import build_os_elf, LoadError
+    try:
+        return build_os_elf(verbose=True)
+    except LoadError as e:
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    need_build = (
-        not os.path.exists(os_elf) or
-        os.path.getmtime(os_s) > os.path.getmtime(os_elf) or
-        (os.path.exists(os_ld) and os.path.getmtime(os_ld) > os.path.getmtime(os_elf))
-    )
-    if need_build:
-        print("Compiling OS...")
-        if not compile_asm(os_s, os_elf, os_ld):
-            sys.exit(1)
-    return os_elf
+
+# ── GUI launcher ───────────────────────────────────────────────────────────────
+
+def _find_godot():
+    import shutil
+    cands = [os.environ.get('PICOSIM_GODOT'), shutil.which('godot'),
+             '/Applications/Godot.app/Contents/MacOS/Godot']
+    for c in cands:
+        if c and os.path.exists(c):
+            return c
+    return None
+
+
+def run_gui(input_file):
+    """Start the backend server and the Godot front end; wait for the GUI to exit."""
+    import subprocess, threading
+    from .server import Server
+    gui_dir = os.path.join(os.path.dirname(_script_dir()), 'gui')
+    if not os.path.exists(os.path.join(gui_dir, 'project.godot')):
+        print(f"Error: Godot project not found at {gui_dir}", file=sys.stderr)
+        return 1
+    godot = _find_godot()
+    if godot is None:
+        print("Error: Godot 4 not found.  Put 'godot' on PATH or set PICOSIM_GODOT.",
+              file=sys.stderr)
+        return 1
+    srv = Server(0)
+    srv.path = os.path.abspath(input_file) if input_file else None
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    proc = subprocess.run([godot, '--path', gui_dir, '--', '--port', str(srv.port)])
+    return proc.returncode
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
@@ -362,7 +383,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="ARMv6-M (Cortex-M0+) Simulator — flat 16-bit address space"
     )
-    parser.add_argument("input", help=".s assembly file or .elf binary to load")
+    parser.add_argument("input", nargs="?", help=".s assembly file or .elf binary to load")
     parser.add_argument("--run", "-r", action="store_true",
                         help="run to completion without interactive prompt")
     parser.add_argument("--steps", "-n", type=int, default=0,
@@ -375,7 +396,20 @@ def main():
                         help="build a .uf2 image for the Raspberry Pi Pico and exit")
     parser.add_argument("--flash", action="store_true",
                         help="build and upload a .uf2 image to a Raspberry Pi Pico")
+    parser.add_argument("--gui", action="store_true",
+                        help="open the graphical simulator (requires Godot 4)")
+    parser.add_argument("--cycle-table", action="store_true",
+                        help="print the per-instruction cycle table (Markdown) and exit")
     args = parser.parse_args()
+
+    if args.cycle_table:
+        from .cycles import print_table
+        print_table()
+        return
+    if args.gui:
+        sys.exit(run_gui(args.input))
+    if not args.input:
+        parser.error("an input file is required (or use --gui)")
 
     # ── UF2 build/flash (early exit — does not start the simulator) ──────────
     if args.uf2 or args.flash:
@@ -388,67 +422,13 @@ def main():
             sys.exit(0 if flash_uf2(args.input) else 1)
         sys.exit(0 if build_uf2(args.input) else 1)
 
-    # ── Compile OS first (needed to resolve putchar/getchar in user code) ───────
-    os_elf_path = ensure_os_elf()
-
-    # ── Assemble user .s file if needed ──────────────────────────────────────
-    input_file = args.input
-    if input_file.endswith('.s'):
-        base         = input_file[:-2]
-        elf_out      = base + '.elf'
-        ld_file      = os.path.join(_script_dir(), 'link.ld')
-        peripherals  = os.path.join(_script_dir(), 'peripherals.s')
-        # --just-symbols lets the linker resolve putchar/getchar from the OS
-        just_syms = f'-Wl,--just-symbols={os_elf_path}'
-        print(f"Assembling '{input_file}'...")
-        if not compile_asm(input_file, elf_out, ld_file,
-                           extra_s_files=[peripherals],
-                           extra_ld_flags=[just_syms]):
-            sys.exit(1)
-        input_file = elf_out
-
-    # ── Load OS ELF ───────────────────────────────────────────────────────────
+    from .loader import load_program, LoadError
     try:
-        os_memory, os_entry, os_asm, os_syms = load_elf(os_elf_path)
-    except (SimulatorError, FileNotFoundError) as e:
-        print(f"Error loading OS ELF: {e}", file=sys.stderr)
+        prog = load_program(args.input, trace=args.trace, verbose=True)
+    except LoadError as e:
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
-
-    # ── Load user ELF ─────────────────────────────────────────────────────────
-    try:
-        user_memory, user_entry, user_asm, user_syms = load_elf(input_file)
-    except (SimulatorError, FileNotFoundError) as e:
-        print(f"Error loading '{input_file}': {e}", file=sys.stderr)
-        sys.exit(1)
-
-    # ── Merge memories: OS owns 0x0000-0x2FFF, user owns 0x3000-0xFFFF ───────
-    memory = bytearray(MEM_SIZE)
-    memory[0x0000:0x3000] = os_memory[0x0000:0x3000]
-    memory[0x3000:      ] = user_memory[0x3000:      ]
-
-    # Write user main()'s Thumb address into the OS pointer slot at 0x2FFC
-    main_thumb_addr = user_entry | 1   # ensure Thumb bit is set for BLX
-    struct.pack_into('<I', memory, 0x2FFC, main_thumb_addr)
-
-    asm_map = {**os_asm,  **user_asm}
-    sym_map = {**os_syms, **user_syms}
-
-    print(f"Loaded '{input_file}'  main=0x{user_entry:04X}  "
-          f"{len(asm_map)} instructions disassembled")
-
-    from .memory import FlatRAM, Memory
-    from .gpio import GPIO
-    ram = FlatRAM(memory)
-    mem = Memory(ram)
-    cpu = CPU(mem, os_entry, asm_map, sym_map, trace=args.trace)
-    gpio = GPIO()
-    cpu.add_peripheral(gpio)
-    cpu.gpio = gpio
-
-    # label_map: name → addr, restricted to addresses that have disassembly.
-    # SHN_ABS symbols (.equ constants) are already excluded from sym_map so
-    # they cannot appear here.
-    label_map = {name: addr for addr, name in sym_map.items() if addr in asm_map}
+    cpu, asm_map, sym_map, label_map = prog.cpu, prog.asm_map, prog.sym_map, prog.label_map
 
     if args.time:
         import time

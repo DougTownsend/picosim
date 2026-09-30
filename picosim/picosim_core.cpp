@@ -12,11 +12,49 @@
 #include <pybind11/stl.h>
 
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace py = pybind11;
+
+// ── cycle-level trace records ────────────────────────────────────────────────
+
+enum ChangeKind { CH_REG = 0, CH_FLAG = 1, CH_DP = 2, CH_MEM = 3, CH_IO = 4 };
+
+struct Change {
+    int         kind;
+    std::string name;
+    uint32_t    old_v, new_v;
+    uint32_t    addr;
+    int         width;
+};
+
+struct CycleInfo {
+    std::string state, phase, desc;
+    std::vector<std::string> signals;
+    bool        has_bus = false;
+    uint32_t    bus = 0;
+    int         branch = -1;       // -1 n/a, 0 not taken, 1 taken
+    uint32_t    insn_addr = 0;
+    int         index = 0;         // cycle number within the instruction
+    int         total = -1;        // cycles in this instruction (-1 until decoded)
+    bool        last = false;      // final cycle of the instruction
+    std::vector<Change> changes;
+};
+
+struct MemWrite { uint32_t addr; int width; uint32_t old_v; bool io; uint32_t val; };
+
+static std::string hex32(uint32_t v) {
+    char b[16]; std::snprintf(b, sizeof b, "0x%08X", v); return b;
+}
+static std::string hex16(uint32_t v) {
+    char b[16]; std::snprintf(b, sizeof b, "0x%04X", v & 0xFFFF); return b;
+}
+static const char* REGN[16] = {"R0","R1","R2","R3","R4","R5","R6","R7",
+                               "R8","R9","R10","R11","R12","SP","LR","PC"};
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -59,6 +97,11 @@ public:
         trace = false;
         _insn_addr = 0;
     }
+
+    // ── datapath state (cycle-level model, Chapter 7 teaching datapath) ──────
+    uint32_t MAR = 0, MDR = 0, IR = 0, IR2 = 0, ALU_A = 0, ALU_B = 0, TMP = 0;
+    uint64_t cycles = 0;
+    std::vector<MemWrite>* mem_log = nullptr;
 
     // ── register helpers ─────────────────────────────────────────────────────
 
@@ -115,7 +158,16 @@ public:
         return v;
     }
 
+    void log_write(uint32_t addr, int width, uint32_t val) {
+        if (!mem_log) return;
+        if (is_peripheral(addr)) { mem_log->push_back({addr, width, 0, true, val}); return; }
+        uint32_t old = 0;
+        std::memcpy(&old, &mem[addr & 0xFFFF], width);
+        mem_log->push_back({addr & 0xFFFF, width, old, false, val});
+    }
+
     void write8 (uint32_t addr, uint32_t val) {
+        log_write(addr, 1, val & 0xFF);
         if (is_peripheral(addr)) {
             if (peripheral_write) peripheral_write(addr, val & 0xFF, 1);
             return;
@@ -124,6 +176,7 @@ public:
     }
 
     void write16(uint32_t addr, uint32_t val) {
+        log_write(addr, 2, val & 0xFFFF);
         if (is_peripheral(addr)) {
             if (peripheral_write) peripheral_write(addr, val & 0xFFFF, 2);
             return;
@@ -133,6 +186,7 @@ public:
     }
 
     void write32(uint32_t addr, uint32_t val) {
+        log_write(addr, 4, val);
         if (is_peripheral(addr)) {
             if (peripheral_write) peripheral_write(addr, val, 4);
             return;
@@ -255,15 +309,23 @@ public:
 
     void step() {
         if (halted) return;
+        if (in_insn) {   // finish a partially clocked instruction
+            while (in_insn && !halted) step_cycle();
+            return;
+        }
         steps++;
         _insn_addr = regs[15];
 
         uint16_t hw1 = fetch16();
+        IR = hw1;
         if (is_32bit_thumb(hw1)) {
             uint16_t hw2 = fetch16();
+            IR2 = hw2;
+            cycles += insn_cycle_count(hw1, hw2);
             uint32_t word = ((uint32_t)hw1 << 16) | hw2;
             exec32(_insn_addr, word);
         } else {
+            cycles += insn_cycle_count(hw1, 0);
             exec16(_insn_addr, hw1);
         }
     }
@@ -837,6 +899,694 @@ public:
             std::to_string(word) + " at 0x" + std::to_string(addr));
     }
 
+    // ═════════════════════════════════════════════════════════════════════════
+    //  Cycle-level execution (the multi-cycle teaching machine)
+    //
+    //  Every instruction is a sequence of clocked FSM states.  All instructions
+    //  share FETCH_ADDR → FETCH_MEMORY → FETCH_IR (plus FETCH2_* for 32-bit
+    //  encodings), then DECODE appends the instruction-specific states.  The
+    //  sequences follow Chapter 7 of the course text; see docs/cycles.md.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    enum Kind { K_ALU, K_ADR, K_LOAD, K_STORE, K_B, K_BCOND, K_BX, K_BLX,
+                K_BL, K_PUSH, K_POP, K_LDM, K_STM, K_SVC, K_BKPT, K_UDF, K_UNDEF };
+
+    struct Plan {
+        Kind kind = K_UNDEF;
+        int  nregs = 0;          // multi-register transfers
+        bool writeback = false;  // multi-register base writeback
+        bool pc_in_list = false;
+    };
+
+    struct Micro {
+        std::string state, phase;
+        std::function<void(CycleInfo&)> fn;
+    };
+
+    std::vector<Micro> uops;
+    size_t   upc = 0;
+    bool     in_insn = false;
+    int      insn_total = -1;
+
+    static int popcount(uint32_t v) { int n = 0; while (v) { n += v & 1; v >>= 1; } return n; }
+
+    static Plan classify16(uint16_t hw) {
+        Plan p;
+        int top5 = (hw >> 11) & 0x1F, top4 = (hw >> 12) & 0xF;
+        int top6 = (hw >> 10) & 0x3F, top7 = (hw >> 9) & 0x7F, top8 = (hw >> 8) & 0xFF;
+        if (top5 <= 7 || top6 == 0b010000)                   { p.kind = K_ALU; return p; }
+        if (top6 == 0b010001) { p.kind = (((hw >> 8) & 3) == 3) ? (((hw >> 7) & 1) ? K_BLX : K_BX) : K_ALU; return p; }
+        if (top5 == 0b01001)                                 { p.kind = K_LOAD; return p; }
+        if (top4 == 0b0101) { p.kind = (((hw >> 9) & 7) <= 2) ? K_STORE : K_LOAD; return p; }
+        if (top4 == 0b0110 || top4 == 0b0111 || top4 == 0b1000 || top4 == 0b1001) {
+            p.kind = ((hw >> 11) & 1) ? K_LOAD : K_STORE; return p;
+        }
+        if (top5 == 0b10100)                                 { p.kind = K_ADR; return p; }
+        if (top5 == 0b10101 || top8 == 0b10110000 || top8 == 0b10111000 ||
+            top8 == 0b10110010 || top8 == 0b10111010)        { p.kind = K_ALU; return p; }
+        if (top7 == 0b1011010) {
+            p.kind = K_PUSH; p.nregs = popcount(hw & 0x1FF); p.writeback = true; return p;
+        }
+        if (top8 == 0b10111101 || top8 == 0b10111100) {
+            p.kind = K_POP; p.nregs = popcount(hw & 0x1FF); p.writeback = true;
+            p.pc_in_list = top8 == 0b10111101; return p;
+        }
+        if (top8 == 0b10111110)                              { p.kind = K_BKPT; return p; }
+        if (top5 == 0b11000) {
+            p.kind = K_STM; p.nregs = popcount(hw & 0xFF); p.writeback = true; return p;
+        }
+        if (top5 == 0b11001) {
+            int rn = (hw >> 8) & 7;
+            p.kind = K_LDM; p.nregs = popcount(hw & 0xFF); p.writeback = !((hw >> rn) & 1); return p;
+        }
+        if (top4 == 0b1101) {
+            int cond = (hw >> 8) & 0xF;
+            p.kind = cond == 0xF ? K_SVC : cond == 0xE ? K_UDF : K_BCOND; return p;
+        }
+        if (top5 == 0b11100)                                 { p.kind = K_B; return p; }
+        return p;
+    }
+
+    static Plan classify32(uint32_t word) {
+        Plan p;
+        uint16_t hw1 = (word >> 16) & 0xFFFF, hw2 = word & 0xFFFF;
+        if ((hw1 & 0xF800) == 0xF000 && ((hw2 & 0xD000) == 0xD000 || (hw2 & 0xD000) == 0xC000)) {
+            p.kind = K_BL; return p;
+        }
+        if ((hw1 & 0xFE50) == 0xE810) {
+            int l = (hw1 >> 4) & 1, w = (hw1 >> 5) & 1, rn = hw1 & 0xF;
+            p.kind = l ? K_LDM : K_STM; p.nregs = popcount(hw2);
+            p.writeback = w && (!l || !((hw2 >> rn) & 1));
+            p.pc_in_list = l && (hw2 & 0x8000);
+            return p;
+        }
+        if ((hw1 & 0xFA00) == 0xF000 && !(hw2 & 0x8000)) { p.kind = K_ALU; return p; }
+        if ((hw1 & 0xFB50) == 0xF200)                    { p.kind = K_ALU; return p; }
+        if ((hw1 & 0xFE00) == 0xF800) { p.kind = ((hw1 >> 4) & 1) ? K_LOAD : K_STORE; return p; }
+        return p;
+    }
+
+    // Number of states after fetch (DECODE onward) for a plan.
+    static int exec_cycles(const Plan& p) {
+        switch (p.kind) {
+        case K_ALU: case K_ADR: case K_BX: case K_BL:  return 3;
+        case K_LOAD: case K_STORE: case K_BLX:         return 4;
+        case K_B: case K_BCOND: case K_SVC: case K_BKPT: return 2;
+        case K_PUSH: case K_POP: case K_LDM: case K_STM:
+            return 2 + 2 * p.nregs + (p.writeback ? 1 : 0);
+        default: return 1;
+        }
+    }
+
+    // Total clock cycles for the instruction whose halfwords are hw1/hw2.
+    // 16-bit counts depend only on the opcode, so they come from a table.
+    static int insn_cycle_count(uint16_t hw1, uint16_t hw2) {
+        static const std::vector<uint8_t> table16 = [] {
+            std::vector<uint8_t> t(0x10000);
+            for (uint32_t hw = 0; hw < 0x10000; ++hw)
+                t[hw] = (uint8_t)(3 + exec_cycles(classify16((uint16_t)hw)));
+            return t;
+        }();
+        if (is_32bit_thumb(hw1)) return 6 + exec_cycles(classify32(((uint32_t)hw1 << 16) | hw2));
+        return table16[hw1];
+    }
+
+    // ── operand description for operate instructions ────────────────────────
+
+    struct AluInfo {
+        std::string op;
+        int rd = -1, ra = -1, rb = -1;   // -1 = unused
+        bool has_imm = false; uint32_t imm = 0;
+        bool writes = true, flags = true;
+    };
+
+    AluInfo alu_info16(uint16_t hw) const {
+        AluInfo a;
+        int top5 = (hw >> 11) & 0x1F, top6 = (hw >> 10) & 0x3F, top8 = (hw >> 8) & 0xFF;
+        if (top5 <= 2) {
+            static const char* n[] = {"LSL", "LSR", "ASR"};
+            int op = (hw >> 11) & 3, imm = (hw >> 6) & 0x1F;
+            a.op = n[op]; a.rd = hw & 7; a.ra = (hw >> 3) & 7;
+            a.has_imm = true; a.imm = (op && !imm) ? 32 : imm;
+        } else if (top5 == 3) {
+            int op = (hw >> 9) & 3;
+            a.op = (op & 1) ? "SUB" : "ADD"; a.rd = hw & 7; a.ra = (hw >> 3) & 7;
+            if (op < 2) a.rb = (hw >> 6) & 7; else { a.has_imm = true; a.imm = (hw >> 6) & 7; }
+        } else if (top5 <= 7) {
+            static const char* n[] = {"MOV", "CMP", "ADD", "SUB"};
+            int op = (hw >> 11) & 3, rdn = (hw >> 8) & 7;
+            a.op = n[op]; a.rd = rdn; a.ra = op ? rdn : -1;
+            a.has_imm = true; a.imm = hw & 0xFF; a.writes = op != 1;
+        } else if (top6 == 0b010000) {
+            static const char* n[] = {"AND","EOR","LSL","LSR","ASR","ADC","SBC","ROR",
+                                      "TST","NEG","CMP","CMN","ORR","MUL","BIC","MVN"};
+            int op = (hw >> 6) & 0xF, rm = (hw >> 3) & 7, rdn = hw & 7;
+            a.op = n[op]; a.rd = rdn; a.ra = rdn; a.rb = rm;
+            if (op == 0x9 || op == 0xF) a.ra = -1;
+            if (op == 0x8 || op == 0xA || op == 0xB) a.writes = false;
+        } else if (top6 == 0b010001) {
+            int op = (hw >> 8) & 3, rm = (hw >> 3) & 0xF, rdn = (((hw >> 7) & 1) << 3) | (hw & 7);
+            a.op = op == 0 ? "ADD" : op == 1 ? "CMP" : "MOV";
+            a.rd = rdn; a.ra = op == 2 ? -1 : rdn; a.rb = rm;
+            a.writes = op != 1; a.flags = op == 1;
+        } else if (top5 == 0b10101) {
+            a.op = "ADD"; a.rd = (hw >> 8) & 7; a.ra = 13; a.has_imm = true;
+            a.imm = (uint32_t)(hw & 0xFF) << 2; a.flags = false;
+        } else if (top8 == 0b10110000 || top8 == 0b10111000) {
+            a.op = ((hw >> 7) & 1) ? "SUB" : "ADD"; a.rd = 13; a.ra = 13; a.has_imm = true;
+            a.imm = (uint32_t)(hw & 0x7F) << 2; a.flags = false;
+        } else if (top8 == 0b10110010) {
+            static const char* n[] = {"SXTH", "SXTB", "UXTH", "UXTB"};
+            a.op = n[(hw >> 6) & 3]; a.rd = hw & 7; a.rb = (hw >> 3) & 7; a.flags = false;
+        } else if (top8 == 0b10111010) {
+            static const char* n[] = {"REV", "REV16", "REV?", "REVSH"};
+            a.op = n[(hw >> 6) & 3]; a.rd = hw & 7; a.rb = (hw >> 3) & 7; a.flags = false;
+        } else if (top5 == 0b10100) {
+            a.op = "ADD"; a.rd = (hw >> 8) & 7; a.ra = 15; a.has_imm = true;
+            a.imm = (uint32_t)(hw & 0xFF) << 2; a.flags = false;
+        }
+        return a;
+    }
+
+    AluInfo alu_info32(uint32_t word) const {
+        AluInfo a;
+        uint16_t hw1 = (word >> 16) & 0xFFFF, hw2 = word & 0xFFFF;
+        int rn = hw1 & 0xF, rd = (hw2 >> 8) & 0xF, op4 = (hw1 >> 5) & 0xF;
+        a.rd = rd; a.has_imm = true; a.flags = (hw1 >> 4) & 1;
+        if ((hw1 & 0xFA00) == 0xF000) {   // modified immediate
+            static const char* n[] = {"AND","BIC","ORR","ORN","EOR","?","?","?",
+                                      "ADD","?","ADC","SBC","?","SUB","RSB","?"};
+            uint32_t imm12 = (((uint32_t)(hw1 >> 10) & 1) << 11) |
+                             (((uint32_t)(hw2 >> 12) & 7) << 8) | (hw2 & 0xFF);
+            a.imm = thumb_expand_imm_c(imm12).imm; a.op = n[op4];
+            if ((op4 == 2 || op4 == 3) && rn == 15) { a.op = op4 == 2 ? "MOV" : "MVN"; }
+            else a.ra = rn;
+            if ((op4 == 0 || op4 == 4 || op4 == 8 || op4 == 0xD) && rd == 15) a.writes = false;
+        } else {                           // plain binary immediate
+            a.flags = false; a.ra = rn;
+            uint32_t imm16 = ((uint32_t)(hw1 & 0xF) << 12) | (((uint32_t)(hw1 >> 10) & 1) << 11) |
+                             (((uint32_t)(hw2 >> 12) & 7) << 8) | (hw2 & 0xFF);
+            a.imm = (((hw1 >> 10) & 1) << 11) | (((hw2 >> 12) & 7) << 8) | (hw2 & 0xFF);
+            if (op4 == 0x4)      { a.op = "MOVW"; a.ra = -1; a.imm = imm16; }
+            else if (op4 == 0xC) { a.op = "MOVT"; a.ra = rd; a.imm = imm16; }
+            else a.op = (op4 == 0x6 || op4 == 0xA) ? "SUB" : "ADD";
+        }
+        return a;
+    }
+
+    // ── memory-access decode ─────────────────────────────────────────────────
+
+    struct MemInfo {
+        bool load = true; int width = 4; bool sign = false;
+        int rt = 0, rn = -1, rm = -1; uint32_t imm = 0; bool lit = false;
+        std::string off_src;   // what ADDR2MUX selects
+    };
+
+    static MemInfo mem_info16(uint16_t hw) {
+        MemInfo m;
+        int top5 = (hw >> 11) & 0x1F, top4 = (hw >> 12) & 0xF;
+        if (top5 == 0b01001) {
+            m.rt = (hw >> 8) & 7; m.lit = true; m.imm = (uint32_t)(hw & 0xFF) << 2;
+            m.off_src = "ZEXT(IR[7:0])x4";
+        } else if (top4 == 0b0101) {
+            static const int  w[] = {4, 2, 1, 1, 4, 2, 1, 2};
+            int opA = (hw >> 9) & 7;
+            m.load = opA >= 3; m.width = w[opA]; m.sign = opA == 3 || opA == 7;
+            m.rm = (hw >> 6) & 7; m.rn = (hw >> 3) & 7; m.rt = hw & 7; m.off_src = "SR2";
+        } else if (top4 == 0b1001) {
+            m.load = (hw >> 11) & 1; m.rt = (hw >> 8) & 7; m.rn = 13;
+            m.imm = (uint32_t)(hw & 0xFF) << 2; m.off_src = "ZEXT(IR[7:0])x4";
+        } else {
+            int imm = (hw >> 6) & 0x1F;
+            m.load = (hw >> 11) & 1; m.rn = (hw >> 3) & 7; m.rt = hw & 7;
+            m.width = top4 == 0b0110 ? 4 : top4 == 0b0111 ? 1 : 2;
+            m.imm = (uint32_t)imm * m.width;
+            m.off_src = m.width == 4 ? "ZEXT(IR[10:6])x4" : m.width == 2 ? "ZEXT(IR[10:6])x2" : "ZEXT(IR[10:6])";
+        }
+        return m;
+    }
+
+    static MemInfo mem_info32(uint32_t word) {
+        MemInfo m;
+        uint16_t hw1 = (word >> 16) & 0xFFFF, hw2 = word & 0xFFFF;
+        int size = (hw1 >> 5) & 3;
+        m.load = (hw1 >> 4) & 1; m.width = size == 2 ? 4 : size == 1 ? 2 : 1;
+        m.rn = hw1 & 0xF; m.rt = (hw2 >> 12) & 0xF; m.imm = hw2 & 0xFFF;
+        if (m.rn == 15) { m.rn = -1; m.lit = true; }
+        m.off_src = "ZEXT(IR2[11:0])";
+        return m;
+    }
+
+    uint32_t mem_read_w(uint32_t addr, int width) {
+        return width == 4 ? read32(addr) : width == 2 ? read16(addr) : read8(addr);
+    }
+    void mem_write_w(uint32_t addr, uint32_t v, int width) {
+        if (width == 4) write32(addr, v); else if (width == 2) write16(addr, v); else write8(addr, v);
+    }
+
+    // ── micro-op sequence builders ───────────────────────────────────────────
+
+    void add(const char* state, const char* phase, std::function<void(CycleInfo&)> fn) {
+        uops.push_back({state, phase, std::move(fn)});
+    }
+
+    void begin_fetch() {
+        uops.clear(); upc = 0; in_insn = true; insn_total = -1;
+        add("FETCH_ADDR", "FETCH", [this](CycleInfo& ci) {
+            _insn_addr = regs[15];
+            steps++;
+            MAR = regs[15];
+            regs[15] += 2;
+            ci.signals = {"GatePC", "LD.MAR", "PCINC=+2", "PCMUX=PC+2", "LD.PC"};
+            ci.has_bus = true; ci.bus = MAR;
+            ci.desc = "MAR <- PC (" + hex32(MAR) + "); PC <- PC + 2 = " + hex32(regs[15]);
+        });
+        add("FETCH_MEMORY", "FETCH", [this](CycleInfo& ci) {
+            MDR = read16(MAR);
+            ci.signals = {"MEM.EN", "R/W=READ", "LD.MDR"};
+            ci.desc = "MDR <- M[MAR] = " + hex16(MDR) + " (instruction halfword)";
+        });
+        add("FETCH_IR", "FETCH", [this](CycleInfo& ci) {
+            IR = MDR & 0xFFFF;
+            ci.signals = {"GateMDR", "LD.IR"};
+            ci.has_bus = true; ci.bus = MDR;
+            ci.desc = "IR <- MDR = " + hex16(IR);
+            if (is_32bit_thumb((uint16_t)IR)) {
+                ci.desc += "; 32-bit encoding, fetch second halfword";
+                add_fetch2();
+            } else {
+                insn_total = insn_cycle_count((uint16_t)IR, 0);
+                add("DECODE", "DECODE", [this](CycleInfo& c) { decode(c); });
+            }
+        });
+    }
+
+    void add_fetch2() {
+        add("FETCH2_ADDR", "FETCH", [this](CycleInfo& ci) {
+            MAR = regs[15];
+            regs[15] += 2;
+            ci.signals = {"GatePC", "LD.MAR", "PCINC=+2", "PCMUX=PC+2", "LD.PC"};
+            ci.has_bus = true; ci.bus = MAR;
+            ci.desc = "MAR <- PC (" + hex32(MAR) + "); PC <- PC + 2 = " + hex32(regs[15]);
+        });
+        add("FETCH2_MEMORY", "FETCH", [this](CycleInfo& ci) {
+            MDR = read16(MAR);
+            ci.signals = {"MEM.EN", "R/W=READ", "LD.MDR"};
+            ci.desc = "MDR <- M[MAR] = " + hex16(MDR) + " (second halfword)";
+        });
+        add("FETCH2_IR", "FETCH", [this](CycleInfo& ci) {
+            IR2 = MDR & 0xFFFF;
+            ci.signals = {"GateMDR", "LD.IR2"};
+            ci.has_bus = true; ci.bus = MDR;
+            ci.desc = "IR2 <- MDR = " + hex16(IR2);
+            insn_total = insn_cycle_count((uint16_t)IR, (uint16_t)IR2);
+            add("DECODE", "DECODE", [this](CycleInfo& c) { decode(c); });
+        });
+    }
+
+    static std::string imm_s(uint32_t v) { return "#" + std::to_string(v); }
+
+    void decode(CycleInfo& ci) {
+        bool wide = is_32bit_thumb((uint16_t)IR);
+        uint32_t word = (IR << 16) | IR2;
+        Plan p = wide ? classify32(word) : classify16((uint16_t)IR);
+        switch (p.kind) {
+        case K_ALU:   build_alu(ci, wide, word); break;
+        case K_ADR:   build_adr(ci); break;
+        case K_LOAD:
+        case K_STORE: build_mem(ci, wide ? mem_info32(word) : mem_info16((uint16_t)IR)); break;
+        case K_B:
+        case K_BCOND: build_branch(ci, p.kind == K_BCOND); break;
+        case K_BX:
+        case K_BLX:   build_bx(ci, p.kind == K_BLX); break;
+        case K_BL:    build_bl(ci, word); break;
+        case K_PUSH: case K_POP: case K_LDM: case K_STM:
+                      build_multi(ci, p, wide); break;
+        case K_SVC: {
+            int num = IR & 0xFF;
+            ci.desc = "Decode: SVC #" + std::to_string(num) + " -> exception entry";
+            add("SVC_CALL", "EXECUTE", [this, num](CycleInfo& c) {
+                c.signals = {"GateVEC", "EXCEPTION"};
+                c.desc = "Exception entry (simplified): run supervisor call #" + std::to_string(num);
+                exec_svc(num);
+            });
+            break;
+        }
+        case K_BKPT:
+            ci.desc = "Decode: BKPT -> halt";
+            add("HALT", "EXECUTE", [this](CycleInfo& c) {
+                c.signals = {"HALT"};
+                c.desc = "Breakpoint: the processor halts";
+                halted = true;
+            });
+            break;
+        case K_UDF:
+            throw std::runtime_error("UDF at 0x" + std::to_string(_insn_addr));
+        default:
+            if (wide)
+                throw std::runtime_error("Unimplemented 32-bit opcode 0x" +
+                    std::to_string(word) + " at 0x" + std::to_string(_insn_addr));
+            throw std::runtime_error("Unimplemented 16-bit opcode 0x" +
+                std::to_string(IR) + " at 0x" + std::to_string(_insn_addr));
+        }
+        if ((int)uops.size() != insn_total)
+            throw std::logic_error("cycle plan mismatch at 0x" + std::to_string(_insn_addr));
+    }
+
+    std::string src_desc(int r) const {
+        return std::string(REGN[r]) + " = " + hex32(reg_read(r));
+    }
+
+    void build_alu(CycleInfo& ci, bool wide, uint32_t word) {
+        AluInfo a = wide ? alu_info32(word) : alu_info16((uint16_t)IR);
+        std::vector<std::string> sel;
+        if (a.writes) sel.push_back(std::string("DR=") + REGN[a.rd]);
+        if (a.ra >= 0) sel.push_back(std::string("SR1=") + REGN[a.ra]);
+        if (a.rb >= 0) sel.push_back(std::string("SR2=") + REGN[a.rb]);
+        if (a.has_imm) sel.push_back("SR2MUX=IMM");
+        sel.push_back("ALUK=" + a.op);
+        ci.signals = sel;
+        ci.desc = "Decode: operate " + a.op + (a.flags ? "S" : "") + "; select operands and ALU function";
+        add("FETCH_OPERANDS", "FETCH OPERANDS", [this, a](CycleInfo& c) {
+            ALU_A = a.ra >= 0 ? reg_read(a.ra) : 0;
+            ALU_B = a.rb >= 0 ? reg_read(a.rb) : a.imm;
+            if (a.ra >= 0) c.signals.push_back(std::string("SR1=") + REGN[a.ra]);
+            if (a.rb >= 0) c.signals.push_back(std::string("SR2=") + REGN[a.rb]);
+            if (a.has_imm) c.signals.push_back("SR2MUX=IMM");
+            std::string d = "ALU inputs: ";
+            if (a.ra >= 0) d += "A <- " + src_desc(a.ra);
+            else d += "A unused";
+            d += ", B <- ";
+            d += a.rb >= 0 ? src_desc(a.rb) : imm_s(a.imm);
+            c.desc = d;
+        });
+        add("EXECUTE_COMMIT", "EXECUTE", [this, a, wide, word](CycleInfo& c) {
+            uint32_t pc_before = regs[15];
+            if (wide) exec32(_insn_addr, word); else exec16(_insn_addr, (uint16_t)IR);
+            c.signals = {"ALUK=" + a.op};
+            std::string d = "ALU computes " + a.op;
+            if (a.writes) {
+                c.signals.push_back("GateALU");
+                c.signals.push_back(std::string("DR=") + REGN[a.rd]);
+                c.signals.push_back(a.rd == 15 ? "LD.PC" : "LD.REG");
+                c.has_bus = true; c.bus = regs[a.rd];
+                d += "; " + std::string(REGN[a.rd]) + " <- " + hex32(regs[a.rd]);
+                if (a.rd == 15 && regs[15] != pc_before) c.branch = 1;
+            }
+            if (a.flags) {
+                c.signals.push_back("LD.CC");
+                d += "; flags NZCV <- " + std::to_string(N) + std::to_string(Z) +
+                     std::to_string(C) + std::to_string(V);
+            }
+            c.desc = d;
+        });
+    }
+
+    void build_adr(CycleInfo& ci) {
+        int rd = (IR >> 8) & 7;
+        uint32_t imm = (IR & 0xFF) << 2;
+        ci.signals = {std::string("DR=") + REGN[rd], "ADDR1MUX=Align(PC,4)", "ADDR2MUX=ZEXT(IR[7:0])x4"};
+        ci.desc = "Decode: ADR; select aligned PC and IR[7:0] x 4";
+        add("EVALUATE_ADDRESS", "EVALUATE ADDRESS", [this, imm](CycleInfo& c) {
+            uint32_t base = (_insn_addr + 4) & ~3u;
+            TMP = base + imm;
+            c.signals = {"ADDR1MUX=Align(PC,4)", "ADDR2MUX=ZEXT(IR[7:0])x4"};
+            c.desc = "Address adder: Align(PC,4) " + hex32(base) + " + " + imm_s(imm) + " = " + hex32(TMP);
+        });
+        add("STORE_RESULT", "STORE RESULT", [this, rd](CycleInfo& c) {
+            exec16(_insn_addr, (uint16_t)IR);
+            c.signals = {"GateADDR", std::string("DR=") + REGN[rd], "LD.REG"};
+            c.has_bus = true; c.bus = regs[rd];
+            c.desc = std::string(REGN[rd]) + " <- " + hex32(regs[rd]);
+        });
+    }
+
+    void build_mem(CycleInfo& ci, MemInfo m) {
+        std::string sz = m.width == 4 ? "word" : m.width == 2 ? "halfword" : "byte";
+        std::string a1 = m.lit ? "Align(PC,4)" : m.rn == 13 ? "SP" : "SR1";
+        ci.signals = {std::string(m.load ? "DR=" : "SR=") + REGN[m.rt], "ADDR1MUX=" + a1,
+                      "ADDR2MUX=" + m.off_src, "SIZE=" + sz};
+        ci.desc = std::string("Decode: ") + (m.load ? "load " : "store ") + sz +
+                  "; select address inputs";
+        add("EVALUATE_ADDRESS", "EVALUATE ADDRESS", [this, m, a1](CycleInfo& c) {
+            uint32_t base = m.lit ? ((_insn_addr + 4) & ~3u) : regs[m.rn];
+            uint32_t off  = m.rm >= 0 ? regs[m.rm] : m.imm;
+            MAR = base + off;
+            c.signals = {"ADDR1MUX=" + a1, "ADDR2MUX=" + m.off_src, "GateADDR", "LD.MAR"};
+            if (!m.lit) c.signals.push_back(std::string("SR1=") + REGN[m.rn]);
+            if (m.rm >= 0) c.signals.push_back(std::string("SR2=") + REGN[m.rm]);
+            c.has_bus = true; c.bus = MAR;
+            std::string bs = m.lit ? "Align(PC,4) " + hex32(base) : src_desc(m.rn);
+            std::string os = m.rm >= 0 ? src_desc(m.rm) : imm_s(off);
+            c.desc = "MAR <- " + bs + " + " + os + " = " + hex32(MAR);
+        });
+        if (m.load) {
+            add("FETCH_OPERANDS", "FETCH OPERANDS", [this, m, sz](CycleInfo& c) {
+                MDR = mem_read_w(MAR, m.width);
+                c.signals = {"MEM.EN", "R/W=READ", "LD.MDR"};
+                if (is_peripheral(MAR)) c.signals.push_back("IOSEL=IO");
+                c.desc = "MDR <- M[" + hex32(MAR) + "] (" + sz + ") = " + hex32(MDR);
+            });
+            add("STORE_RESULT", "STORE RESULT", [this, m, sz](CycleInfo& c) {
+                uint32_t v = MDR;
+                if (m.sign) v = m.width == 1 ? u32((int32_t)(int8_t)v) : u32((int32_t)(int16_t)v);
+                reg_write(m.rt, v);
+                c.signals = {std::string("LOAD EXT=") + (m.sign ? "S" : "Z") + sz, "GateMDR",
+                             std::string("DR=") + REGN[m.rt], m.rt == 15 ? "LD.PC" : "LD.REG"};
+                c.has_bus = true; c.bus = v;
+                c.desc = std::string(REGN[m.rt]) + " <- " + (m.sign ? "sign" : "zero") +
+                         "-extend(MDR) = " + hex32(regs[m.rt]);
+            });
+        } else {
+            add("FETCH_OPERANDS", "FETCH OPERANDS", [this, m](CycleInfo& c) {
+                MDR = m.width == 4 ? regs[m.rt] : m.width == 2 ? (regs[m.rt] & 0xFFFF) : (regs[m.rt] & 0xFF);
+                c.signals = {std::string("SR1=") + REGN[m.rt], "ALUK=PASS", "GateALU",
+                             "STORE ALIGN", "LD.MDR"};
+                c.has_bus = true; c.bus = regs[m.rt];
+                c.desc = "MDR <- " + src_desc(m.rt) + " (through ALU pass-through)";
+            });
+            add("STORE_RESULT", "STORE RESULT", [this, m, sz](CycleInfo& c) {
+                mem_write_w(MAR, MDR, m.width);
+                c.signals = {"MEM.EN", "R/W=WRITE"};
+                if (is_peripheral(MAR)) c.signals.push_back("IOSEL=IO");
+                c.desc = "M[" + hex32(MAR) + "] (" + sz + ") <- MDR = " + hex32(MDR);
+            });
+        }
+    }
+
+    void build_branch(CycleInfo& ci, bool cond) {
+        int c4 = (IR >> 8) & 0xF;
+        static const char* cn[] = {"EQ","NE","CS","CC","MI","PL","VS","VC",
+                                   "HI","LS","GE","LT","GT","LE","AL","??"};
+        ci.signals = {"ADDR1MUX=PC", "ADDR2MUX=SEXT(offset)x2"};
+        if (cond) ci.signals.push_back(std::string("COND=") + cn[c4]);
+        ci.desc = cond ? std::string("Decode: conditional branch B") + cn[c4] + "; read flags"
+                       : "Decode: branch; select PC-relative target";
+        add("EXECUTE_PC", "EXECUTE", [this, cond, c4](CycleInfo& c) {
+            int32_t off = cond ? sign_extend(IR & 0xFF, 8) * 2 : sign_extend(IR & 0x7FF, 11) * 2;
+            uint32_t target = u32((int32_t)(_insn_addr + 4) + off);
+            bool taken = !cond || check_cond(c4);
+            exec16(_insn_addr, (uint16_t)IR);
+            c.signals = {"ADDR1MUX=PC", "ADDR2MUX=SEXT(offset)x2"};
+            if (cond) c.signals.push_back(std::string("BranchTaken=") + (taken ? "1" : "0"));
+            c.has_bus = false;
+            c.branch = taken ? 1 : 0;
+            if (taken) {
+                c.signals.push_back("PCMUX=ADDER");
+                c.signals.push_back("LD.PC");
+                c.desc = "Target = PC(" + hex32(_insn_addr + 4) + ") + " + std::to_string(off) +
+                         " = " + hex32(target) + "; branch taken, PC <- target";
+            } else {
+                c.desc = std::string("Condition ") + cn[c4] + " false (NZCV=" + std::to_string(N) +
+                         std::to_string(Z) + std::to_string(C) + std::to_string(V) +
+                         "); branch not taken, PC stays " + hex32(regs[15]);
+            }
+        });
+    }
+
+    void build_bx(CycleInfo& ci, bool link) {
+        int rm = (IR >> 3) & 0xF;
+        ci.signals = {std::string("SR1=") + REGN[rm]};
+        ci.desc = std::string("Decode: ") + (link ? "BLX" : "BX") + " " + REGN[rm] + "; indirect branch";
+        add("FETCH_OPERANDS", "FETCH OPERANDS", [this, rm](CycleInfo& c) {
+            TMP = reg_read(rm);
+            c.signals = {std::string("SR1=") + REGN[rm]};
+            c.desc = "Read target " + src_desc(rm);
+        });
+        if (link) {
+            add("LINK", "STORE RESULT", [this](CycleInfo& c) {
+                set_lr(regs[15] | 1);
+                c.signals = {"GatePC", "SET THUMB BIT", "LD.LR"};
+                c.has_bus = true; c.bus = regs[14];
+                c.desc = "LR <- return address | 1 = " + hex32(regs[14]);
+            });
+        }
+        add("EXECUTE_PC", "EXECUTE", [this](CycleInfo& c) {
+            set_pc(TMP & 0xFFFFFFFEu);
+            c.signals = {"CLR THUMB BIT", "PCMUX=BUS", "LD.PC"};
+            c.has_bus = true; c.bus = TMP;
+            c.branch = 1;
+            c.desc = "PC <- " + hex32(TMP) + " & ~1 = " + hex32(regs[15]);
+        });
+    }
+
+    void build_bl(CycleInfo& ci, uint32_t word) {
+        uint16_t hw1 = (word >> 16) & 0xFFFF, hw2 = word & 0xFFFF;
+        bool blx = (hw2 & 0xD000) == 0xC000;
+        uint32_t S = (hw1 >> 10) & 1, J1 = (hw2 >> 13) & 1, J2 = (hw2 >> 11) & 1;
+        uint32_t I1 = (~(J1 ^ S)) & 1, I2 = (~(J2 ^ S)) & 1;
+        int32_t off = blx
+            ? sign_extend((S << 24) | (I1 << 23) | (I2 << 22) | ((hw1 & 0x3FFu) << 12) | (((hw2 >> 1) & 0x3FFu) << 2), 25)
+            : sign_extend((S << 24) | (I1 << 23) | (I2 << 22) | ((hw1 & 0x3FFu) << 12) | ((hw2 & 0x7FFu) << 1), 25);
+        ci.signals = {"DR=LR", "ADDR1MUX=PC", "ADDR2MUX=SEXT(offset)x2"};
+        ci.desc = "Decode: BL; combine IR and IR2 offset fields = " + std::to_string(off);
+        add("LINK", "STORE RESULT", [this](CycleInfo& c) {
+            set_lr(regs[15] | 1);
+            c.signals = {"GatePC", "SET THUMB BIT", "LD.LR"};
+            c.has_bus = true; c.bus = regs[14];
+            c.desc = "LR <- return address " + hex32(regs[15]) + " | 1 = " + hex32(regs[14]);
+        });
+        add("EXECUTE_PC", "EXECUTE", [this, off, blx](CycleInfo& c) {
+            uint32_t base = regs[15];
+            uint32_t t = u32((int32_t)base + off);
+            if (blx) t &= ~3u;
+            set_pc(t);
+            c.signals = {"ADDR1MUX=PC", "ADDR2MUX=SEXT(offset)x2", "PCMUX=ADDER", "LD.PC"};
+            c.branch = 1;
+            c.desc = "PC <- " + hex32(base) + " + " + std::to_string(off) + " = " + hex32(regs[15]);
+        });
+    }
+
+    void build_multi(CycleInfo& ci, Plan p, bool wide) {
+        uint32_t list; int rn; bool load;
+        if (wide) { list = IR2 & 0xFFFF; rn = IR & 0xF; load = (IR >> 4) & 1; }
+        else if (p.kind == K_PUSH) { list = (IR & 0xFF) | ((IR & 0x100) ? 0x4000 : 0); rn = 13; load = false; }
+        else if (p.kind == K_POP)  { list = (IR & 0xFF) | ((IR & 0x100) ? 0x8000 : 0); rn = 13; load = true; }
+        else { list = IR & 0xFF; rn = (IR >> 8) & 7; load = p.kind == K_LDM; }
+        bool down = p.kind == K_PUSH;
+        uint32_t total = 4u * (uint32_t)p.nregs;
+        const char* nm = p.kind == K_PUSH ? "PUSH" : p.kind == K_POP ? "POP" : load ? "LDM" : "STM";
+        ci.signals = {std::string("SR1=") + REGN[rn]};
+        ci.desc = std::string("Decode: ") + nm + " of " + std::to_string(p.nregs) + " register(s)";
+        add("EVALUATE_ADDRESS", "EVALUATE ADDRESS", [this, rn, down, total](CycleInfo& c) {
+            MAR = down ? regs[rn] - total : regs[rn];
+            c.signals = {std::string("ADDR1MUX=") + (rn == 13 ? "SP" : "SR1"),
+                         down ? "ADDR2MUX=-4n" : "ADDR2MUX=0", "GateADDR", "LD.MAR",
+                         std::string("SR1=") + REGN[rn]};
+            c.has_bus = true; c.bus = MAR;
+            c.desc = "MAR <- " + src_desc(rn) + (down ? " - " + std::to_string(total) : "") +
+                     " = " + hex32(MAR);
+        });
+        for (int i = 0; i < 16; ++i) {
+            if (!(list & (1u << i))) continue;
+            if (load) {
+                add("FETCH_OPERANDS", "FETCH OPERANDS", [this](CycleInfo& c) {
+                    MDR = read32(MAR);
+                    c.signals = {"MEM.EN", "R/W=READ", "LD.MDR"};
+                    c.desc = "MDR <- M[" + hex32(MAR) + "] = " + hex32(MDR);
+                });
+                if (i == 15) {
+                    add("EXECUTE_PC", "EXECUTE", [this](CycleInfo& c) {
+                        set_pc(MDR & 0xFFFFFFFEu);
+                        MAR += 4;
+                        c.signals = {"GateMDR", "CLR THUMB BIT", "PCMUX=BUS", "LD.PC", "MAR+4"};
+                        c.has_bus = true; c.bus = MDR; c.branch = 1;
+                        c.desc = "PC <- MDR & ~1 = " + hex32(regs[15]) + "; MAR <- MAR + 4";
+                    });
+                } else {
+                    add("STORE_RESULT", "STORE RESULT", [this, i](CycleInfo& c) {
+                        reg_write(i, MDR);
+                        MAR += 4;
+                        c.signals = {"GateMDR", std::string("DR=") + REGN[i], "LD.REG", "MAR+4"};
+                        c.has_bus = true; c.bus = MDR;
+                        c.desc = std::string(REGN[i]) + " <- MDR = " + hex32(MDR) + "; MAR <- MAR + 4";
+                    });
+                }
+            } else {
+                add("FETCH_OPERANDS", "FETCH OPERANDS", [this, i](CycleInfo& c) {
+                    MDR = regs[i];
+                    c.signals = {std::string("SR1=") + REGN[i], "ALUK=PASS", "GateALU", "LD.MDR"};
+                    c.has_bus = true; c.bus = MDR;
+                    c.desc = "MDR <- " + std::string(REGN[i]) + " = " + hex32(MDR);
+                });
+                add("STORE_RESULT", "STORE RESULT", [this](CycleInfo& c) {
+                    write32(MAR, MDR);
+                    c.signals = {"MEM.EN", "R/W=WRITE", "MAR+4"};
+                    c.desc = "M[" + hex32(MAR) + "] <- MDR = " + hex32(MDR) + "; MAR <- MAR + 4";
+                    MAR += 4;
+                });
+            }
+        }
+        if (p.writeback) {
+            add("WRITEBACK", "STORE RESULT", [this, rn, down, total](CycleInfo& c) {
+                uint32_t v = down ? regs[rn] - total : regs[rn] + total;
+                regs[rn] = v;
+                c.signals = {"GateADDR", std::string("DR=") + REGN[rn],
+                             rn == 13 ? "LD.SP" : "LD.REG"};
+                c.has_bus = true; c.bus = v;
+                c.desc = std::string(REGN[rn]) + " <- " + REGN[rn] + (down ? " - " : " + ") +
+                         std::to_string(total) + " = " + hex32(v);
+            });
+        }
+    }
+
+    // ── one clock cycle ──────────────────────────────────────────────────────
+
+    CycleInfo step_cycle() {
+        CycleInfo ci;
+        if (halted) { ci.state = "HALTED"; ci.phase = "HALTED"; ci.desc = "Processor is halted"; return ci; }
+        if (!in_insn) begin_fetch();
+
+        uint32_t r0[16]; std::memcpy(r0, regs, sizeof r0);
+        int f0[4] = {N, Z, C, V};
+        uint32_t d0[6] = {MAR, MDR, IR, IR2, ALU_A, ALU_B};
+        std::vector<MemWrite> mlog;
+
+        std::string state = uops[upc].state, phase = uops[upc].phase;
+        auto fn = uops[upc].fn;   // copy: DECODE may grow uops
+        ci.state = state; ci.phase = phase; ci.index = (int)upc;
+        mem_log = &mlog;
+        try {
+            fn(ci);
+        } catch (...) {
+            mem_log = nullptr; in_insn = false; uops.clear();
+            throw;
+        }
+        mem_log = nullptr;
+        ci.insn_addr = _insn_addr;
+        upc++; cycles++;
+        ci.total = insn_total;
+
+        static const char* FN[4] = {"N", "Z", "C", "V"};
+        static const char* DN[6] = {"MAR", "MDR", "IR", "IR2", "ALU_A", "ALU_B"};
+        for (int i = 0; i < 16; ++i)
+            if (regs[i] != r0[i]) ci.changes.push_back({CH_REG, REGN[i], r0[i], regs[i], 0, 4});
+        int f1[4] = {N, Z, C, V};
+        for (int i = 0; i < 4; ++i)
+            if (f1[i] != f0[i]) ci.changes.push_back({CH_FLAG, FN[i], (uint32_t)f0[i], (uint32_t)f1[i], 0, 1});
+        uint32_t d1[6] = {MAR, MDR, IR, IR2, ALU_A, ALU_B};
+        for (int i = 0; i < 6; ++i)
+            if (d1[i] != d0[i]) ci.changes.push_back({CH_DP, DN[i], d0[i], d1[i], 0, 4});
+        for (auto& w : mlog) {
+            char b[32]; std::snprintf(b, sizeof b, w.io ? "IO[0x%08X]" : "M[0x%04X]", w.addr);
+            ci.changes.push_back({w.io ? CH_IO : CH_MEM, b, w.old_v, w.val, w.addr, w.width});
+        }
+
+        if (upc >= uops.size()) {
+            in_insn = false;
+            ci.last = true;
+            check_halt();
+        }
+        return ci;
+    }
+
+    // Name of the state the next step_cycle() will execute.
+    std::string next_state() const {
+        if (halted) return "HALTED";
+        if (!in_insn) return "FETCH_ADDR";
+        return uops[upc].state;
+    }
+
     // ── SVC ──────────────────────────────────────────────────────────────────
 
     void exec_svc(int num) {
@@ -927,6 +1677,43 @@ PYBIND11_MODULE(_picosim_core, m) {
              "Run until halted (or max_steps if >= 0). Releases the GIL.")
         .def("is_32bit_thumb", [](CPUCore&, uint16_t hw) {
             return CPUCore::is_32bit_thumb(hw);
+        })
+
+        // ── cycle-level execution ─────────────────────────────────────────
+        .def("step_cycle", [](CPUCore& self) {
+            CycleInfo ci = self.step_cycle();
+            py::list changes;
+            static const char* KN[] = {"reg", "flag", "datapath", "mem", "io"};
+            for (auto& c : ci.changes) {
+                py::dict d;
+                d["kind"] = KN[c.kind]; d["name"] = c.name;
+                d["old"] = c.old_v; d["new"] = c.new_v;
+                if (c.kind >= CH_MEM) { d["addr"] = c.addr; d["width"] = c.width; }
+                changes.append(d);
+            }
+            py::dict d;
+            d["state"] = ci.state; d["phase"] = ci.phase; d["desc"] = ci.desc;
+            d["signals"] = ci.signals;
+            d["bus"] = ci.has_bus ? py::object(py::int_(ci.bus)) : py::object(py::none());
+            d["branch"] = ci.branch < 0 ? py::object(py::none()) : py::object(py::bool_(ci.branch == 1));
+            d["insn_addr"] = ci.insn_addr; d["index"] = ci.index; d["total"] = ci.total;
+            d["last"] = ci.last; d["changes"] = changes;
+            return d;
+        }, "Advance exactly one clock cycle; returns a description of the cycle.")
+        .def("next_state", &CPUCore::next_state)
+        .def_property_readonly("in_insn", [](const CPUCore& s) { return s.in_insn; })
+        .def_property_readonly("insn_addr", [](const CPUCore& s) { return s._insn_addr; })
+        .def_property_readonly("cycle_index", [](const CPUCore& s) { return s.in_insn ? (int)s.upc : 0; })
+        .def_property_readonly("insn_total", [](const CPUCore& s) { return s.insn_total; })
+        .def_readwrite("cycles", &CPUCore::cycles)
+        .def_property_readonly("datapath", [](const CPUCore& s) {
+            py::dict d;
+            d["MAR"] = s.MAR; d["MDR"] = s.MDR; d["IR"] = s.IR; d["IR2"] = s.IR2;
+            d["ALU_A"] = s.ALU_A; d["ALU_B"] = s.ALU_B;
+            return d;
+        })
+        .def_static("insn_cycle_count", [](uint16_t hw1, uint16_t hw2) {
+            return CPUCore::insn_cycle_count(hw1, hw2);
         })
         ;
 }
