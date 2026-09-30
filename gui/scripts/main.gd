@@ -144,6 +144,7 @@ func _build_ui() -> void:
 	diagram.size_flags_stretch_ratio = 2.2
 	diagram.custom_minimum_size = Vector2(500, 300)
 	diagram_area = diagram
+	diagram.set_speed(SPEEDS[int(speed_slider.value)])
 	right_split.add_child(diagram)
 
 	var bottom := HSplitContainer.new()
@@ -330,6 +331,8 @@ func _toggle_run() -> void:
 func _on_speed(v: float) -> void:
 	var cps: int = SPEEDS[int(v)]
 	speed_label.text = "Max" if cps == 0 else ("%d cyc/s" % cps)
+	if diagram:
+		diagram.set_speed(cps)
 	if Backend.state.get("running", false):
 		Backend.send("set_speed", {"cps": cps})
 

@@ -6,6 +6,11 @@ extends Control
 ## selected cycle the active wires and boxes light up, live values are shown
 ## inside the boxes, and every box the cycle changed gets an "old → new"
 ## caption.  Hover a box to see what it does.
+##
+## When a new cycle is shown, a glowing pulse travels along the active wires
+## in the order data actually flows (source register → gate → bus → loads).
+## Boxes keep their old values until the pulse reaches them.  The pulse's
+## speed follows the clock-speed slider.
 
 const W := 1000.0
 const H := 640.0
@@ -23,6 +28,19 @@ const C_DIM := Color("7f8794")
 const C_CHANGED := Color("f2cc60")
 const C_BUS := Color("4b5363")
 const C_CTRL := Color("c678dd")
+const C_GLOW := Color("bfe6ff")
+const C_GLOW_CTRL := Color("f0c8ff")
+
+## Boxes that capture their inputs at the clock edge: data flowing into them
+## does not continue out of them in the same cycle.
+const SEQUENTIAL := ["pc", "ir", "ir2", "mar", "mdr", "regfile", "flags"]
+## Fraction of a clock period the pulse takes to cover the whole cycle's path.
+const ANIM_FILL := 0.85
+## Stepping by hand: seconds at 1 cyc/s, shrinking with √speed down to ANIM_MIN.
+const ANIM_STEP := 1.6
+const ANIM_MIN := 0.35
+const ANIM_RUN_MIN := 0.06   # running faster than this per cycle → no animation
+const TAIL := 70.0           # glow tail length, virtual units
 
 ## id: [x, y, w, h, label, shape, tooltip]
 const BOXES := {
@@ -31,17 +49,17 @@ const BOXES := {
 	"addr1mux": [30, 110, 125, 30, "ADDR1MUX", "mux",
 		"Chooses the address adder's base: the PC-relative value, a register (SR1) or SP."],
 	"addr2mux": [175, 110, 125, 30, "ADDR2MUX", "mux",
-		"Chooses the offset added to the base: a zero-extended, scaled immediate from IR, a sign-extended branch offset, a register (SR2), or zero."],
+		"Chooses the offset added to the base: a zero-extended, scaled immediate or a sign-extended branch offset (from IMM / OFFSET), a register (SR2), ±4n for PUSH/POP/LDM/STM, or zero."],
 	"adder": [95, 180, 130, 36, "ADDRESS ADDER", "adder",
 		"Adds base + offset to form an effective address or a branch target. It is separate from the ALU."],
 	"pcmux": [360, 30, 110, 30, "PCMUX", "mux",
-		"Chooses the next PC: PC + 2 (sequential), the address adder (branch target) or the bus (indirect branch, through CLR THUMB BIT)."],
+		"Chooses the next PC: PC + 2 (sequential), the address adder (branch target) or the bus through CLR THUMB BIT (BX, BLX, POP {PC}, MOV/ADD PC). The FSM picks the input and asserts LD.PC."],
 	"pc": [360, 100, 110, 40, "PC", "reg",
 		"Program Counter: address of the next halfword to fetch."],
 	"inc": [490, 100, 50, 40, "+2", "box",
 		"Incrementer: PC + 2, used during fetch to step to the next halfword."],
 	"clrt": [560, 170, 90, 30, "CLR THUMB", "box",
-		"Clears bit 0 of an indirect target (BX, POP {PC}) to form the halfword-aligned fetch address."],
+		"Clears bit 0 of a value loaded into PC from the bus (BX, BLX, POP {PC}, MOV/ADD PC) to form the halfword-aligned fetch address."],
 	"ir": [665, 30, 130, 36, "IR", "reg",
 		"Instruction Register: the 16-bit instruction (or first halfword) being executed. Its bits drive the FSM."],
 	"ir2": [815, 30, 130, 36, "IR2", "reg",
@@ -51,13 +69,15 @@ const BOXES := {
 	"ext": [830, 100, 115, 34, "IMM / OFFSET", "box",
 		"Extracts immediates and offsets from IR/IR2 and zero- or sign-extends and scales them."],
 	"cond": [830, 170, 115, 34, "COND EVAL", "box",
-		"Evaluates a branch condition (IR[11:8]) against the NZCV flags and produces BranchTaken, which steers PCMUX."],
+		"Evaluates a branch condition (IR[11:8]) against the NZCV flags and sends BranchTaken to the FSM. If it is 1 the FSM selects PCMUX=ADDER and asserts LD.PC; if 0 the PC keeps its sequential value."],
 	"vec": [665, 205, 110, 30, "VECTOR ADDR", "box",
-		"Supplies the handler address on exception entry (SVC)."],
+		"Gates the exception vector onto the bus on SVC entry. picosim then runs the supervisor call directly (simplified exception model)."],
 	"mar": [30, 340, 115, 40, "MAR", "reg",
 		"Memory Address Register: the address for the next memory or I/O access."],
+	"marinc": [170, 344, 44, 32, "+4", "box",
+		"MAR incrementer: steps MAR to the next word between the transfers of PUSH, POP, LDM and STM (MAR+4)."],
 	"mem": [30, 430, 230, 150, "MEMORY / I-O", "mem",
-		"64 KB RAM plus memory-mapped I/O (GPIO). Reads fill MDR; writes take their data from MDR."],
+		"64 KB RAM at 0x0000–0xFFFF; addresses from 0x10000 up are memory-mapped I/O (GPIO: SIO at 0xD0000000, IO_BANK0, PADS_BANK0). Reads fill MDR; writes take their data from MDR."],
 	"mdr": [290, 430, 115, 40, "MDR", "reg",
 		"Memory Data Register: data just read from memory, or data about to be written."],
 	"loadext": [290, 340, 115, 32, "LOAD EXT", "box",
@@ -73,7 +93,7 @@ const BOXES := {
 	"sr2mux": [650, 505, 95, 26, "SR2MUX", "mux",
 		"Chooses the ALU's B input: the second register read port (SR2) or an immediate from IR."],
 	"alu": [560, 548, 185, 52, "ALU", "alu",
-		"Arithmetic Logic Unit: ADD, SUB, AND, ORR, EOR, shifts, MUL… or PASS (forwards a register, e.g. store data)."],
+		"Arithmetic Logic Unit: ADD, SUB, AND, ORR, EOR, shifts, MUL… or PASS (forwards a register, e.g. store data or a BX target). Operands are latched in ALU A / ALU B during FETCH_OPERANDS."],
 }
 
 ## [id, points, activating signals, tag]
@@ -91,33 +111,36 @@ const WIRES := [
 	["storealign_mdr", [[482, 372], [482, 450], [405, 450]], ["STORE ALIGN", "LD.MDR&GateALU"], ""],
 	["bus_ir", [[652, BUS_Y], [652, 48], [665, 48]], ["LD.IR"], ""],
 	["bus_ir2", [[960, BUS_Y], [960, 48], [945, 48]], ["LD.IR2"], ""],
-	["ir_fsm", [[730, 66], [730, 100]], ["@DECODE", "@FETCH_IR", "@FETCH2_IR"], "decode"],
+	["ir_fsm", [[730, 66], [730, 100]], ["@DECODE", "@FETCH2_ADDR"], "decode"],
 	["ir_ext", [[785, 66], [785, 84], [860, 84], [860, 100]], ["@DECODE", "SR2MUX=IMM", "ADDR2MUX=Z", "ADDR2MUX=S"], "decode"],
-	["ir2_ext", [[900, 66], [900, 100]], ["ADDR2MUX=ZEXT(IR2"], ""],
+	["ir2_ext", [[900, 66], [900, 100]], ["#WIDE&@DECODE", "#WIDE&ADDR2MUX=S"], "decode"],
 	["pc_inc", [[470, 120], [490, 120]], ["PCINC=+2"], ""],
 	["inc_pcmux", [[515, 100], [515, 18], [440, 18], [440, 30]], ["PCMUX=PC+2"], ""],
 	["pcmux_pc", [[415, 60], [415, 100]], ["LD.PC"], ""],
-	["adder_pcmux", [[225, 198], [322, 198], [322, 12], [392, 12], [392, 30]], ["PCMUX=ADDER"], ""],
+	["adder_pcmux", [[217, 198], [322, 198], [322, 12], [392, 12], [392, 30]], ["PCMUX=ADDER"], ""],
 	["bus_clrt", [[605, BUS_Y], [605, 200]], ["PCMUX=BUS"], ""],
 	["clrt_pcmux", [[605, 170], [605, 6], [458, 6], [458, 30]], ["PCMUX=BUS"], ""],
 	["pc_align", [[360, 112], [345, 112], [345, 46], [150, 46]], ["ADDR1MUX=PC", "ADDR1MUX=Align"], ""],
 	["align_a1", [[62, 62], [62, 110]], ["ADDR1MUX=PC", "ADDR1MUX=Align"], ""],
-	["reg_a1", [[4, 125], [30, 125]], ["ADDR1MUX=SR1", "ADDR1MUX=SP"], "stub:SR1/SP"],
-	["off_a2", [[238, 84], [238, 110]], ["ADDR2MUX=Z", "ADDR2MUX=S", "ADDR2MUX=-", "ADDR2MUX=SR2"], "stub:offset"],
+	["reg_a1", [[118, 80], [118, 110]], ["ADDR1MUX=SR1", "ADDR1MUX=SP"], "stub:SR1 / SP"],
+	["off_a2", [[238, 80], [238, 110]], ["ADDR2MUX=Z", "ADDR2MUX=S", "ADDR2MUX=-", "ADDR2MUX=+", "ADDR2MUX=SR2"],
+		"stub:IMM / SR2 / ±4n"],
 	["a1_adder", [[92, 140], [130, 180]], ["ADDR1MUX="], ""],
 	["a2_adder", [[238, 140], [190, 180]], ["ADDR2MUX="], ""],
 	["adder_bus", [[160, 216], [160, BUS_Y]], ["GateADDR"], "gate"],
 	["bus_reg", [[610, BUS_Y], [610, 325]], ["LD.REG", "LD.SP"], ""],
 	["bus_sett", [[882, BUS_Y], [882, 325]], ["SET THUMB BIT"], ""],
 	["sett_reg", [[825, 340], [790, 340]], ["SET THUMB BIT"], ""],
-	["reg_alua", [[600, 490], [600, 548]], ["SR1=&@FETCH_OPERANDS", "GateALU"], ""],
+	["reg_alua", [[600, 490], [600, 548]], ["SR1=&@FETCH_OPERANDS"], ""],
 	["reg_sr2", [[685, 490], [685, 505]], ["SR2=&@FETCH_OPERANDS"], ""],
-	["ext_sr2", [[945, 117], [978, 117], [978, 518], [745, 518]], ["SR2MUX=IMM&@FETCH_OPERANDS"], ""],
+	["ext_sr2", [[945, 117], [978, 117], [978, 518], [739, 518]], ["SR2MUX=IMM&@FETCH_OPERANDS"], ""],
 	["sr2_alub", [[698, 531], [698, 548]], ["SR2=&@FETCH_OPERANDS", "SR2MUX=IMM&@FETCH_OPERANDS"], ""],
-	["alu_bus", [[745, 568], [805, 568], [805, BUS_Y]], ["GateALU"], "gate"],
-	["alu_flags", [[745, 588], [882, 588], [882, 460]], ["LD.CC"], ""],
-	["flags_cond", [[940, 440], [968, 440], [968, 187], [945, 187]], ["COND=", "BranchTaken="], "ctrl"],
-	["cond_pcmux", [[830, 196], [812, 196], [812, 182], [480, 182], [480, 45], [470, 45]], ["BranchTaken="], "ctrl"],
+	["alu_bus", [[736, 568], [805, 568], [805, BUS_Y]], ["GateALU"], "gate"],
+	["alu_flags", [[728, 588], [882, 588], [882, 460]], ["LD.CC"], ""],
+	["flags_cond", [[940, 440], [968, 440], [968, 187], [945, 187]], ["BranchTaken="], "ctrl"],
+	["cond_fsm", [[830, 187], [819, 187], [819, 150], [810, 150]], ["BranchTaken="], "ctrl"],
+	["mar_inc", [[145, 352], [170, 352]], ["MAR+4"], ""],
+	["inc_mar", [[170, 368], [145, 368]], ["MAR+4"], ""],
 	["vec_bus", [[720, 235], [720, BUS_Y]], ["GateVEC"], "gate"],
 ]
 
@@ -128,6 +151,15 @@ var font: Font
 var mono: Font
 var _scale := 1.0
 var _origin := Vector2.ZERO
+var cps := 4                     # clock-speed slider value (0 = max)
+var pre_values: Dictionary = {}  # values shown before the pulse arrives
+var before: Dictionary = {}      # values at the start of the shown cycle
+var _key := 0                    # identifies the cycle being animated
+var _paths: Array = []           # [{wire, pts (virtual), start, len}] for active wires
+var _arrive: Dictionary = {}     # node id → distance at which the pulse reaches it
+var _total := 0.0                # distance to the end of the last wire
+var _dist := INF                 # how far the pulse has travelled
+var _speed := 0.0                # virtual units per second
 
 
 func _ready() -> void:
@@ -137,23 +169,143 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	tooltip_text = " "
 	resized.connect(queue_redraw)
+	set_process(false)
+
+
+func set_speed(v: int) -> void:
+	cps = v
+
+
+func _process(delta: float) -> void:
+	_dist += _speed * delta
+	if _dist >= _total + TAIL:
+		_dist = INF
+		set_process(false)
+	queue_redraw()
 
 
 func update_state(s: Dictionary) -> void:
 	st = s
 	if not s.get("loaded", false):
 		return
+	# The cycle panel announces a cycle before this state arrives, so plan
+	# again with it (without restarting the animation).
+	if not cycle.is_empty():
+		values = _snapshot()
+		_plan()
 	queue_redraw()
 
 
 func show_cycle(info: Dictionary) -> void:
 	cycle = info
+	var key := info.hash()
+	if key != _key:
+		_key = key
+		values = _snapshot()
+		_plan()
+		_start_anim()
 	queue_redraw()
+
+
+func _start_anim() -> void:
+	_dist = INF
+	set_process(false)
+	if cycle.is_empty() or _paths.is_empty() or not is_visible_in_tree():
+		return
+	var running: bool = st.get("running", false)
+	var rate: int = int(st.get("cps", cps)) if running else cps
+	var dur := 0.0
+	if running:
+		dur = ANIM_FILL / rate if rate > 0 else 0.0
+		if dur < ANIM_RUN_MIN:
+			return
+	else:
+		dur = max(ANIM_STEP / sqrt(rate), ANIM_MIN) if rate > 0 else ANIM_MIN
+	_speed = (_total + TAIL) / dur
+	_dist = 0.0
+	set_process(true)
+
+
+func _animating() -> bool:
+	return _dist != INF
+
+
+## How far along the pulse is at node `id` (true once it has arrived).
+func _reached(id: String) -> bool:
+	return not _animating() or _dist >= _arrive.get(id, _total)
+
+
+# ── flow planning ───────────────────────────────────────────────────────────
+
+func _node_at(q: Array) -> String:
+	var v := Vector2(q[0], q[1])
+	for id in BOXES:
+		var b: Array = BOXES[id]
+		if Rect2(b[0], b[1], b[2], b[3]).grow(2).has_point(v):
+			return id
+	if abs(v.y - BUS_Y) < 1.0:
+		return "bus"
+	return ""
+
+
+static func _poly_len(pts: Array) -> float:
+	var l := 0.0
+	for i in pts.size() - 1:
+		l += Vector2(pts[i][0], pts[i][1]).distance_to(Vector2(pts[i + 1][0], pts[i + 1][1]))
+	return l
+
+
+## Orders the active wires by data flow: each wire starts where the wires
+## feeding its source end, so the pulse moves at one speed through every
+## junction.  Wires leaving the bus first run along it from the driver.
+func _plan() -> void:
+	_paths = []
+	_arrive = {}
+	_total = 0.0
+	if cycle.is_empty():
+		return
+	var act := []
+	for w in WIRES:
+		if _wire_active(w):
+			act.append({"wire": w, "src": _node_at(w[1][0]), "dst": _node_at(w[1][w[1].size() - 1]),
+				"pts": w[1].duplicate(), "start": -1.0, "len": _poly_len(w[1])})
+	for a in act:
+		_resolve(a, act, 0)
+	for a in act:
+		var end: float = a["start"] + a["len"]
+		_total = max(_total, end)
+		if a["dst"] != "":
+			_arrive[a["dst"]] = max(_arrive.get(a["dst"], 0.0), end)
+	_paths = act
+
+
+func _resolve(a: Dictionary, act: Array, depth: int) -> float:
+	if a["start"] >= 0.0:
+		return a["start"]
+	var src: String = a["src"]
+	var start := 0.0
+	if src != "" and not SEQUENTIAL.has(src) and depth < 16:
+		var best: Dictionary = {}
+		for f in act:
+			if f != a and f["dst"] == src:
+				var end: float = _resolve(f, act, depth + 1) + f["len"]
+				if best.is_empty() or end > start:
+					start = end
+					best = f
+		if src == "bus" and not best.is_empty():
+			# run along the bus from where the driver meets it
+			var fp: Array = best["pts"][best["pts"].size() - 1]
+			var from := [fp[0], BUS_Y]
+			if abs(from[0] - a["pts"][0][0]) > 0.5:
+				a["pts"].push_front(from)
+				a["len"] += abs(from[0] - a["pts"][1][0])
+	a["start"] = start
+	return start
 
 
 # ── value reconstruction ─────────────────────────────────────────────────────
 
-func _snapshot() -> Dictionary:
+func _snapshot(extra: int = 0) -> Dictionary:
 	var v := {}
 	if not st.get("loaded", false):
 		return v
@@ -169,7 +321,7 @@ func _snapshot() -> Dictionary:
 	# the machine held right after that cycle.
 	var hist: Array = st.get("history", [])
 	if not cycle.is_empty():
-		var idx := int(cycle.get("index", hist.size() - 1))
+		var idx := int(cycle.get("index", hist.size() - 1)) - extra
 		for j in range(hist.size() - 1, idx, -1):
 			for c in hist[j]["changes"]:
 				if c["kind"] in ["reg", "flag", "datapath"]:
@@ -189,6 +341,9 @@ func _has(sig: String) -> bool:
 		return true
 	if sig.begins_with("@"):
 		return cycle.get("state", "") == sig.substr(1)
+	if sig == "#WIDE":
+		var top := (int(values.get("IR", 0)) >> 11) & 0x1F
+		return top == 0x1D or top == 0x1E or top == 0x1F
 	for s in cycle.get("signals", []):
 		var ss := str(s)
 		if ss == sig or (sig.ends_with("=") and ss.begins_with(sig)) or \
@@ -266,7 +421,10 @@ func _draw() -> void:
 	if not st.get("loaded", false):
 		_text(_p(20, 40), "Load a program to see the datapath.", 18, C_DIM)
 		return
-	values = _snapshot()
+	var post := _snapshot()
+	before = _snapshot(1)
+	pre_values = before if _animating() else post
+	values = post
 
 	var active_boxes := {}
 	var changed_boxes := {}
@@ -276,48 +434,153 @@ func _draw() -> void:
 			changed_boxes[b] = changed_boxes.get(b, []) + [c]
 
 	# bus
-	var bus_on := cycle.get("bus") != null
+	var bus_on: bool = cycle.get("bus") != null and _reached("bus")
 	var bus_rect := Rect2(_p(20, BUS_Y - 6), Vector2(950, 12) * _scale)
 	draw_rect(bus_rect, C_WIRE_ACTIVE.darkened(0.25) if bus_on else C_BUS)
-	_text(_p(24, BUS_Y - 10), "BUS (32-bit, one driver per cycle)", 11, C_DIM)
+	_text(_p(24, BUS_Y - 10), "BUS · 32-bit", 11, C_DIM)
 	if bus_on:
-		var label := "bus = " + Backend.hex32(cycle["bus"])
-		_text(_p(460, BUS_Y + 22), label, 14, C_CHANGED, mono)
+		# above the bus, in the gap between the PC gate and CLR THUMB's wire
+		_text(_p(432, BUS_Y - 11), "bus = " + Backend.hex32(cycle["bus"]), 13, C_CHANGED, mono)
 
-	# wires
+	# wires: idle ones first, then the active ones (lit behind the pulse)
+	var plan := {}
+	for a in _paths:
+		plan[a["wire"][0]] = a
 	for w in WIRES:
-		var on := _wire_active(w)
-		var pts := PackedVector2Array()
-		for q in w[1]:
-			pts.append(_p(q[0], q[1]))
 		var tag: String = w[3]
-		var ctrl := tag == "ctrl"
-		var col := (C_CTRL if ctrl else C_WIRE_ACTIVE) if on else C_WIRE
-		_arrow(pts, col, (3.0 if on else 1.5) * _scale, ctrl)
+		var pts := _screen(w[1])
+		if not plan.has(w[0]):
+			_arrow(pts, C_WIRE, 1.5 * _scale, tag == "ctrl")
 		if tag == "gate":
-			_gate(pts, on)
+			_gate(pts, plan.has(w[0]) and _reached_wire(plan[w[0]], 0.0))
 		if tag.begins_with("stub:"):
 			var lbl := tag.substr(5)
-			_text(pts[0] + Vector2(0, -8) * _scale, lbl, 9, C_DIM)
-		if on:
-			for q in w[1]:
+			var tw := font.get_string_size(lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(9)).x
+			draw_string(font, pts[0] + Vector2(-tw / 2.0, -4 * _scale), lbl,
+				HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(9), C_DIM)
+	for a in _paths:
+		_draw_flow(a)
+		if _reached_wire(a, 0.0):
+			for q in a["wire"][1]:
 				for id in BOXES:
-					if _rect(id).grow(2 * _scale).has_point(_p(q[0], q[1])):
+					if _rect(id).grow(2 * _scale).has_point(_p(q[0], q[1])) and \
+							(id == a["src"] or _reached_wire(a, 1.0)):
 						active_boxes[id] = true
+	for a in _paths:
+		_draw_pulse(a)
 
-	if _has("COND=") or _has("BranchTaken="):
+	var decode := str(cycle.get("state", "")) == "DECODE"
+	if _has("BranchTaken=") and _reached("cond"):
 		active_boxes["cond"] = true
-	if _has("ALUK="):
+	if _has("ALUK=") and not decode:
 		active_boxes["alu"] = true
 	if _has("GateVEC"):
 		active_boxes["vec"] = true
 	active_boxes["fsm"] = true
 
 	for id in BOXES:
-		_draw_box(id, active_boxes.has(id), changed_boxes.get(id, []))
+		var arrived := _reached(id)
+		values = post if arrived else pre_values
+		_draw_box(id, active_boxes.has(id), changed_boxes.get(id, []) if arrived else [])
+	values = post
 
 	_text(_p(20, H - 8), "Bright wires carry data this cycle · purple dashed = control · yellow = changed at this clock edge · hover a box to learn what it does",
 		11, C_DIM)
+
+
+func _screen(q: Array) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for v in q:
+		pts.append(_p(v[0], v[1]))
+	return pts
+
+
+## True once the pulse has covered fraction `f` of this wire.
+func _reached_wire(a: Dictionary, f: float) -> bool:
+	return not _animating() or _dist >= a["start"] + a["len"] * f + (0.001 if f == 0.0 else 0.0)
+
+
+## Point `d` virtual units along a polyline of virtual points, in screen space.
+func _along(q: Array, d: float) -> Vector2:
+	for i in q.size() - 1:
+		var p0 := Vector2(q[i][0], q[i][1])
+		var p1 := Vector2(q[i + 1][0], q[i + 1][1])
+		var l := p0.distance_to(p1)
+		if d <= l or i == q.size() - 2:
+			var t := clampf(d / l, 0.0, 1.0) if l > 0 else 1.0
+			var v := p0.lerp(p1, t)
+			return _p(v.x, v.y)
+		d -= l
+	return _p(q[0][0], q[0][1])
+
+
+## Sub-polyline of `q` from distance d0 to d1, in screen space.
+func _slice(q: Array, d0: float, d1: float) -> PackedVector2Array:
+	var out := PackedVector2Array([_along(q, d0)])
+	var acc := 0.0
+	for i in range(1, q.size() - 1):
+		acc += Vector2(q[i - 1][0], q[i - 1][1]).distance_to(Vector2(q[i][0], q[i][1]))
+		if acc > d0 and acc < d1:
+			out.append(_p(q[i][0], q[i][1]))
+	out.append(_along(q, d1))
+	return out
+
+
+## The lit part of an active wire: dim ahead of the pulse, bright behind it.
+func _draw_flow(a: Dictionary) -> void:
+	var w: Array = a["wire"]
+	var ctrl: bool = w[3] == "ctrl"
+	var col := C_CTRL if ctrl else C_WIRE_ACTIVE
+	var q: Array = w[1]
+	var full := _screen(q)
+	var l := _poly_len(q)
+	# progress along the wire's own points (the bus run in front is extra)
+	var d: float = (_dist - a["start"]) - (a["len"] - l)
+	if not _animating() or d >= l:
+		_arrow(full, col, 3.0 * _scale, ctrl)
+		return
+	_arrow(full, C_WIRE, 1.5 * _scale, ctrl)
+	if d > 0.0:
+		var lit := _slice(q, 0.0, d)
+		if ctrl:
+			for i in lit.size() - 1:
+				draw_dashed_line(lit[i], lit[i + 1], col, 3.0 * _scale, 5.0 * _scale)
+		else:
+			draw_polyline(lit, col, 3.0 * _scale, true)
+
+
+## The glowing head and fading tail of the pulse on this wire.
+func _draw_pulse(a: Dictionary) -> void:
+	if not _animating():
+		return
+	var d: float = _dist - a["start"]
+	var l: float = a["len"]
+	if d <= 0.0 or d >= l + TAIL:
+		return
+	var q: Array = a["pts"]
+	var glow := C_GLOW_CTRL if a["wire"][3] == "ctrl" else C_GLOW
+	var base := C_CTRL if a["wire"][3] == "ctrl" else C_WIRE_ACTIVE
+	var head: float = min(d, l)
+	var tail0: float = max(0.0, d - TAIL)
+	# tail: segments that brighten and thicken toward the head
+	var n := 14
+	for i in n:
+		var d0: float = lerp(tail0, head, float(i) / n)
+		var d1: float = lerp(tail0, head, float(i + 1) / n)
+		if d1 <= d0:
+			continue
+		var t := float(i + 1) / n
+		var c := base.lerp(glow, t)
+		c.a = t * 0.9
+		draw_polyline(_slice(q, d0, d1), c, (2.0 + 4.0 * t) * _scale, true)
+	if d >= l:
+		return   # head has arrived; let the tail drain into the box
+	var hp := _along(q, head)
+	for r in [[13.0, 0.08], [9.0, 0.16], [6.0, 0.35], [3.5, 0.8]]:
+		var c := glow
+		c.a = r[1]
+		draw_circle(hp, r[0] * _scale, c)
+	draw_circle(hp, 2.0 * _scale, Color.WHITE)
 
 
 func _gate(pts: PackedVector2Array, on: bool) -> void:
@@ -398,24 +661,44 @@ func _draw_box(id: String, active: bool, changes: Array) -> void:
 					C_CHANGED if hot else C_TEXT, mono)
 				x += 27
 		"alu":
-			_text(r.position + Vector2(10, 24) * _scale, "ALU", 13, title_col)
 			var op := ""
-			for s in cycle.get("signals", []):
-				if str(s).begins_with("ALUK="):
-					op = str(s).substr(5)
-			if op != "":
-				_text(r.position + Vector2(118, 24) * _scale, op, 13, C_CHANGED, mono)
-			if _has("@FETCH_OPERANDS") or _has("@EXECUTE_COMMIT"):
-				_text(r.position + Vector2(22, 45) * _scale, "A=%s  B=%s" % [
-					Backend.hex32(values.get("ALU_A", 0)), Backend.hex32(values.get("ALU_B", 0))], 11, C_DIM, mono)
+			if str(cycle.get("state", "")) != "DECODE":
+				for s in cycle.get("signals", []):
+					if str(s).begins_with("ALUK="):
+						op = str(s).substr(5)
+			var bw: float = b[2]
+			if op == "":
+				_text(r.position + Vector2(0, 30) * _scale, "ALU", 13, title_col, null, bw)
+			else:
+				# "ALU" in the title colour, the operation in yellow, centred as one line
+				var fs := _fs(13)
+				var w1 := font.get_string_size("ALU  ", HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+				var w2 := mono.get_string_size(op, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+				var x0 := r.position.x + (r.size.x - w1 - w2) / 2.0
+				draw_string(font, Vector2(x0, r.position.y + 30 * _scale), "ALU  ",
+					HORIZONTAL_ALIGNMENT_LEFT, -1, fs, title_col)
+				draw_string(mono, Vector2(x0 + w1, r.position.y + 30 * _scale), op,
+					HORIZONTAL_ALIGNMENT_LEFT, -1, fs, C_CHANGED)
+			var line := ""
+			if _has("ALUK=PASS") and _has("GateALU") and cycle.get("bus") != null:
+				line = "out = " + Backend.hex32(cycle["bus"])
+			elif _has("@FETCH_OPERANDS") and not _has("GateALU"):
+				line = _operands(cycle.get("signals", []))
+			elif _has("@EXECUTE_COMMIT"):
+				# operands were latched by this instruction's FETCH_OPERANDS cycle
+				for h in st.get("history", []):
+					if h["state"] == "FETCH_OPERANDS" and int(h["insn_addr"]) == int(cycle.get("insn_addr", -1)):
+						line = _operands(h["signals"])
+			if line != "":
+				_text(r.position + Vector2(0, 45) * _scale, line, 10, C_DIM, mono, bw)
 		"mem":
 			_text(r.position + Vector2(8, 18) * _scale, b[4], 12, title_col)
-			_text(r.position + Vector2(8, 36) * _scale, "64 KB RAM · GPIO at 0xD0000000", 10, C_DIM)
+			_text(r.position + Vector2(8, 36) * _scale, "64 KB RAM · I/O at ≥ 0x10000 (GPIO)", 10, C_DIM)
 			var line := ""
 			if _has("R/W=READ"):
-				line = "read  M[%s]" % Backend.hex32(values.get("MAR", 0))
+				line = "read  M[%s]" % Backend.hex32(before.get("MAR", 0))
 			elif _has("R/W=WRITE"):
-				line = "write M[%s]" % Backend.hex32(values.get("MAR", 0))
+				line = "write M[%s]" % Backend.hex32(before.get("MAR", 0))
 			if line != "":
 				_text(r.position + Vector2(8, 62) * _scale, line, 12, C_TEXT, mono)
 			var y := 84.0
@@ -436,6 +719,22 @@ func _draw_box(id: String, active: bool, changes: Array) -> void:
 		var o: String = Backend.hex16(c["old"]) if ir else Backend.hex32(c["old"])
 		var n: String = Backend.hex16(c["new"]) if ir else Backend.hex32(c["new"])
 		_text(Vector2(r.position.x, r.end.y + 13 * _scale), "%s → %s" % [o, n], 10, C_CHANGED, mono)
+
+
+## "A=… B=…" for the ALU inputs a FETCH_OPERANDS cycle with these signals loads.
+func _operands(sigs: Array) -> String:
+	var a := false
+	var b := false
+	for sg in sigs:
+		var ss := str(sg)
+		a = a or ss.begins_with("SR1=")
+		b = b or ss.begins_with("SR2=") or ss == "SR2MUX=IMM"
+	var parts := []
+	if a:
+		parts.append("A=%08X" % int(values.get("ALU_A", 0)))
+	if b:
+		parts.append("B=%08X" % int(values.get("ALU_B", 0)))
+	return "  ".join(parts)
 
 
 func _draw_regfile(r: Rect2, changes: Array) -> void:

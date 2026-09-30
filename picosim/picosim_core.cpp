@@ -1288,7 +1288,13 @@ public:
             if (a.writes) {
                 c.signals.push_back("GateALU");
                 c.signals.push_back(std::string("DR=") + REGN[a.rd]);
-                c.signals.push_back(a.rd == 15 ? "LD.PC" : "LD.REG");
+                if (a.rd == 15) {
+                    c.signals.push_back("CLR THUMB BIT");
+                    c.signals.push_back("PCMUX=BUS");
+                    c.signals.push_back("LD.PC");
+                } else {
+                    c.signals.push_back("LD.REG");
+                }
                 c.has_bus = true; c.bus = regs[a.rd];
                 d += "; " + std::string(REGN[a.rd]) + " <- " + hex32(regs[a.rd]);
                 if (a.rd == 15 && regs[15] != pc_before) c.branch = 1;
@@ -1315,7 +1321,8 @@ public:
         });
         add("STORE_RESULT", "STORE RESULT", [this, rd](CycleInfo& c) {
             exec16(_insn_addr, (uint16_t)IR);
-            c.signals = {"GateADDR", std::string("DR=") + REGN[rd], "LD.REG"};
+            c.signals = {"ADDR1MUX=Align(PC,4)", "ADDR2MUX=ZEXT(IR[7:0])x4", "GateADDR",
+                         std::string("DR=") + REGN[rd], "LD.REG"};
             c.has_bus = true; c.bus = regs[rd];
             c.desc = std::string(REGN[rd]) + " <- " + hex32(regs[rd]);
         });
@@ -1410,8 +1417,9 @@ public:
         ci.desc = std::string("Decode: ") + (link ? "BLX" : "BX") + " " + REGN[rm] + "; indirect branch";
         add("FETCH_OPERANDS", "FETCH OPERANDS", [this, rm](CycleInfo& c) {
             TMP = reg_read(rm);
+            ALU_A = TMP;
             c.signals = {std::string("SR1=") + REGN[rm]};
-            c.desc = "Read target " + src_desc(rm);
+            c.desc = "ALU A <- target " + src_desc(rm);
         });
         if (link) {
             add("LINK", "STORE RESULT", [this](CycleInfo& c) {
@@ -1423,7 +1431,7 @@ public:
         }
         add("EXECUTE_PC", "EXECUTE", [this](CycleInfo& c) {
             set_pc(TMP & 0xFFFFFFFEu);
-            c.signals = {"CLR THUMB BIT", "PCMUX=BUS", "LD.PC"};
+            c.signals = {"ALUK=PASS", "GateALU", "CLR THUMB BIT", "PCMUX=BUS", "LD.PC"};
             c.has_bus = true; c.bus = TMP;
             c.branch = 1;
             c.desc = "PC <- " + hex32(TMP) + " & ~1 = " + hex32(regs[15]);
@@ -1521,7 +1529,9 @@ public:
             add("WRITEBACK", "STORE RESULT", [this, rn, down, total](CycleInfo& c) {
                 uint32_t v = down ? regs[rn] - total : regs[rn] + total;
                 regs[rn] = v;
-                c.signals = {"GateADDR", std::string("DR=") + REGN[rn],
+                c.signals = {std::string("ADDR1MUX=") + (rn == 13 ? "SP" : "SR1"),
+                             down ? "ADDR2MUX=-4n" : "ADDR2MUX=+4n", "GateADDR",
+                             std::string("SR1=") + REGN[rn], std::string("DR=") + REGN[rn],
                              rn == 13 ? "LD.SP" : "LD.REG"};
                 c.has_bus = true; c.bus = v;
                 c.desc = std::string(REGN[rn]) + " <- " + REGN[rn] + (down ? " - " : " + ") +

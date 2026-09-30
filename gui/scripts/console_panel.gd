@@ -13,6 +13,7 @@ var status: Label
 var out: RichTextLabel
 var line_edit: LineEdit
 var _last_cr := false
+var _segs: Array = []   # [color, text] runs of everything shown, for rubout
 var font: Font
 
 
@@ -46,7 +47,7 @@ func _ready() -> void:
 	var clear := Button.new()
 	clear.text = "Clear"
 	clear.focus_mode = Control.FOCUS_NONE
-	clear.pressed.connect(func(): out.clear())
+	clear.pressed.connect(func(): out.clear(); _segs.clear())
 	head.add_child(clear)
 
 	out = RichTextLabel.new()
@@ -102,8 +103,18 @@ func _on_output(text: String, source: String) -> void:
 
 func _append(text: String, col: Color) -> void:
 	# Normalise line endings: \r\n and lone \r both become a newline.
+	# Backspace / DEL erase the previous character on the current line, as a
+	# terminal does (so an echoed "\b" or "\b \b" deletes what was typed).
 	var clean := ""
+	var rubbed := false
 	for ch in text:
+		if ch == "\b" or ch == "\u007f":
+			_last_cr = false
+			if clean != "" and not clean.ends_with("\n"):
+				clean = clean.left(-1)
+			elif clean == "" and _rubout():
+				rubbed = true
+			continue
 		if ch == "\r":
 			clean += "\n"
 			_last_cr = true
@@ -113,9 +124,35 @@ func _append(text: String, col: Color) -> void:
 			continue
 		_last_cr = false
 		clean += ch
-	out.push_color(col)
-	out.add_text(clean)
-	out.pop()
+	if clean != "":
+		if not _segs.is_empty() and _segs[-1][0] == col:
+			_segs[-1][1] += clean
+		else:
+			_segs.append([col, clean])
+	if rubbed:
+		_redraw()
+	elif clean != "":
+		out.push_color(col)
+		out.add_text(clean)
+		out.pop()
+
+
+## Removes the last character already shown, unless it ends a line.
+func _rubout() -> bool:
+	while not _segs.is_empty() and _segs[-1][1] == "":
+		_segs.pop_back()
+	if _segs.is_empty() or _segs[-1][1].ends_with("\n"):
+		return false
+	_segs[-1][1] = _segs[-1][1].left(-1)
+	return true
+
+
+func _redraw() -> void:
+	out.clear()
+	for seg in _segs:
+		out.push_color(seg[0])
+		out.add_text(seg[1])
+		out.pop()
 
 
 func _send(text: String) -> void:
