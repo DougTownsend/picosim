@@ -112,10 +112,12 @@ public:
     uint32_t get_lr() const { return regs[14]; }
     void     set_lr(uint32_t v) { regs[14] = v; }
 
-    // ARM pipeline-visible PC for the currently-executing instruction.
-    // After fetch the PC has advanced by 2 or 4; _insn_addr holds the pre-fetch address.
+    // Reading R15 as an operand gives the instruction's address + 4 (ARMv6-M
+    // PC read value).  After fetch the PC register has advanced by 2 or 4;
+    // _insn_addr holds the instruction's own address.  LDR (literal), ADR and
+    // ADD Rd, PC, #imm round this down to a word boundary themselves (Align).
     uint32_t reg_read(int n) const {
-        if (n == 15) return (_insn_addr + 4) & ~3u;
+        if (n == 15) return _insn_addr + 4;
         return regs[n];
     }
 
@@ -201,22 +203,22 @@ public:
         Z = (r == 0) ? 1 : 0;
     }
 
-    void update_nzcv_add(uint32_t a, uint32_t b, uint64_t result) {
-        uint32_t r32 = (uint32_t)(result & 0xFFFFFFFF);
-        N = (r32 >> 31) & 1;
-        Z = (r32 == 0) ? 1 : 0;
-        C = (result > 0xFFFFFFFFull) ? 1 : 0;
-        int32_t sa = s32(a), sb = s32(b), sr = s32(r32);
-        V = ((sa > 0 && sb > 0 && sr < 0) || (sa < 0 && sb < 0 && sr > 0)) ? 1 : 0;
-    }
-
-    void update_nzcv_sub(uint32_t a, uint32_t b, uint32_t r) {
+    // ARM AddWithCarry(): every add, subtract and compare sets its flags from
+    // this.  Subtraction is a + ~b + 1 (SUB, CMP) or a + ~b + C (SBC), so C is
+    // the carry out of that sum ("no borrow").  V is set when both operands
+    // have the same sign and the result's sign differs.
+    uint32_t add_with_carry(uint32_t a, uint32_t b, int carry_in) {
+        uint64_t sum = (uint64_t)a + b + (uint32_t)carry_in;
+        uint32_t r = (uint32_t)sum;
         N = (r >> 31) & 1;
         Z = (r == 0) ? 1 : 0;
-        C = (a >= b) ? 1 : 0;
-        int32_t sa = s32(a), sb = s32(b), sr = s32(r);
-        V = ((sa > 0 && sb < 0 && sr < 0) || (sa < 0 && sb > 0 && sr > 0)) ? 1 : 0;
+        C = (sum >> 32) & 1;
+        V = (((a ^ r) & (b ^ r)) >> 31) & 1;
+        return r;
     }
+
+    void update_nzcv_add(uint32_t a, uint32_t b, uint64_t) { add_with_carry(a, b, 0); }
+    void update_nzcv_sub(uint32_t a, uint32_t b, uint32_t)  { add_with_carry(a, ~b, 1); }
 
     // ── condition codes ──────────────────────────────────────────────────────
 
@@ -442,22 +444,21 @@ public:
             }
             case 0x3: {  // LSR reg
                 int n = b & 0xFF;
-                auto [r, c] = lsr(a, n ? n : 32);
+                auto [r, c] = lsr(a, n);
                 if (n) C = c;
                 update_nz(r); reg_write(rdn, r); break;
             }
             case 0x4: {  // ASR reg
                 int n = b & 0xFF;
-                auto [r, c] = asr(a, n ? n : 32);
+                auto [r, c] = asr(a, n);
                 if (n) C = c;
                 update_nz(r); reg_write(rdn, r); break;
             }
             case 0x5: {  // ADC
-                uint64_t r = (uint64_t)a + b + C;
-                update_nzcv_add(a, b, r); reg_write(rdn, (uint32_t)r); break;
+                uint32_t r = add_with_carry(a, b, C); reg_write(rdn, r); break;
             }
             case 0x6: {  // SBC
-                uint32_t r = a - b - (1 - C); update_nzcv_sub(a, b, r); reg_write(rdn, r); break;
+                uint32_t r = add_with_carry(a, ~b, C); reg_write(rdn, r); break;
             }
             case 0x7: {  // ROR
                 int n = b & 0xFF;
@@ -814,13 +815,15 @@ public:
                 break;
             }
             case 0xA: {  // ADC
-                uint64_t r = (uint64_t)rn_val + imm + C;
-                if (S) update_nzcv_add(rn_val, imm, r);
-                reg_write(rd, (uint32_t)r); break;
+                int cin = C;
+                uint32_t r = (uint32_t)((uint64_t)rn_val + imm + cin);
+                if (S) add_with_carry(rn_val, imm, cin);
+                reg_write(rd, r); break;
             }
             case 0xB: {  // SBC
-                uint32_t r = rn_val - imm - (1 - C);
-                if (S) update_nzcv_sub(rn_val, imm, r);
+                int cin = C;
+                uint32_t r = (uint32_t)((uint64_t)rn_val + ~imm + cin);
+                if (S) add_with_carry(rn_val, ~imm, cin);
                 reg_write(rd, r); break;
             }
             case 0xD: {  // SUB / CMP
@@ -847,7 +850,7 @@ public:
             uint32_t imm3 = (hw2 >> 12) & 7;
             uint32_t imm8 = hw2 & 0xFF;
             uint32_t imm  = (i << 11) | (imm3 << 8) | imm8;
-            uint32_t rn_val = reg_read(rn);
+            uint32_t rn_val = rn == 15 ? (reg_read(15) & ~3u) : reg_read(rn);
             switch (op4) {
             case 0x0:  // ADD #imm12 / ADR
                 reg_write(rd, rn_val + imm); break;
@@ -1227,7 +1230,9 @@ public:
             ci.desc = "Decode: SVC #" + std::to_string(num) + " -> exception entry";
             add("SVC_CALL", "EXECUTE", [this, num](CycleInfo& c) {
                 c.signals = {"GateVEC", "EXCEPTION"};
-                c.desc = "Exception entry (simplified): run supervisor call #" + std::to_string(num);
+                c.has_bus = true; c.bus = 0x2C;   // SVCall is exception 11: vector at 11 x 4
+                c.desc = "Exception entry (simplified): GateVEC drives the SVCall vector address 0x0000002C; "
+                         "picosim then performs supervisor call #" + std::to_string(num) + " directly";
                 exec_svc(num);
             });
             break;
@@ -1268,11 +1273,15 @@ public:
         ci.signals = sel;
         ci.desc = "Decode: operate " + a.op + (a.flags ? "S" : "") + "; select operands and ALU function";
         add("FETCH_OPERANDS", "FETCH OPERANDS", [this, a](CycleInfo& c) {
-            ALU_A = a.ra >= 0 ? reg_read(a.ra) : 0;
+            // ALU A is only loaded when the operation has a first operand
+            // (MOV, MVN, NEG, SXTB… use B alone).
+            if (a.ra >= 0) ALU_A = reg_read(a.ra);
             ALU_B = a.rb >= 0 ? reg_read(a.rb) : a.imm;
             if (a.ra >= 0) c.signals.push_back(std::string("SR1=") + REGN[a.ra]);
             if (a.rb >= 0) c.signals.push_back(std::string("SR2=") + REGN[a.rb]);
             if (a.has_imm) c.signals.push_back("SR2MUX=IMM");
+            if (a.ra >= 0) c.signals.push_back("LD.ALUA");
+            c.signals.push_back("LD.ALUB");
             std::string d = "ALU inputs: ";
             if (a.ra >= 0) d += "A <- " + src_desc(a.ra);
             else d += "A unused";
@@ -1358,8 +1367,13 @@ public:
                 uint32_t v = MDR;
                 if (m.sign) v = m.width == 1 ? u32((int32_t)(int8_t)v) : u32((int32_t)(int16_t)v);
                 reg_write(m.rt, v);
-                c.signals = {std::string("LOAD EXT=") + (m.sign ? "S" : "Z") + sz, "GateMDR",
-                             std::string("DR=") + REGN[m.rt], m.rt == 15 ? "LD.PC" : "LD.REG"};
+                c.signals = {std::string("LOAD EXT=") + (m.sign ? "S" : "Z") + sz, "GateMDR"};
+                if (m.rt == 15) {
+                    c.signals.insert(c.signals.end(), {"CLR THUMB BIT", "PCMUX=BUS", "LD.PC"});
+                    c.branch = 1;
+                } else {
+                    c.signals.insert(c.signals.end(), {std::string("DR=") + REGN[m.rt], "LD.REG"});
+                }
                 c.has_bus = true; c.bus = v;
                 c.desc = std::string(REGN[m.rt]) + " <- " + (m.sign ? "sign" : "zero") +
                          "-extend(MDR) = " + hex32(regs[m.rt]);
@@ -1418,15 +1432,15 @@ public:
         add("FETCH_OPERANDS", "FETCH OPERANDS", [this, rm](CycleInfo& c) {
             TMP = reg_read(rm);
             ALU_A = TMP;
-            c.signals = {std::string("SR1=") + REGN[rm]};
+            c.signals = {std::string("SR1=") + REGN[rm], "LD.ALUA"};
             c.desc = "ALU A <- target " + src_desc(rm);
         });
         if (link) {
             add("LINK", "STORE RESULT", [this](CycleInfo& c) {
                 set_lr(regs[15] | 1);
                 c.signals = {"GatePC", "SET THUMB BIT", "LD.LR"};
-                c.has_bus = true; c.bus = regs[14];
-                c.desc = "LR <- return address | 1 = " + hex32(regs[14]);
+                c.has_bus = true; c.bus = regs[15];
+                c.desc = "LR <- return address " + hex32(regs[15]) + " | 1 = " + hex32(regs[14]);
             });
         }
         add("EXECUTE_PC", "EXECUTE", [this](CycleInfo& c) {
@@ -1451,7 +1465,7 @@ public:
         add("LINK", "STORE RESULT", [this](CycleInfo& c) {
             set_lr(regs[15] | 1);
             c.signals = {"GatePC", "SET THUMB BIT", "LD.LR"};
-            c.has_bus = true; c.bus = regs[14];
+            c.has_bus = true; c.bus = regs[15];
             c.desc = "LR <- return address " + hex32(regs[15]) + " | 1 = " + hex32(regs[14]);
         });
         add("EXECUTE_PC", "EXECUTE", [this, off, blx](CycleInfo& c) {

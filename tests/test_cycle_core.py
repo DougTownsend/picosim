@@ -134,5 +134,113 @@ class CycleCountTest(unittest.TestCase):
         self.assertIn('LD.REG', info['signals'])
 
 
+def _run(hw, regs=None, carry=0, addr=0x100):
+    """Clock one 16-bit instruction at `addr` on a scratch core."""
+    c = CPUCore()
+    c.write16(addr, hw)
+    c.pc = addr
+    for r, v in (regs or {}).items():
+        c.set_reg(r, v)
+    c.C = carry
+    while not c.step_cycle()['last']:
+        pass
+    return c
+
+
+class ArchitectureTest(unittest.TestCase):
+    """Edge cases checked against the ARMv6-M pseudocode (AddWithCarry, Shift_C)."""
+
+    def flags(self, c):
+        return (c.N, c.Z, c.C, c.V)
+
+    def test_add_overflow_to_zero(self):
+        c = _run(0x1842, {0: 0x80000000, 1: 0x80000000})       # ADDS R2, R0, R1
+        self.assertEqual((c.get_reg(2),) + self.flags(c), (0, 0, 1, 1, 1))
+
+    def test_sub_overflow_from_zero(self):
+        c = _run(0x1A42, {0: 0, 1: 0x80000000})                 # SUBS R2, R0, R1
+        self.assertEqual((c.get_reg(2),) + self.flags(c), (0x80000000, 1, 0, 0, 1))
+
+    def test_sbc_borrow(self):
+        c = _run(0x4188, {0: 5, 1: 5}, carry=0)                 # SBCS R0, R1
+        self.assertEqual((c.get_reg(0),) + self.flags(c), (0xFFFFFFFF, 1, 0, 0, 0))
+
+    def test_adc_carry_in(self):
+        c = _run(0x4148, {0: 0xFFFFFFFF, 1: 0}, carry=1)        # ADCS R0, R1
+        self.assertEqual((c.get_reg(0),) + self.flags(c), (0, 0, 1, 1, 0))
+
+    def test_shift_by_zero_register(self):
+        c = _run(0x40C8, {0: 0x1234, 1: 0}, carry=1)            # LSRS R0, R1
+        self.assertEqual((c.get_reg(0), c.C), (0x1234, 1))
+        c = _run(0x4108, {0: 0x80000000, 1: 0}, carry=0)        # ASRS R0, R1
+        self.assertEqual((c.get_reg(0), c.C), (0x80000000, 0))
+
+    def test_pc_read_is_address_plus_4(self):
+        c = _run(0x4678, addr=0x102)                            # MOV R0, PC
+        self.assertEqual(c.get_reg(0), 0x106)
+        c = _run(0xA000, addr=0x102)                            # ADR R0, here (aligned)
+        self.assertEqual(c.get_reg(0), 0x104)
+
+    def test_link_bus_carries_pc(self):
+        c = CPUCore()
+        c.write16(0x100, 0xF000)
+        c.write16(0x102, 0xF800)                                # BL .+4
+        c.pc = 0x100
+        while True:
+            info = c.step_cycle()
+            if info['state'] == 'LINK':
+                self.assertEqual(info['bus'], 0x104)           # SET THUMB BIT adds bit 0 after the bus
+                self.assertEqual(c.lr, 0x105)
+            if info['last']:
+                break
+
+
+# Which load-enable signal(s) allow each kind of stored value to change.
+LOADS = {'MAR': ('LD.MAR', 'MAR+4'), 'MDR': ('LD.MDR',), 'IR': ('LD.IR',), 'IR2': ('LD.IR2',),
+         'ALU_A': ('LD.ALUA',), 'ALU_B': ('LD.ALUB',), 'PC': ('LD.PC',),
+         'SP': ('LD.SP', 'LD.REG'), 'LR': ('LD.LR', 'LD.REG')}
+GATES = ('GatePC', 'GateADDR', 'GateALU', 'GateMDR', 'GateVEC')
+
+
+class FaithfulnessTest(unittest.TestCase):
+    """Chapter 7's rules, checked on every cycle of every test program:
+    one bus driver at a time, a bus value only when a gate drives it, and no
+    stored value changes without its load enable."""
+
+    def test_rules(self):
+        for path in PROGRAMS:
+            with self.subTest(program=os.path.basename(path)):
+                try:
+                    h = Harness(path)
+                except LoadError:
+                    continue
+                for _ in range(MAX_INSNS * 4):
+                    if h.core.halted:
+                        break
+                    info = h.core.step_cycle()
+                    sig = info['signals']
+                    where = f"{info['state']} at 0x{info['insn_addr']:04X} {h.prog.asm_map.get(info['insn_addr'])}"
+                    gates = [g for g in GATES if g in sig]
+                    self.assertLessEqual(len(gates), 1, where)
+                    self.assertEqual(info['bus'] is not None, bool(gates), where)
+                    # every load has a source
+                    for ld in ('LD.MAR', 'LD.IR', 'LD.IR2', 'LD.REG', 'LD.SP', 'LD.LR'):
+                        if ld in sig:
+                            self.assertTrue(gates, f"{ld} with nothing on the bus: {where}")
+                    if 'LD.PC' in sig:
+                        self.assertTrue(any(x.startswith('PCMUX=') for x in sig), where)
+                    if 'LD.MDR' in sig:
+                        self.assertTrue(gates or 'R/W=READ' in sig, where)
+                    for ch in info['changes']:
+                        if ch['kind'] == 'flag':
+                            self.assertIn('LD.CC', sig, where)
+                        elif ch['kind'] in ('mem', 'io'):
+                            self.assertIn('R/W=WRITE', sig, where)
+                        elif ch['name'] in LOADS:
+                            self.assertTrue(any(l in sig for l in LOADS[ch['name']]), f"{ch['name']}: {where}")
+                        elif info['state'] != 'SVC_CALL':   # the simplified SVC sets R0 directly
+                            self.assertIn('LD.REG', sig, f"{ch['name']}: {where}")
+
+
 if __name__ == '__main__':
     unittest.main()

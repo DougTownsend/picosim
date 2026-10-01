@@ -14,6 +14,7 @@ signal error_received(message: String)
 signal load_failed(path: String, message: String)
 signal serial_ports_listed(ports: Array)
 signal flash_finished(ok: bool)
+signal walkthrough_received(data: Dictionary)
 
 var tcp := StreamPeerTCP.new()
 var port := 0
@@ -109,6 +110,8 @@ func _handle(msg: Variant) -> void:
 			serial_ports_listed.emit(msg["ports"])
 		"flash_done":
 			flash_finished.emit(msg["ok"])
+		"walkthrough":
+			walkthrough_received.emit(msg)
 
 
 func send(cmd: String, args: Dictionary = {}) -> void:

@@ -7,6 +7,7 @@ The server answers with events, also one JSON object per line:
     {"type": "state", ...}         full machine state after every change
     {"type": "program", ...}       disassembly listing after a load
     {"type": "console", "text"}    program (or Pico) output
+    {"type": "walkthrough", ...}   the user guide's program walkthrough
     {"type": "error", "message"}
 
 All CPU access happens on the single server thread, so the GUI never races
@@ -482,6 +483,15 @@ class Server:
 
     def cmd_state(self, msg):
         self.send_state()
+
+    def cmd_walkthrough(self, msg):
+        """Explain the loaded program step by step for the user guide.  Runs
+        on a fresh copy, so the machine the GUI shows is not changed."""
+        if not self.path:
+            return self.send({'type': 'walkthrough', 'path': '', 'steps': [],
+                              'stopped': 'No program is loaded.', 'output': '', 'limit': 0})
+        from .walkthrough import build, DEFAULT_LIMIT
+        self.send(build(self.path, int(msg.get('limit', DEFAULT_LIMIT))))
 
     # ── real Pico over USB serial ────────────────────────────────────────────
 

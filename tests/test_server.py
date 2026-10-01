@@ -3,6 +3,7 @@
 import json
 import os
 import socket
+import tempfile
 import threading
 import time
 import unittest
@@ -96,9 +97,28 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(st['gpio'][3]['level'], 1)
         self.assertEqual(st['gpio_changed'], [3])
 
-    def test_load_error(self):
+    def test_walkthrough(self):
         c = start(os.path.join(ROOT, 'test_asm_files', 'gpio.s'))
-        m, _ = c.until(lambda m: m['type'] == 'load_error')
+        c.until(lambda m: m['type'] == 'state')
+        c.send(cmd='walkthrough')
+        m, _ = c.until(lambda m: m['type'] == 'walkthrough')
+        self.assertGreater(len(m['steps']), 10)
+        first = m['steps'][0]
+        self.assertTrue(first['summary'])
+        self.assertEqual(first['cycles'][0]['info']['state'], 'FETCH_ADDR')
+        self.assertIn('getchar', m['stopped'])
+        # the GUI's own machine was not advanced
+        c.send(cmd='state')
+        st, _ = c.until(lambda m: m['type'] == 'state')
+        self.assertEqual(st['cycles'], 0)
+
+    def test_load_error(self):
+        with tempfile.TemporaryDirectory() as d:
+            bad = os.path.join(d, 'bad.s')
+            with open(bad, 'w') as f:
+                f.write('.syntax unified\n.thumb\nmain:\n    frobnicate r0\n')
+            c = start(bad)
+            m, _ = c.until(lambda m: m['type'] == 'load_error')
         self.assertIn('Error', m['message'])
 
 

@@ -59,9 +59,11 @@ var file_dialog: FileDialog
 var error_dialog: AcceptDialog
 var _screenshot_path := ""
 var _screenshot_frames := 0
+var _screenshot_wait := 40       # frames to let the UI settle before --screenshot
 var _demo_cycles := 0
 var _demo_click_pin := 0
 var _demo_component := ""
+var _demo_click_gate := ""        # --demo-click-gate ID: click that buffer with a real mouse event
 var _text_panels: Array = []     # [{panel, fonts, growth, size, scale}] — see _setup_text_scaling
 var _drag_frame := -100          # process frame of the last splitter drag
 
@@ -95,6 +97,10 @@ func _ready() -> void:
 			_demo_cycles = int(args[i + 1])
 		if args[i] == "--demo-click-pin" and i + 1 < args.size():
 			_demo_click_pin = int(args[i + 1])
+		if args[i] == "--demo-click-gate" and i + 1 < args.size():
+			_demo_click_gate = args[i + 1]
+		if args[i] == "--shot-frames" and i + 1 < args.size():
+			_screenshot_wait = int(args[i + 1])
 
 
 func _process(_delta: float) -> void:
@@ -106,12 +112,23 @@ func _process(_delta: float) -> void:
 	if _demo_click_pin > 0 and Backend.state.get("loaded", false) and _screenshot_frames == 20:
 		pico_view.demo_click(_demo_click_pin)
 		_demo_click_pin = 0
+	if _demo_click_gate != "" and Backend.state.get("loaded", false) and _screenshot_frames == 12:
+		var c: Vector2 = diagram._gate_geom(_demo_click_gate)["c"]
+		var at: Vector2 = diagram.get_screen_transform() * diagram._p(c.x, c.y)
+		for pressed in [true, false]:
+			var ev := InputEventMouseButton.new()
+			ev.button_index = MOUSE_BUTTON_LEFT
+			ev.pressed = pressed
+			ev.position = at
+			ev.global_position = at
+			Input.parse_input_event(ev)
+		_demo_click_gate = ""
 	if _demo_component != "" and Backend.state.get("loaded", false) and _screenshot_frames == 10:
 		diagram.select_component(_demo_component)
 		_demo_component = ""
 	if _screenshot_path != "" and Backend.state.get("loaded", false):
 		_screenshot_frames += 1
-		if _screenshot_frames == 40:
+		if _screenshot_frames == _screenshot_wait:
 			get_viewport().get_texture().get_image().save_png(_screenshot_path)
 			get_tree().quit()
 

@@ -3,16 +3,22 @@ extends Control
 ##
 ## Everything is drawn in a fixed virtual canvas (W × H) and scaled to fit.
 ## Each wire lists the control signals that make it carry data; for the
-## selected cycle the active wires and boxes light up, live values are shown
-## inside the boxes, and every box the cycle changed gets an "old → new"
-## caption.  Hover a box to see what it does; click it for a detailed card
-## (what it does, how it works, what it connects to — from component_info.gd)
-## and its wires are highlighted.
+## selected cycle the active wires and boxes light up.  Storage elements
+## (PC, IR, MAR, MDR, registers, flags, memory) show the value they hold
+## *during* the cycle; a value they capture at the clock edge that ends the
+## cycle is shown as an "old → new" caption and only appears in the box when
+## the next cycle is shown.  Hover a box or tri-state buffer to see what it
+## does; click it for a detailed card (what it does, how it works, what it
+## connects to — from component_info.gd) and its wires are highlighted.
+##
+## Every mux, the ALU and the adders take data in on their long side and put
+## their result out of their short side; control selects (PCMUX, ALUK,
+## GatePC…) enter on a slanted side as short purple stubs.
 ##
 ## When a new cycle is shown, a glowing pulse travels along the active wires
 ## in the order data actually flows (source register → gate → bus → loads).
-## Boxes keep their old values until the pulse reaches them.  The pulse's
-## speed follows the clock-speed slider.
+## A box's pending "old → new" caption appears when the pulse reaches it.
+## The pulse's speed follows the clock-speed slider.
 
 const W := 1000.0
 const H := 640.0
@@ -58,7 +64,7 @@ const TAIL := 70.0           # glow tail length, virtual units
 ## id: [x, y, w, h, label, shape, tooltip]
 const BOXES := {
 	"align": [30, 30, 120, 32, "PC / Align(PC,4)", "box",
-		"Supplies the PC-relative base to the address adder: the PC read value (instruction address + 4), or that value rounded down to a word boundary for literal loads and ADR."],
+		"Supplies the PC-relative base to the address adder: the PC read value A + 4 (A = the instruction's address), or that value rounded down to a word boundary for literal loads and ADR."],
 	"addr1mux": [30, 110, 125, 30, "ADDR1MUX", "mux",
 		"Chooses the address adder's base: the PC-relative value, a register (SR1) or SP."],
 	"addr2mux": [175, 110, 125, 30, "ADDR2MUX", "mux",
@@ -69,8 +75,8 @@ const BOXES := {
 		"Chooses the next PC: PC + 2 (sequential), the address adder (branch target) or the bus through CLR THUMB BIT (BX, BLX, POP {PC}, MOV/ADD PC). The FSM picks the input and asserts LD.PC."],
 	"pc": [360, 100, 110, 40, "PC", "reg",
 		"Program Counter: address of the next halfword to fetch."],
-	"inc": [490, 100, 50, 40, "+2", "box",
-		"Incrementer: PC + 2, used during fetch to step to the next halfword."],
+	"inc": [490, 100, 50, 40, "+2", "incr",
+		"Incrementer: PC + 2, used during fetch to step to the next halfword. PCINC selects the increment."],
 	"clrt": [560, 170, 90, 30, "CLR THUMB", "box",
 		"Clears bit 0 of a value loaded into PC from the bus (BX, BLX, POP {PC}, MOV/ADD PC) to form the halfword-aligned fetch address."],
 	"ir": [665, 30, 130, 36, "IR", "reg",
@@ -78,27 +84,27 @@ const BOXES := {
 	"ir2": [815, 30, 130, 36, "IR2", "reg",
 		"Second instruction register: holds the second halfword of a 32-bit encoding such as BL."],
 	"fsm": [665, 100, 145, 72, "FSM", "fsm",
-		"Finite State Machine: the control unit. Each clock it moves to the next state and asserts that state's control signals (shown in the cycle panel)."],
+		"Finite State Machine: the control unit. It shows the state of this cycle; it asserts that state's control signals (listed in the cycle panel) and moves to the next state at the clock edge."],
 	"ext": [830, 100, 115, 34, "IMM / OFFSET", "box",
 		"Extracts immediates and offsets from IR/IR2 and zero- or sign-extends and scales them."],
 	"cond": [830, 170, 115, 34, "COND EVAL", "box",
 		"Evaluates a branch condition (IR[11:8]) against the NZCV flags and sends BranchTaken to the FSM. If it is 1 the FSM selects PCMUX=ADDER and asserts LD.PC; if 0 the PC keeps its sequential value."],
 	"vec": [665, 205, 110, 30, "VECTOR ADDR", "box",
-		"Gates the exception vector onto the bus on SVC entry. picosim then runs the supervisor call directly (simplified exception model)."],
+		"Supplies the SVCall exception-vector address (0x0000002C) to the bus through gateVector on SVC entry. picosim then runs the supervisor call directly (simplified exception model)."],
 	"mar": [30, 340, 115, 40, "MAR", "reg",
 		"Memory Address Register: the address for the next memory or I/O access."],
-	"marinc": [170, 344, 44, 32, "+4", "box",
+	"marinc": [170, 344, 44, 32, "+4", "incr",
 		"MAR incrementer: steps MAR to the next word between the transfers of PUSH, POP, LDM and STM (MAR+4)."],
 	"mem": [30, 430, 230, 150, "MEMORY / I-O", "mem",
 		"64 KB RAM at 0x0000–0xFFFF; addresses from 0x10000 up are memory-mapped I/O (GPIO: SIO at 0xD0000000, IO_BANK0, PADS_BANK0). Reads fill MDR; writes take their data from MDR."],
 	"mdr": [290, 430, 115, 40, "MDR", "reg",
 		"Memory Data Register: data just read from memory, or data about to be written."],
 	"loadext": [290, 340, 115, 32, "LOAD EXT", "box",
-		"Selects the byte/halfword lanes of a loaded value and zero- or sign-extends it to 32 bits."],
+		"Selects the byte/halfword lanes of a loaded value and zero- or sign-extends it to 32 bits. Its output reaches the bus through the gateMDR tri-state buffer."],
 	"storealign": [425, 340, 115, 32, "STORE ALIGN", "box",
 		"Places store data in the correct byte lanes and sets the byte enables for STRB/STRH."],
 	"regfile": [560, 325, 230, 165, "REGISTER FILE", "regfile",
-		"R0–R12, SP and LR. Two read ports (SR1, SR2) feed the ALU; the write port (DR) is loaded from the bus when LD.REG is asserted."],
+		"R0–R12, SP and LR. Two read ports (SR1, SR2) feed the ALU and the address muxes; the write port (DR) is loaded from the bus at the clock edge when LD.REG (or LD.SP / LD.LR) is asserted."],
 	"sett": [825, 325, 115, 30, "SET THUMB", "box",
 		"Sets bit 0 of a return address before it is written to LR (BL, BLX)."],
 	"flags": [825, 420, 115, 40, "N Z C V", "flags",
@@ -106,7 +112,7 @@ const BOXES := {
 	"sr2mux": [650, 505, 95, 26, "SR2MUX", "mux",
 		"Chooses the ALU's B input: the second register read port (SR2) or an immediate from IR."],
 	"alu": [560, 548, 185, 52, "ALU", "alu",
-		"Arithmetic Logic Unit: ADD, SUB, AND, ORR, EOR, shifts, MUL… or PASS (forwards a register, e.g. store data or a BX target). Operands are latched in ALU A / ALU B during FETCH_OPERANDS."],
+		"Arithmetic Logic Unit: ADD, SUB, AND, ORR, EOR, shifts, MUL… or PASS (forwards a register, e.g. store data or a BX target). Its operands are loaded into the ALU A / ALU B input latches (LD.ALUA, LD.ALUB) at the end of FETCH_OPERANDS; ALUK selects the operation."],
 }
 
 ## [id, points, activating signals, tag]
@@ -128,9 +134,9 @@ const WIRES := [
 	["ir_ext", [[785, 66], [785, 84], [860, 84], [860, 100]], ["@DECODE", "SR2MUX=IMM", "ADDR2MUX=Z", "ADDR2MUX=S"], "decode"],
 	["ir2_ext", [[900, 66], [900, 100]], ["#WIDE&@DECODE", "#WIDE&ADDR2MUX=S"], "decode"],
 	["pc_inc", [[470, 120], [490, 120]], ["PCINC=+2"], ""],
-	["inc_pcmux", [[515, 100], [515, 18], [440, 18], [440, 30]], ["PCMUX=PC+2"], ""],
+	["inc_pcmux", [[540, 120], [552, 120], [552, 18], [440, 18], [440, 30]], ["PCMUX=PC+2"], ""],
 	["pcmux_pc", [[415, 60], [415, 100]], ["LD.PC"], ""],
-	["adder_pcmux", [[217, 198], [322, 198], [322, 12], [392, 12], [392, 30]], ["PCMUX=ADDER"], ""],
+	["adder_pcmux", [[200, 216], [200, 228], [330, 228], [330, 12], [392, 12], [392, 30]], ["PCMUX=ADDER"], ""],
 	["bus_clrt", [[605, BUS_Y], [605, 200]], ["PCMUX=BUS"], ""],
 	["clrt_pcmux", [[605, 170], [605, 6], [458, 6], [458, 30]], ["PCMUX=BUS"], ""],
 	["pc_align", [[360, 112], [345, 112], [345, 46], [150, 46]], ["ADDR1MUX=PC", "ADDR1MUX=Align"], ""],
@@ -140,22 +146,52 @@ const WIRES := [
 		"stub:IMM / SR2 / ±4n"],
 	["a1_adder", [[92, 140], [130, 180]], ["ADDR1MUX="], ""],
 	["a2_adder", [[238, 140], [190, 180]], ["ADDR2MUX="], ""],
-	["adder_bus", [[160, 216], [160, BUS_Y]], ["GateADDR"], "gate"],
+	["adder_bus", [[150, 216], [150, BUS_Y]], ["GateADDR"], "gate"],
 	["bus_reg", [[610, BUS_Y], [610, 325]], ["LD.REG", "LD.SP"], ""],
 	["bus_sett", [[882, BUS_Y], [882, 325]], ["SET THUMB BIT"], ""],
 	["sett_reg", [[825, 340], [790, 340]], ["SET THUMB BIT"], ""],
 	["reg_alua", [[600, 490], [600, 548]], ["SR1=&@FETCH_OPERANDS"], ""],
 	["reg_sr2", [[685, 490], [685, 505]], ["SR2=&@FETCH_OPERANDS"], ""],
-	["ext_sr2", [[945, 117], [978, 117], [978, 518], [739, 518]], ["SR2MUX=IMM&@FETCH_OPERANDS"], ""],
+	["ext_sr2", [[945, 117], [978, 117], [978, 497], [725, 497], [725, 505]], ["SR2MUX=IMM&@FETCH_OPERANDS"], ""],
 	["sr2_alub", [[698, 531], [698, 548]], ["SR2=&@FETCH_OPERANDS", "SR2MUX=IMM&@FETCH_OPERANDS"], ""],
-	["alu_bus", [[736, 568], [805, 568], [805, BUS_Y]], ["GateALU"], "gate"],
-	["alu_flags", [[728, 588], [882, 588], [882, 460]], ["LD.CC"], ""],
+	["alu_bus", [[700, 600], [700, 608], [805, 608], [805, BUS_Y]], ["GateALU"], "gate"],
+	["alu_flags", [[640, 600], [640, 616], [925, 616], [925, 460]], ["LD.CC"], ""],
 	["flags_cond", [[940, 440], [968, 440], [968, 187], [945, 187]], ["BranchTaken="], "ctrl"],
 	["cond_fsm", [[830, 187], [819, 187], [819, 150], [810, 150]], ["BranchTaken="], "ctrl"],
-	["mar_inc", [[145, 352], [170, 352]], ["MAR+4"], ""],
-	["inc_mar", [[170, 368], [145, 368]], ["MAR+4"], ""],
+	["mar_inc", [[135, 340], [135, 330], [228, 330], [228, 360], [214, 360]], ["MAR+4"], ""],
+	["inc_mar", [[170, 360], [145, 360]], ["MAR+4"], ""],
 	["vec_bus", [[720, 235], [720, BUS_Y]], ["GateVEC"], "gate"],
 ]
+
+## Incrementers drawn as sideways adders: "right" = long (input) side on the
+## left, short (output) side on the right.
+const ORIENT := {"inc": "right", "marinc": "left"}
+
+## Tri-state buffers onto the bus: id → [wire it sits on, control signal,
+## component that feeds it, side its control input enters (-1 left, +1 right)].
+## Each is named "gate" + the component that drives it.
+const GATES := {
+	"gatePC": ["pc_bus", "GatePC", "pc", -1],
+	"gateAdder": ["adder_bus", "GateADDR", "adder", 1],
+	"gateMDR": ["loadext_bus", "GateMDR", "loadext", 1],
+	"gateALU": ["alu_bus", "GateALU", "alu", -1],
+	"gateVector": ["vec_bus", "GateVEC", "vec", 1],
+}
+const GATE_SIZE := 8.0     # half the triangle's length, virtual units
+const GATE_BACK := 26.0    # distance from the bus to the triangle's centre
+const GATE_STUB := 16.0    # length of a buffer's control input
+
+## Control inputs of the muxes, the +2 incrementer and the ALU: a short
+## dashed stub into a slanted side.  id → [stub points (outside → side),
+## signal prefix, label position, idle label].
+const CTRLS := {
+	"pcmux": [[[490, 45], [464, 45]], "PCMUX=", [478, 57], "select"],
+	"addr1mux": [[[170, 125], [148, 125]], "ADDR1MUX=", [151, 137], "select"],
+	"addr2mux": [[[316, 125], [293, 125]], "ADDR2MUX=", [296, 137], "select"],
+	"sr2mux": [[[762, 518], [740, 518]], "SR2MUX", [747, 532], "select"],
+	"alu": [[[772, 574], [734, 574]], "ALUK=", [749, 568], "ALUK"],
+	"inc": [[[515, 158], [515, 138]], "PCINC=", [520, 160], "PCINC"],
+}
 
 var cycle: Dictionary = {}
 var st: Dictionary = {}
@@ -165,8 +201,8 @@ var mono: Font
 var _scale := 1.0
 var _origin := Vector2.ZERO
 var cps := 4                     # clock-speed slider value (0 = max)
-var pre_values: Dictionary = {}  # values shown before the pulse arrives
-var before: Dictionary = {}      # values at the start of the shown cycle
+var before: Dictionary = {}      # values held during the shown cycle (before its edge)
+var after: Dictionary = {}       # values after the shown cycle's clock edge
 var _key := 0                    # identifies the cycle being animated
 var _paths: Array = []           # [{wire, pts (virtual), start, len}] for active wires
 var _arrive: Dictionary = {}     # node id → distance at which the pulse reaches it
@@ -180,6 +216,7 @@ var card_hint: Label
 var text_scale := 1.0            # set by main when the diagram is dragged bigger
 var _card_pos = null             # Vector2 once the user has dragged the card
 var _card_grab = null            # mouse offset into the card while dragging
+var still := false               # snapshot mode (user-guide pictures): no animation
 
 
 func _ready() -> void:
@@ -261,7 +298,8 @@ func _build_card() -> void:
 	v.add_child(card_text)
 
 
-## Open the info card for a component id (a BOXES key or "bus"); "" closes it.
+## Open the info card for a component id (a BOXES or GATES key, or "bus");
+## "" closes it.
 func select_component(id: String) -> void:
 	if id != "" and not ComponentInfo.INFO.has(id):
 		id = ""
@@ -269,18 +307,42 @@ func select_component(id: String) -> void:
 	if id == "":
 		_card_pos = null  # the next card opens in its default spot again
 		_card_grab = null
-	card.visible = id != ""
+	card.visible = id != "" and not still
 	if card.visible:
 		var names := {"bus": "BUS"}
 		for k in BOXES:
 			names[k] = BOXES[k][4]
-		card_text.text = ComponentInfo.bbcode(id, names, roundi(17 * text_scale))
+		for k in GATES:
+			names[k] = k
+		card_text.text = ComponentInfo.bbcode(id, names, roundi(17 * text_scale)) + _live_status(id)
 		card_text.scroll_to_line(0)
 		_layout_card()
 		# the text's height is known once it has been laid out at the card's width
 		await get_tree().process_frame
 		_layout_card()
 	queue_redraw()
+
+
+## "This cycle" section of a tri-state buffer's card: is its control signal
+## asserted, and what is it driving onto the bus?
+func _live_status(id: String) -> String:
+	if not GATES.has(id):
+		return ""
+	var sig: String = GATES[id][1]
+	var head := Palette.hex("accent")
+	var t := "\n\n[color=%s][b]This cycle[/b][/color]\n" % head
+	if cycle.is_empty():
+		return t + "No cycle has run yet. Press Step Cycle (F11)."
+	var src: String = BOXES[GATES[id][2]][4]
+	if _has(sig):
+		var v = cycle.get("bus")
+		t += "[color=%s][code]%s = 1[/code][/color] in %s: the buffer is enabled and drives the output of %s%s onto the bus." % [
+			Palette.hex("purple"), sig, str(cycle.get("state", "")), src,
+			(" (" + Backend.hex32(v) + ")") if v != null else ""]
+	else:
+		t += "[color=%s][code]%s = 0[/code][/color] in %s: the buffer is off (high impedance, Z), so the output of %s is disconnected from the bus." % [
+			Palette.hex("muted"), sig, str(cycle.get("state", "")), src]
+	return t
 
 
 ## The info card's text grows with the diagram (see main.gd's text scaling).
@@ -303,6 +365,8 @@ func _layout_card() -> void:
 		cx = size.x
 	elif BOXES.has(selected_id):
 		cx = _rect(selected_id).get_center().x
+	elif GATES.has(selected_id):
+		cx = _p(_gate_geom(selected_id)["c"].x, 0).x
 	var x := 8.0 if cx > size.x / 2.0 else size.x - w - 8.0
 	card.size = Vector2(w, h)
 	card.position = Vector2(x, 8) if _card_pos == null else _clamp_card(_card_pos)
@@ -327,6 +391,9 @@ func _card_input(event: InputEvent) -> void:
 
 
 func _hit(at: Vector2) -> String:
+	for id in GATES:
+		if _gate_rect(id).has_point(at):
+			return id
 	for id in BOXES:
 		if _rect(id).has_point(at):
 			return id
@@ -353,10 +420,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-## Wires that start or end on the selected component.
+## Wires that start or end on the selected component (for a tri-state
+## buffer: the wire it sits on).
 func _selected_wire(w: Array) -> bool:
 	if selected_id == "":
 		return false
+	if GATES.has(selected_id):
+		return w[0] == GATES[selected_id][0]
 	var pts: Array = w[1]
 	var ends := [pts[0], pts[pts.size() - 1]]
 	if selected_id == "bus":
@@ -397,13 +467,15 @@ func show_cycle(info: Dictionary) -> void:
 		values = _snapshot()
 		_plan()
 		_start_anim()
+		if GATES.has(selected_id):
+			select_component(selected_id)   # refresh its "This cycle" section
 	queue_redraw()
 
 
 func _start_anim() -> void:
 	_dist = INF
 	set_process(false)
-	if cycle.is_empty() or _paths.is_empty() or not is_visible_in_tree():
+	if still or cycle.is_empty() or _paths.is_empty() or not is_visible_in_tree():
 		return
 	var running: bool = st.get("running", false)
 	var rate: int = int(st.get("cps", cps)) if running else cps
@@ -590,9 +662,17 @@ func _arrow(pts: PackedVector2Array, col: Color, width: float, dashed: bool) -> 
 		tip - dir * sz - n * sz * 0.55]), col)
 
 
-func _box_poly(r: Rect2, shape: String) -> PackedVector2Array:
+func _box_poly(r: Rect2, shape: String, orient := "") -> PackedVector2Array:
 	var inset := r.size.x * 0.12
 	match shape:
+		"incr":
+			# sideways adder: long input side, short output side
+			var d := r.size.y * 0.2
+			if orient == "left":
+				return PackedVector2Array([Vector2(r.end.x, r.position.y), r.end,
+					Vector2(r.position.x, r.end.y - d), r.position + Vector2(0, d)])
+			return PackedVector2Array([r.position, r.position + Vector2(r.size.x, d),
+				r.end - Vector2(0, d), Vector2(r.position.x, r.end.y)])
 		"mux":
 			return PackedVector2Array([r.position, r.position + Vector2(r.size.x, 0),
 				r.end - Vector2(inset, 0), Vector2(r.position.x + inset, r.end.y)])
@@ -614,10 +694,11 @@ func _draw() -> void:
 	if not st.get("loaded", false):
 		_text(_p(20, 40), "Load a program to see the datapath.", 18, C_DIM)
 		return
-	var post := _snapshot()
+	# Storage elements show what they hold during this cycle; what they load
+	# at the edge that ends it is the "old → new" caption (from `after`).
+	after = _snapshot()
 	before = _snapshot(1)
-	pre_values = before if _animating() else post
-	values = post
+	values = before
 
 	var active_boxes := {}
 	var changed_boxes := {}
@@ -644,8 +725,6 @@ func _draw() -> void:
 		var pts := _screen(w[1])
 		if not plan.has(w[0]):
 			_arrow(pts, C_WIRE, 1.5 * _scale, tag == "ctrl")
-		if tag == "gate":
-			_gate(pts, plan.has(w[0]) and _reached_wire(plan[w[0]], 0.0))
 		if tag.begins_with("stub:"):
 			var lbl := tag.substr(5)
 			var tw := font.get_string_size(lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(9)).x
@@ -664,6 +743,9 @@ func _draw() -> void:
 	for w in WIRES:
 		if _selected_wire(w):
 			_arrow(_screen(w[1]), C_SEL, 2.5 * _scale, w[3] == "ctrl")
+	for gid in GATES:
+		var gw: String = GATES[gid][0]
+		_draw_gate(gid, plan.has(gw) and _reached_wire(plan[gw], 0.0))
 	if selected_id == "bus":
 		draw_rect(bus_rect.grow(2 * _scale), C_SEL, false, 2.5 * _scale)
 
@@ -677,19 +759,18 @@ func _draw() -> void:
 	active_boxes["fsm"] = true
 
 	for id in BOXES:
-		var arrived := _reached(id)
-		values = post if arrived else pre_values
-		_draw_box(id, active_boxes.has(id), changed_boxes.get(id, []) if arrived else [])
-	values = post
+		_draw_box(id, active_boxes.has(id), changed_boxes.get(id, []) if _reached(id) else [])
+	for id in CTRLS:
+		_draw_ctrl(id)
 	if BOXES.has(selected_id):
 		var sr := _rect(selected_id)
-		var sp := _box_poly(sr, BOXES[selected_id][5])
+		var sp := _box_poly(sr, BOXES[selected_id][5], ORIENT.get(selected_id, ""))
 		if sp.is_empty():
 			draw_rect(sr.grow(3 * _scale), C_SEL, false, 2.5 * _scale)
 		else:
 			draw_polyline(sp + PackedVector2Array([sp[0]]), C_SEL, 3.0 * _scale, true)
 
-	_text(_p(20, H - 8), "Bright wires carry data this cycle · purple dashed = control · yellow = changed at this clock edge · hover a box for a summary, click it for details",
+	_text(_p(20, H - 8), "Boxes hold their values for the whole cycle · yellow old → new = loaded at the clock edge that ends it · bright = carries data · purple dashed = control · click any box or ▲ buffer",
 		11, C_DIM)
 
 
@@ -788,16 +869,92 @@ func _draw_pulse(a: Dictionary) -> void:
 	draw_circle(hp, 2.0 * _scale, C_GLOW_HEAD)
 
 
-func _gate(pts: PackedVector2Array, on: bool) -> void:
-	# Tri-state gate: a small triangle just above the bus.
-	var tip := pts[pts.size() - 1]
-	var dir := (tip - pts[pts.size() - 2]).normalized()
-	var c := tip - dir * 26.0 * _scale
+## Geometry of a tri-state buffer, in virtual units: the triangle sits on
+## its wire GATE_BACK before the bus, pointing the way data flows; its
+## control input comes in horizontally to the middle of one slanted side.
+func _gate_geom(gid: String) -> Dictionary:
+	var pts: Array = []
+	for w in WIRES:
+		if w[0] == GATES[gid][0]:
+			pts = w[1]
+	var tip := Vector2(pts[-1][0], pts[-1][1])
+	var dir := (tip - Vector2(pts[-2][0], pts[-2][1])).normalized()
+	var c := tip - dir * GATE_BACK
 	var n := Vector2(-dir.y, dir.x)
-	var s := 8.0 * _scale
+	var s := GATE_SIZE
+	var side := Vector2(GATES[gid][3], 0)
 	var tri := PackedVector2Array([c + dir * s, c - dir * s + n * s, c - dir * s - n * s])
+	var s0 := c + side * (s * 0.5 + GATE_STUB)
+	var s1 := c + side * (s * 0.5)
+	return {"c": c, "tri": tri, "stub": [s0, s1], "side": side.x}
+
+
+## Clickable area of a buffer: the triangle and its control label.
+func _gate_rect(gid: String) -> Rect2:
+	var g := _gate_geom(gid)
+	var c: Vector2 = g["c"]
+	var r := Rect2(_p(c.x - 11, c.y - 11), Vector2(22, 22) * _scale)
+	var lw := font.get_string_size(GATES[gid][1], HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(9)).x
+	var s0: Vector2 = g["stub"][0]
+	var lx := _p(s0.x, 0).x + (3 * _scale if g["side"] > 0 else -3 * _scale - lw)
+	return r.merge(Rect2(Vector2(lx, _p(0, c.y - 9).y), Vector2(lw, 14 * _scale)))
+
+
+func _draw_gate(gid: String, on: bool) -> void:
+	var g := _gate_geom(gid)
+	var tri := PackedVector2Array()
+	for q in g["tri"]:
+		tri.append(_p(q.x, q.y))
+	var ctrl_on := _has(GATES[gid][1])
 	draw_colored_polygon(tri, C_EDGE_ACTIVE if on else C_BOX)
 	draw_polyline(tri + PackedVector2Array([tri[0]]), C_EDGE_ACTIVE if on else C_EDGE, 1.0 * _scale)
+	var s0: Vector2 = g["stub"][0]
+	var s1: Vector2 = g["stub"][1]
+	_ctrl_stub(_p(s0.x, s0.y), _p(s1.x, s1.y), ctrl_on)
+	var lbl: String = GATES[gid][1]
+	var lw := font.get_string_size(lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(9)).x
+	var lp := _p(s0.x, s0.y + 3)
+	lp.x += 3 * _scale if g["side"] > 0 else -3 * _scale - lw
+	draw_string(font, lp, lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(9), C_CTRL if ctrl_on else C_DIM)
+	if selected_id == gid:
+		draw_polyline(tri + PackedVector2Array([tri[0]]), C_SEL, 2.5 * _scale, true)
+		_arrow(PackedVector2Array([_p(s0.x, s0.y), _p(s1.x, s1.y)]), C_SEL, 2.0 * _scale, true)
+
+
+## A control input: short dashed purple arrow, bright when asserted.
+func _ctrl_stub(a: Vector2, b: Vector2, on: bool) -> void:
+	var col := C_CTRL if on else C_CTRL.lerp(C_BG, 0.55)
+	_arrow(PackedVector2Array([a, b]), col, (2.2 if on else 1.2) * _scale, true)
+
+
+## The value a mux / ALU / incrementer control input carries this cycle
+## ("" when the FSM is not driving it).
+func _ctrl_value(id: String) -> String:
+	var pre: String = CTRLS[id][1]
+	var sigs: Array = cycle.get("signals", [])
+	if id == "sr2mux":
+		if _has("SR2MUX=IMM"):
+			return "IMM"
+		# SR2 feeds SR2MUX unless the address adder is using it ([Rn, Rm] addressing)
+		if not _has("ADDR2MUX=") and sigs.any(func(x): return str(x).begins_with("SR2=")):
+			return "REG"
+		return ""
+	for x in sigs:
+		var sx := str(x)
+		if sx.begins_with(pre):
+			var v := sx.substr(pre.length())
+			if id == "alu":
+				return "ALUK=" + v
+			return "Align" if v.begins_with("Align") else v.get_slice("(", 0)
+	return ""
+
+
+func _draw_ctrl(id: String) -> void:
+	var c: Array = CTRLS[id]
+	var v := _ctrl_value(id)
+	var on := v != ""
+	_ctrl_stub(_p(c[0][0][0], c[0][0][1]), _p(c[0][1][0], c[0][1][1]), on)
+	_text(_p(c[2][0], c[2][1]), v if on else c[3], 8.5, C_CTRL if on else C_DIM, mono if on else font)
 
 
 func _rect(id: String) -> Rect2:
@@ -828,7 +985,7 @@ func _draw_box(id: String, active: bool, changes: Array) -> void:
 	var fill := C_BOX_ACTIVE if active else C_BOX
 	var edge := C_CHANGED if not changes.is_empty() else (C_EDGE_ACTIVE if active else C_EDGE)
 	var ew := (2.5 if active or not changes.is_empty() else 1.0) * _scale
-	var poly := _box_poly(r, shape)
+	var poly := _box_poly(r, shape, ORIENT.get(id, ""))
 	if poly.is_empty():
 		draw_rect(r, fill)
 		draw_rect(r, edge, false, ew)
@@ -865,6 +1022,13 @@ func _draw_box(id: String, active: bool, changes: Array) -> void:
 				_text(r.position + Vector2(x, 33) * _scale, "%s%d" % [f, int(values.get(f, 0))], 13,
 					C_CHANGED if hot else C_TEXT, mono)
 				x += 27
+			if not changes.is_empty():
+				var o := ""
+				var nw := ""
+				for f in ["N", "Z", "C", "V"]:
+					o += str(int(before.get(f, 0)))
+					nw += str(int(after.get(f, 0)))
+				_text(Vector2(r.position.x, r.end.y + 13 * _scale), "NZCV %s → %s" % [o, nw], 9.5, C_CHANGED, mono)
 		"alu":
 			var op := ""
 			if str(cycle.get("state", "")) != "DECODE":
@@ -888,12 +1052,13 @@ func _draw_box(id: String, active: bool, changes: Array) -> void:
 			if _has("ALUK=PASS") and _has("GateALU") and cycle.get("bus") != null:
 				line = "out = " + Backend.hex32(cycle["bus"])
 			elif _has("@FETCH_OPERANDS") and not _has("GateALU"):
-				line = _operands(cycle.get("signals", []))
-			elif _has("@EXECUTE_COMMIT"):
+				# the input latches load these at the edge that ends this cycle
+				line = _operands(cycle.get("signals", []), after, " ← ")
+			elif _has("@EXECUTE_COMMIT") or (_has("@EXECUTE_PC") and _has("ALUK=")):
 				# operands were latched by this instruction's FETCH_OPERANDS cycle
 				for h in st.get("history", []):
 					if h["state"] == "FETCH_OPERANDS" and int(h["insn_addr"]) == int(cycle.get("insn_addr", -1)):
-						line = _operands(h["signals"])
+						line = _operands(h["signals"], values, "=")
 			if line != "":
 				_text(r.position + Vector2(0, 45) * _scale, line, 10, C_DIM, mono, bw)
 		"mem":
@@ -926,8 +1091,9 @@ func _draw_box(id: String, active: bool, changes: Array) -> void:
 		_text(Vector2(r.position.x, r.end.y + 13 * _scale), "%s → %s" % [o, n], 10, C_CHANGED, mono)
 
 
-## "A=… B=…" for the ALU inputs a FETCH_OPERANDS cycle with these signals loads.
-func _operands(sigs: Array) -> String:
+## "A=… B=…" for the ALU inputs a FETCH_OPERANDS cycle with these signals
+## loads, read from `vals` ("A ← …" while they are still being loaded).
+func _operands(sigs: Array, vals: Dictionary, op: String) -> String:
 	var a := false
 	var b := false
 	for sg in sigs:
@@ -936,9 +1102,9 @@ func _operands(sigs: Array) -> String:
 		b = b or ss.begins_with("SR2=") or ss == "SR2MUX=IMM"
 	var parts := []
 	if a:
-		parts.append("A=%08X" % int(values.get("ALU_A", 0)))
+		parts.append("A%s%08X" % [op, int(vals.get("ALU_A", 0))])
 	if b:
-		parts.append("B=%08X" % int(values.get("ALU_B", 0)))
+		parts.append("B%s%08X" % [op, int(vals.get("ALU_B", 0))])
 	return "  ".join(parts)
 
 
@@ -968,7 +1134,7 @@ func _draw_regfile(r: Rect2, changes: Array) -> void:
 		_text(r.position + Vector2(col_x, y) * _scale, "%-3s %08X" % [nm, int(values.get(nm, 0))], 10.5, colr, mono)
 	var y2 := 36.0 + 7 * 16.0 + 14
 	for c in changes.slice(0, 1):
-		_text(r.position + Vector2(118, y2) * _scale, "%s ← %s" % [c["name"], Backend.hex32(c["new"])], 10, C_CHANGED, mono)
+		_text(r.position + Vector2(118, y2) * _scale, "%s → %s" % [c["name"], Backend.hex32(c["new"])], 10, C_CHANGED, mono)
 
 
 func _hexw(v: int, w: int) -> String:
@@ -976,9 +1142,13 @@ func _hexw(v: int, w: int) -> String:
 
 
 func _get_tooltip(at_position: Vector2) -> String:
+	for id in GATES:
+		if _gate_rect(id).has_point(at_position):
+			return "%s — tri-state buffer\nConnects %s to the bus while %s = 1; otherwise it is off (Z).\n(click for details)" % [
+				id, BOXES[GATES[id][2]][4], GATES[id][1]]
 	for id in BOXES:
 		if _rect(id).has_point(at_position):
 			return "%s\n%s\n(click for details)" % [BOXES[id][4], BOXES[id][6]]
 	if abs(at_position.y - _p(0, BUS_Y).y) < 8 * _scale:
-		return "BUS\nThe single shared 32-bit bus. Exactly one tri-state gate (GatePC, GateADDR, GateALU, GateMDR, …) drives it in any cycle; any register whose LD signal is asserted captures it at the clock edge.\n(click for details)"
+		return "BUS\nThe single shared 32-bit bus. At most one tri-state buffer (gatePC, gateAdder, gateALU, gateMDR, gateVector) drives it in any cycle; any register whose LD signal is asserted captures it at the clock edge.\n(click for details)"
 	return ""

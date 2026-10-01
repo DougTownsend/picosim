@@ -112,7 +112,7 @@ func _ready() -> void:
 	desc = _rich(v2, 64)
 	_heading(v2, "Control signals asserted")
 	signals_text = _rich(v2, 48)
-	_heading(v2, "What changed at the clock edge")
+	_heading(v2, "What changes at the clock edge that ends this cycle")
 	changes_text = _rich(v2, 60)
 	changes_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
