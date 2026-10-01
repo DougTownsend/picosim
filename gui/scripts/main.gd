@@ -18,6 +18,11 @@ const SETTINGS := "user://settings.cfg"
 const SPEEDS := [1, 2, 4, 8, 16, 50, 200, 1000, 10000, 100000, 0]
 ## Optional user guide: if this file is deleted the Guide button just disappears.
 const GUIDE := "res://scripts/guide.gd"
+## Text in a panel grows when the user drags a splitter to enlarge it.
+const TEXT_SCALE_MAX := 3.0
+## Theme font-size items that set a control's text size.
+const FONT_ITEMS := ["font_size", "normal_font_size", "bold_font_size", "mono_font_size",
+	"italics_font_size", "bold_italics_font_size", "title_button_font_size"]
 
 var regs_panel
 var mem_panel
@@ -28,6 +33,7 @@ var pico_view
 var zoom := 1.0
 var zoom_label: Button
 var diagram_area: Control
+var layout_root: VBoxContainer
 var right_split: VSplitContainer
 var pico_overlay: Control
 var pico_home: Control
@@ -45,7 +51,10 @@ var btn_ports: Button
 var btn_connect: Button
 var btn_flash: Button
 var btn_diagram: Button
+var theme_select: OptionButton
 var status_label: Label
+var _status_bad := false
+var bg: ColorRect
 var file_dialog: FileDialog
 var error_dialog: AcceptDialog
 var _screenshot_path := ""
@@ -53,11 +62,14 @@ var _screenshot_frames := 0
 var _demo_cycles := 0
 var _demo_click_pin := 0
 var _demo_component := ""
+var _text_panels: Array = []     # [{panel, fonts, growth, size, scale}] — see _setup_text_scaling
+var _drag_frame := -100          # process frame of the last splitter drag
 
 
 func _ready() -> void:
 	_build_ui()
 	_init_zoom()
+	_setup_text_scaling()
 	Backend.state_changed.connect(_on_state)
 	Backend.program_loaded.connect(_on_program)
 	Backend.load_failed.connect(_on_load_failed)
@@ -67,6 +79,7 @@ func _ready() -> void:
 	Backend.connected.connect(func(): _set_status("Connected to simulator", false))
 	Backend.disconnected.connect(func(): _set_status("Simulator backend disconnected", true))
 	_set_status("Connecting to simulator…", false)
+	Palette.changed.connect(_on_palette)
 	_update_controls()
 	var args := OS.get_cmdline_user_args()
 	for i in args.size():
@@ -106,12 +119,13 @@ func _process(_delta: float) -> void:
 # ── layout ──────────────────────────────────────────────────────────────────
 
 func _build_ui() -> void:
-	var bg := ColorRect.new()
-	bg.color = Color("1b1e24")
+	bg = ColorRect.new()
+	bg.color = Palette.c("bg")
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
 
 	var root := VBoxContainer.new()
+	layout_root = root
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.offset_left = 6
 	root.offset_top = 6
@@ -257,16 +271,15 @@ func _build_toolbar() -> Control:
 	for b in [btn_ports, btn_connect, btn_flash]:
 		bar.add_child(b)
 
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	bar.add_child(spacer)
+	# the status label takes the toolbar's spare width and grows to fit its
+	# text (see _set_status), so large insn/cycle counts are never cut off
 	status_label = Label.new()
-	status_label.clip_text = true
+	status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	status_label.custom_minimum_size.x = 260
 	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	bar.add_child(status_label)
 	var zoom_out := _button("−", "Zoom out (Ctrl/Cmd −)", func(): _set_zoom(zoom - ZOOM_STEP))
-	zoom_label = _button("100%", "Reset zoom (Ctrl/Cmd 0)", func(): _set_zoom(_default_zoom()))
+	zoom_label = _button("100%", "Fit to window (Ctrl/Cmd 0)", func(): _set_zoom(_default_zoom()))
 	zoom_label.custom_minimum_size.x = 52
 	var zoom_in := _button("+", "Zoom in (Ctrl/Cmd +)", func(): _set_zoom(zoom + ZOOM_STEP))
 	for b in [zoom_out, zoom_label, zoom_in]:
@@ -278,6 +291,14 @@ func _build_toolbar() -> Control:
 	btn_diagram.tooltip_text = "Show the datapath and step through each cycle"
 	btn_diagram.toggled.connect(_on_diagram_toggled)
 	bar.add_child(btn_diagram)
+	theme_select = OptionButton.new()
+	for name in Palette.ORDER:
+		theme_select.add_item(Palette.TITLES[name])
+	theme_select.select(Palette.ORDER.find(Palette.preference))
+	theme_select.focus_mode = Control.FOCUS_NONE
+	theme_select.tooltip_text = "Colour scheme (System follows your OS light/dark setting)"
+	theme_select.item_selected.connect(func(i): Palette.set_scheme(Palette.ORDER[i]))
+	bar.add_child(theme_select)
 	if ResourceLoader.exists(GUIDE):
 		var guide: Node = load(GUIDE).new()
 		add_child(guide)
@@ -285,30 +306,87 @@ func _build_toolbar() -> Control:
 	return bar
 
 
-# ── zoom ────────────────────────────────────────────────────────────────────
-# The whole UI is scaled with the window's content scale factor.  On a
-# Retina/HiDPI screen Godot renders at physical resolution, so the default
-# zoom follows the screen's scale factor.  The chosen zoom is remembered.
+# ── text scaling ────────────────────────────────────────────────────────────
+# Dragging a splitter to make a panel bigger makes its text bigger with the
+# panel's linear size (the square root of its area, so doubling only the
+# height gives ~1.4× text and lines do not get cramped); dragging it smaller
+# shrinks it back, never below normal.
+# Only splitter drags count: resizing the window, zooming or toggling the
+# diagram leave text sizes alone.  A panel may cap its scale with
+# max_text_scale() and react to it in _on_text_scale(s).
 
-func _default_zoom() -> float:
-	return clampf(DisplayServer.screen_get_scale(get_window().current_screen) * 0.8, 1.0, ZOOM_MAX)
+func _setup_text_scaling() -> void:
+	for sp in find_children("*", "SplitContainer", true, false):
+		sp.dragged.connect(func(_offset): _drag_frame = Engine.get_process_frames())
+	for panel in [mem_panel, cycle_panel, console_panel, diagram]:
+		var fonts := []
+		for c in [panel] + panel.find_children("*", "Control", true, false):
+			for item in FONT_ITEMS:
+				if c.has_theme_font_size(item) or c.has_theme_font_size_override(item):
+					fonts.append([c, item, c.get_theme_font_size(item)])
+		var e := {"panel": panel, "fonts": fonts, "growth": 1.0, "size": panel.size, "scale": 1.0}
+		_text_panels.append(e)
+		panel.resized.connect(_on_text_panel_resized.bind(e))
+
+
+func _on_text_panel_resized(e: Dictionary) -> void:
+	var panel: Control = e["panel"]
+	var old: Vector2 = e["size"]
+	e["size"] = panel.size
+	var manual := Engine.get_process_frames() - _drag_frame <= 2
+	if manual and old.x > 0 and old.y > 0 and panel.size.x > 0 and panel.size.y > 0:
+		e["growth"] *= (panel.size.x / old.x) * (panel.size.y / old.y)
+	var s := clampf(sqrt(e["growth"]), 1.0, TEXT_SCALE_MAX)
+	if panel.has_method("max_text_scale"):
+		s = clampf(minf(s, panel.max_text_scale()), 1.0, TEXT_SCALE_MAX)
+	s = maxf(1.0, floorf(s / 0.05 + 0.001) * 0.05)   # whole 5% steps, never past the cap
+	if is_equal_approx(s, e["scale"]):
+		return
+	e["scale"] = s
+	for f in e["fonts"]:
+		f[0].add_theme_font_size_override(f[1], roundi(f[2] * s))
+	if panel.has_method("_on_text_scale"):
+		panel._on_text_scale(s)
+
+
+# ── zoom ────────────────────────────────────────────────────────────────────
+# The whole UI is scaled with the window's content scale factor.  Until the
+# user picks a zoom, it is the largest that fits the whole layout in the
+# window (so it follows the screen's resolution and Retina/HiDPI scaling).
+# A zoom the user picks is remembered; the zoom % button fits it again.
+
+## The largest zoom at which the whole layout fits a window of `win_size`.
+func _default_zoom(win_size := Vector2i.ZERO) -> float:
+	if win_size == Vector2i.ZERO:
+		win_size = get_window().size
+	# Measure with the Pico-mode toolbar controls shown too, so switching
+	# modes later does not overflow the toolbar.
+	var extra: Array = [port_select, btn_ports, btn_connect, btn_flash].filter(func(c): return not c.visible)
+	for c in extra:
+		c.visible = true
+	var need := layout_root.get_combined_minimum_size() + Vector2(12, 12)  # + root margins
+	for c in extra:
+		c.visible = false
+	var fit := minf(win_size.x / need.x, win_size.y / need.y) * 0.98
+	return clampf(floorf(fit / 0.05) * 0.05, ZOOM_MIN, ZOOM_MAX)
 
 
 func _init_zoom() -> void:
 	var cfg := ConfigFile.new()
-	var z := _default_zoom()
+	var saved = null
 	if cfg.load(SETTINGS) == OK:
-		z = float(cfg.get_value("ui", "zoom", z))
-	for arg in OS.get_cmdline_user_args():
-		if arg.begins_with("--zoom="):
-			z = float(arg.substr(7))
-	# Fill most of the screen on first launch so a larger zoom still fits.
+		saved = cfg.get_value("ui", "zoom", null)
+	# The window opens filling most of the screen (Godot does not remember
+	# window sizes between runs, so this happens on every launch).
 	var win := get_window()
 	var usable := DisplayServer.screen_get_usable_rect(win.current_screen)
 	var target := Vector2i(usable.size * 0.9)
-	if target.x > win.size.x:
-		win.size = target
-		win.position = usable.position + (usable.size - target) / 2
+	win.size = target
+	win.position = usable.position + (usable.size - target) / 2
+	var z: float = float(saved) if saved != null else _default_zoom(target)
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--zoom="):
+			z = float(arg.substr(7))
 	_set_zoom(z, false)
 
 
@@ -480,10 +558,20 @@ func _on_flash_done(ok: bool) -> void:
 		Backend.send("serial_list")
 
 
+func _on_palette() -> void:
+	bg.color = Palette.c("bg")
+	_set_status(status_label.text, _status_bad)
+
+
 func _set_status(text: String, bad: bool) -> void:
+	_status_bad = bad
 	status_label.text = text
 	status_label.tooltip_text = text
-	status_label.add_theme_color_override("font_color", Color("ff7b72") if bad else Color("9da5b4"))
+	var font := status_label.get_theme_font("font")
+	var fsize := status_label.get_theme_font_size("font_size")
+	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize).x
+	status_label.custom_minimum_size.x = maxf(260.0, ceilf(w) + 4.0)
+	status_label.add_theme_color_override("font_color", Palette.c("error") if bad else Palette.c("muted"))
 
 
 func _update_controls() -> void:

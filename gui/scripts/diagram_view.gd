@@ -18,21 +18,29 @@ const W := 1000.0
 const H := 640.0
 const BUS_Y := 290.0
 
-const C_BG := Color("15171c")
-const C_BOX := Color("262b34")
-const C_BOX_ACTIVE := Color("2d3a52")
-const C_EDGE := Color("444c59")
-const C_EDGE_ACTIVE := Color("61afef")
-const C_WIRE := Color("3a414d")
-const C_WIRE_ACTIVE := Color("61afef")
-const C_TEXT := Color("d7dae0")
-const C_DIM := Color("7f8794")
-const C_CHANGED := Color("f2cc60")
-const C_BUS := Color("4b5363")
-const C_CTRL := Color("c678dd")
-const C_GLOW := Color("bfe6ff")
-const C_GLOW_CTRL := Color("f0c8ff")
-const C_SEL := Color("ffb86c")
+## Drawing colours: each comes from this palette key (see _load_colors).
+const COLOR_KEYS := {
+	"C_BG": "surface", "C_BOX": "box", "C_BOX_ACTIVE": "box_active", "C_EDGE": "edge",
+	"C_EDGE_ACTIVE": "accent", "C_WIRE": "wire", "C_WIRE_ACTIVE": "accent", "C_TEXT": "text",
+	"C_DIM": "dim", "C_CHANGED": "changed", "C_BUS": "bus", "C_CTRL": "purple",
+	"C_GLOW": "glow", "C_GLOW_CTRL": "glow_ctrl", "C_GLOW_HEAD": "glow_head", "C_SEL": "sel",
+}
+var C_BG: Color
+var C_BOX: Color
+var C_BOX_ACTIVE: Color
+var C_EDGE: Color
+var C_EDGE_ACTIVE: Color
+var C_WIRE: Color
+var C_WIRE_ACTIVE: Color
+var C_TEXT: Color
+var C_DIM: Color
+var C_CHANGED: Color
+var C_BUS: Color
+var C_CTRL: Color
+var C_GLOW: Color
+var C_GLOW_CTRL: Color
+var C_GLOW_HEAD: Color
+var C_SEL: Color
 
 const ComponentInfo := preload("res://scripts/component_info.gd")
 
@@ -168,6 +176,10 @@ var _speed := 0.0                # virtual units per second
 var selected_id := ""            # component whose info card is open
 var card: PanelContainer
 var card_text: RichTextLabel
+var card_hint: Label
+var text_scale := 1.0            # set by main when the diagram is dragged bigger
+var _card_pos = null             # Vector2 once the user has dragged the card
+var _card_grab = null            # mouse offset into the card while dragging
 
 
 func _ready() -> void:
@@ -180,14 +192,15 @@ func _ready() -> void:
 	resized.connect(_layout_card)
 	set_process(false)
 	_build_card()
+	_load_colors()
+	Palette.changed.connect(_load_colors)
 
 
-# ── component info card ─────────────────────────────────────────────────────
-
-func _build_card() -> void:
-	card = PanelContainer.new()
+func _load_colors() -> void:
+	for k in COLOR_KEYS:
+		set(k, Palette.c(COLOR_KEYS[k]))
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color("1e2229")
+	sb.bg_color = Palette.c("card")
 	sb.border_color = C_SEL.darkened(0.3)
 	sb.set_border_width_all(1)
 	sb.set_corner_radius_all(6)
@@ -195,20 +208,37 @@ func _build_card() -> void:
 	sb.content_margin_right = 8
 	sb.content_margin_top = 8
 	sb.content_margin_bottom = 10
-	sb.shadow_color = Color(0, 0, 0, 0.5)
+	sb.shadow_color = Palette.c("shadow")
 	sb.shadow_size = 8
 	card.add_theme_stylebox_override("panel", sb)
+	card_hint.add_theme_color_override("font_color", C_DIM)
+	if selected_id != "":
+		select_component(selected_id)
+	queue_redraw()
+
+
+# ── component info card ─────────────────────────────────────────────────────
+
+func _build_card() -> void:
+	card = PanelContainer.new()
 	card.visible = false
 	card.mouse_filter = Control.MOUSE_FILTER_STOP
+	card.mouse_default_cursor_shape = Control.CURSOR_MOVE
+	card.gui_input.connect(_card_input)
 	add_child(card)
 	var v := VBoxContainer.new()
+	v.mouse_filter = Control.MOUSE_FILTER_PASS
 	card.add_child(v)
 	var head := HBoxContainer.new()
+	head.mouse_filter = Control.MOUSE_FILTER_PASS
 	v.add_child(head)
+	# the header (and the card's border) is a handle for dragging it aside
 	var hint := Label.new()
-	hint.text = "Component details"
+	hint.text = "Component details  ·  drag to move"
+	hint.mouse_filter = Control.MOUSE_FILTER_PASS
+	hint.mouse_default_cursor_shape = Control.CURSOR_MOVE
 	hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	hint.add_theme_color_override("font_color", C_DIM)
+	card_hint = hint
 	hint.add_theme_font_size_override("font_size", 12)
 	head.add_child(hint)
 	var close := Button.new()
@@ -236,12 +266,15 @@ func select_component(id: String) -> void:
 	if id != "" and not ComponentInfo.INFO.has(id):
 		id = ""
 	selected_id = id
+	if id == "":
+		_card_pos = null  # the next card opens in its default spot again
+		_card_grab = null
 	card.visible = id != ""
 	if card.visible:
 		var names := {"bus": "BUS"}
 		for k in BOXES:
 			names[k] = BOXES[k][4]
-		card_text.text = ComponentInfo.bbcode(id, names)
+		card_text.text = ComponentInfo.bbcode(id, names, roundi(17 * text_scale))
 		card_text.scroll_to_line(0)
 		_layout_card()
 		# the text's height is known once it has been laid out at the card's width
@@ -250,11 +283,18 @@ func select_component(id: String) -> void:
 	queue_redraw()
 
 
+## The info card's text grows with the diagram (see main.gd's text scaling).
+func _on_text_scale(s: float) -> void:
+	text_scale = s
+	if selected_id != "":
+		select_component(selected_id)
+
+
 func _layout_card() -> void:
 	if card == null or not card.visible:
 		return
-	var w := clampf(size.x * 0.42, 280.0, 480.0)
-	var chrome := 58.0
+	var w := minf(clampf(size.x * 0.42, 280.0 * text_scale, 480.0 * text_scale), size.x - 16.0)
+	var chrome := 58.0 * text_scale
 	var h := minf(card_text.get_content_height() + chrome, size.y - 16.0)
 	h = maxf(h, minf(200.0, size.y - 16.0))
 	# put the card on the side away from the selected component
@@ -264,8 +304,26 @@ func _layout_card() -> void:
 	elif BOXES.has(selected_id):
 		cx = _rect(selected_id).get_center().x
 	var x := 8.0 if cx > size.x / 2.0 else size.x - w - 8.0
-	card.position = Vector2(x, 8)
 	card.size = Vector2(w, h)
+	card.position = Vector2(x, 8) if _card_pos == null else _clamp_card(_card_pos)
+
+
+## Keep at least part of the card's header inside the diagram.
+func _clamp_card(at: Vector2) -> Vector2:
+	var keep := 60.0
+	return Vector2(clampf(at.x, keep - card.size.x, size.x - keep),
+		clampf(at.y, 0.0, maxf(0.0, size.y - 30.0)))
+
+
+func _card_input(event: InputEvent) -> void:
+	var mb := event as InputEventMouseButton
+	if mb and mb.button_index == MOUSE_BUTTON_LEFT:
+		_card_grab = get_local_mouse_position() - card.position if mb.pressed else null
+		card.accept_event()
+	elif event is InputEventMouseMotion and _card_grab != null:
+		_card_pos = _clamp_card(get_local_mouse_position() - _card_grab)
+		card.position = _card_pos
+		card.accept_event()
 
 
 func _hit(at: Vector2) -> String:
@@ -727,7 +785,7 @@ func _draw_pulse(a: Dictionary) -> void:
 		var c := glow
 		c.a = r[1]
 		draw_circle(hp, r[0] * _scale, c)
-	draw_circle(hp, 2.0 * _scale, Color.WHITE)
+	draw_circle(hp, 2.0 * _scale, C_GLOW_HEAD)
 
 
 func _gate(pts: PackedVector2Array, on: bool) -> void:

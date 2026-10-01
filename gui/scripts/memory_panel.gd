@@ -3,12 +3,6 @@ extends PanelContainer
 ##   Disassembly — follows the PC; click the ● column to toggle a breakpoint.
 ##   Memory      — hex dump with go-to, byte editing and a stack view.
 
-const PC_BG := Color(0.95, 0.80, 0.38, 0.22)
-const BP_COLOR := Color("ff6b6b")
-const LABEL_COLOR := Color("7fd1b9")
-const DIM := Color("7f8794")
-const CHANGED := "f2cc60"
-
 var tabs: TabContainer
 var tree: Tree
 var follow: CheckBox
@@ -22,18 +16,14 @@ var goto_edit: LineEdit
 var write_addr: LineEdit
 var write_data: LineEdit
 var hex_addr := 0x3000
+var _dim_labels: Array[Label] = []
+const COLUMNS := [[0, "", 22, false], [1, "Address", 86, false], [2, "Raw", 96, false],
+	[3, "Label", 110, false], [4, "Instruction", 200, true]]
+const HEX_LINE := "0000    00 01 02 03 04 05 06 07  08 09 0A 0B 0C 0D 0E 0F  ................"
 
 
 func _ready() -> void:
 	font = Backend.mono_font()
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color("22262e")
-	sb.set_corner_radius_all(6)
-	sb.content_margin_left = 6
-	sb.content_margin_right = 6
-	sb.content_margin_top = 6
-	sb.content_margin_bottom = 6
-	add_theme_stylebox_override("panel", sb)
 
 	tabs = TabContainer.new()
 	add_child(tabs)
@@ -41,6 +31,35 @@ func _ready() -> void:
 	tabs.add_child(_build_hex())
 	tabs.set_tab_title(0, "Disassembly")
 	tabs.set_tab_title(1, "Memory")
+	_apply_palette()
+	Palette.changed.connect(_apply_palette)
+
+
+func _apply_palette() -> void:
+	add_theme_stylebox_override("panel", Palette.panel_box("panel", 6, 6))
+	for l in _dim_labels:
+		l.add_theme_color_override("font_color", Palette.c("dim"))
+	for it in items.values():
+		_color_row(it)
+	update_state(Backend.state)
+
+
+## Largest text scale at which a hex-dump row still fits without wrapping.
+func max_text_scale() -> float:
+	var line := font.get_string_size(HEX_LINE, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+	return (size.x - 40.0) / line
+
+
+func _on_text_scale(s: float) -> void:
+	for c in COLUMNS:
+		tree.set_column_custom_minimum_width(c[0], roundi(c[2] * s))
+
+
+func _color_row(it: TreeItem) -> void:
+	it.set_custom_color(0, Palette.c("bp"))
+	it.set_custom_color(1, Palette.c("dim"))
+	it.set_custom_color(2, Palette.c("dim"))
+	it.set_custom_color(3, Palette.c("label"))
 
 
 func _build_disasm() -> Control:
@@ -54,7 +73,7 @@ func _build_disasm() -> Control:
 	top.add_child(follow)
 	var hint := Label.new()
 	hint.text = "click ● to toggle a breakpoint"
-	hint.add_theme_color_override("font_color", DIM)
+	_dim_labels.append(hint)
 	hint.add_theme_font_size_override("font_size", 12)
 	top.add_child(hint)
 
@@ -66,8 +85,7 @@ func _build_disasm() -> Control:
 	tree.select_mode = Tree.SELECT_SINGLE
 	tree.add_theme_font_override("font", font)
 	tree.add_theme_font_size_override("font_size", 13)
-	for c in [[0, "", 22, false], [1, "Address", 86, false], [2, "Raw", 96, false],
-			[3, "Label", 110, false], [4, "Instruction", 200, true]]:
+	for c in COLUMNS:
 		tree.set_column_title(c[0], c[1])
 		tree.set_column_custom_minimum_width(c[0], c[2])
 		tree.set_column_expand(c[0], c[3])
@@ -129,7 +147,7 @@ func _build_hex() -> Control:
 
 	var sl := Label.new()
 	sl.text = "Stack (from SP)"
-	sl.add_theme_color_override("font_color", DIM)
+	_dim_labels.append(sl)
 	v.add_child(sl)
 	stack_text = RichTextLabel.new()
 	stack_text.bbcode_enabled = true
@@ -154,9 +172,7 @@ func set_program(prog: Dictionary) -> void:
 		it.set_text(2, row["raw"])
 		it.set_text(3, row["label"])
 		it.set_text(4, row["text"])
-		it.set_custom_color(1, DIM)
-		it.set_custom_color(2, DIM)
-		it.set_custom_color(3, LABEL_COLOR)
+		_color_row(it)
 		it.set_metadata(0, a)
 		it.set_tooltip_text(0, "Toggle breakpoint")
 		items[a] = it
@@ -183,7 +199,6 @@ func update_state(st: Dictionary) -> void:
 	for a in items:
 		var it: TreeItem = items[a]
 		it.set_text(0, "●" if bps.has(a) else "")
-		it.set_custom_color(0, BP_COLOR)
 	if cur_item != null:
 		for c in 5:
 			cur_item.clear_custom_bg_color(c)
@@ -192,7 +207,7 @@ func update_state(st: Dictionary) -> void:
 	cur_item = items.get(addr)
 	if cur_item != null:
 		for c in 5:
-			cur_item.set_custom_bg_color(c, PC_BG)
+			cur_item.set_custom_bg_color(c, Palette.c("pc_row"))
 		cur_item.set_text(1, "▶%04X" % addr)
 		if follow.button_pressed:
 			tree.scroll_to_item(cur_item, true)
@@ -210,9 +225,11 @@ func _render_hex(st: Dictionary) -> void:
 		changed[int(a)] = true
 	var sp := int(st["regs"][13])
 	var pc := int(st["insn_addr"])
-	var out := "[color=#7f8794]Addr    00 01 02 03 04 05 06 07  08 09 0A 0B 0C 0D 0E 0F  ASCII[/color]\n"
+	var dim := Palette.hex("dim")
+	var hot := Palette.hex("changed")
+	var out := "[color=%s]Addr    00 01 02 03 04 05 06 07  08 09 0A 0B 0C 0D 0E 0F  ASCII[/color]\n" % dim
 	for row in range(0, data.size(), 16):
-		var line := "[color=#7f8794]%04X[/color]    " % (hex_addr + row)
+		var line := "[color=%s]%04X[/color]    " % [dim, hex_addr + row]
 		var ascii := ""
 		for i in 16:
 			if row + i >= data.size():
@@ -221,11 +238,11 @@ func _render_hex(st: Dictionary) -> void:
 			var b := data[row + i]
 			var cell := "%02X" % b
 			if changed.has(a):
-				cell = "[color=#%s][b]%s[/b][/color]" % [CHANGED, cell]
+				cell = "[color=%s][b]%s[/b][/color]" % [hot, cell]
 			elif a == sp:
-				cell = "[bgcolor=#3a4f7a]%s[/bgcolor]" % cell
+				cell = "[bgcolor=%s]%s[/bgcolor]" % [Palette.hex("sp_bg"), cell]
 			elif a >= pc and a < pc + 2:
-				cell = "[bgcolor=#5a4a20]%s[/bgcolor]" % cell
+				cell = "[bgcolor=%s]%s[/bgcolor]" % [Palette.hex("pc_bg"), cell]
 			line += cell + (" " if i != 7 else "  ")
 			ascii += char(b) if b >= 32 and b < 127 else "."
 		out += line + " " + ascii.replace("[", "[lb]") + "\n"
@@ -239,16 +256,16 @@ func _render_hex(st: Dictionary) -> void:
 		var w := sdata.decode_u32(off)
 		var a := sbase + off
 		var mark := "SP→ " if a == sp else "    "
-		var hot := false
+		var word_hot := false
 		for k in 4:
 			if changed.has(a + k):
-				hot = true
+				word_hot = true
 		var val := "0x%08X" % w
-		if hot:
-			val = "[color=#%s]%s[/color]" % [CHANGED, val]
-		s += "%s[color=#7f8794]%04X[/color]  %s\n" % [mark, a, val]
+		if word_hot:
+			val = "[color=%s]%s[/color]" % [hot, val]
+		s += "%s[color=%s]%04X[/color]  %s\n" % [mark, dim, a, val]
 	if sdata.size() == 0:
-		s = "[color=#7f8794](stack is empty — SP at top of RAM)[/color]"
+		s = "[color=%s](stack is empty — SP at top of RAM)[/color]" % dim
 	stack_text.text = s
 
 

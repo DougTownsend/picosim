@@ -4,29 +4,21 @@ extends PanelContainer
 ## Click the output area and type to send keystrokes immediately, or use
 ## the line box below (Enter sends the line followed by a carriage return).
 
-const SYS_COLOR := Color("7f8794")
-const PICO_COLOR := Color("9ece6a")
-const SIM_COLOR := Color("d7dae0")
+## Palette key for each output source; text keeps its source so it can be
+## recoloured when the colour scheme changes.
+const SOURCE_KEYS := {"system": "dim", "pico": "serial", "sim": "text"}
 
 var title: Label
 var status: Label
 var out: RichTextLabel
 var line_edit: LineEdit
 var _last_cr := false
-var _segs: Array = []   # [color, text] runs of everything shown, for rubout
+var _segs: Array = []   # [palette key, text] runs of everything shown, for rubout
 var font: Font
 
 
 func _ready() -> void:
 	font = Backend.mono_font()
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color("22262e")
-	sb.set_corner_radius_all(6)
-	sb.content_margin_left = 8
-	sb.content_margin_right = 8
-	sb.content_margin_top = 6
-	sb.content_margin_bottom = 8
-	add_theme_stylebox_override("panel", sb)
 
 	var v := VBoxContainer.new()
 	add_child(v)
@@ -42,7 +34,6 @@ func _ready() -> void:
 	status.clip_text = true
 	status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	status.add_theme_color_override("font_color", Color("f2cc60"))
 	head.add_child(status)
 	var clear := Button.new()
 	clear.text = "Clear"
@@ -58,16 +49,6 @@ func _ready() -> void:
 	out.focus_mode = Control.FOCUS_ALL
 	out.add_theme_font_override("normal_font", font)
 	out.add_theme_font_size_override("normal_font_size", 14)
-	var osb := StyleBoxFlat.new()
-	osb.bg_color = Color("15171c")
-	osb.set_corner_radius_all(4)
-	osb.content_margin_left = 6
-	osb.content_margin_top = 4
-	out.add_theme_stylebox_override("normal", osb)
-	var fsb := osb.duplicate()
-	fsb.border_color = Color("4a78c2")
-	fsb.set_border_width_all(1)
-	out.add_theme_stylebox_override("focus", fsb)
 	out.tooltip_text = "Click here and type: each key is sent immediately"
 	out.gui_input.connect(_on_out_input)
 	v.add_child(out)
@@ -82,6 +63,29 @@ func _ready() -> void:
 	row.add_child(line_edit)
 
 	Backend.console_output.connect(_on_output)
+	_apply_palette()
+	Palette.changed.connect(_apply_palette)
+
+
+func _apply_palette() -> void:
+	var sb := Palette.panel_box("panel", 6, 8)
+	sb.content_margin_top = 6
+	add_theme_stylebox_override("panel", sb)
+	status.add_theme_color_override("font_color", Palette.c("changed"))
+	var osb := StyleBoxFlat.new()
+	osb.bg_color = Palette.c("surface")
+	osb.set_corner_radius_all(4)
+	osb.content_margin_left = 6
+	osb.content_margin_top = 4
+	if Palette.is_light():
+		osb.border_color = Palette.c("edge")
+		osb.set_border_width_all(1)
+	out.add_theme_stylebox_override("normal", osb)
+	var fsb := osb.duplicate()
+	fsb.border_color = Palette.c("focus")
+	fsb.set_border_width_all(1)
+	out.add_theme_stylebox_override("focus", fsb)
+	_redraw()
 
 
 func set_compact(on: bool) -> void:
@@ -89,19 +93,14 @@ func set_compact(on: bool) -> void:
 
 
 func append_system(text: String) -> void:
-	_append(text, SYS_COLOR)
+	_append(text, "dim")
 
 
 func _on_output(text: String, source: String) -> void:
-	var col := SIM_COLOR
-	if source == "system":
-		col = SYS_COLOR
-	elif source == "pico":
-		col = PICO_COLOR
-	_append(text, col)
+	_append(text, SOURCE_KEYS.get(source, "text"))
 
 
-func _append(text: String, col: Color) -> void:
+func _append(text: String, key: String) -> void:
 	# Normalise line endings: \r\n and lone \r both become a newline.
 	# Backspace / DEL erase the previous character on the current line, as a
 	# terminal does (so an echoed "\b" or "\b \b" deletes what was typed).
@@ -125,14 +124,14 @@ func _append(text: String, col: Color) -> void:
 		_last_cr = false
 		clean += ch
 	if clean != "":
-		if not _segs.is_empty() and _segs[-1][0] == col:
+		if not _segs.is_empty() and _segs[-1][0] == key:
 			_segs[-1][1] += clean
 		else:
-			_segs.append([col, clean])
+			_segs.append([key, clean])
 	if rubbed:
 		_redraw()
 	elif clean != "":
-		out.push_color(col)
+		out.push_color(Palette.c(key))
 		out.add_text(clean)
 		out.pop()
 
@@ -150,7 +149,7 @@ func _rubout() -> bool:
 func _redraw() -> void:
 	out.clear()
 	for seg in _segs:
-		out.push_color(seg[0])
+		out.push_color(Palette.c(seg[0]))
 		out.add_text(seg[1])
 		out.pop()
 

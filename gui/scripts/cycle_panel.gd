@@ -6,11 +6,11 @@ extends PanelContainer
 signal cycle_selected(info: Dictionary)
 
 const PHASES := ["FETCH", "DECODE", "EVALUATE ADDRESS", "FETCH OPERANDS", "EXECUTE", "STORE RESULT"]
-const PHASE_COLORS := {
-	"FETCH": Color("61afef"), "DECODE": Color("c678dd"), "EVALUATE ADDRESS": Color("e5c07b"),
-	"FETCH OPERANDS": Color("56b6c2"), "EXECUTE": Color("e06c75"), "STORE RESULT": Color("98c379"),
+## Palette key for each phase's colour.
+const PHASE_KEYS := {
+	"FETCH": "accent", "DECODE": "purple", "EVALUATE ADDRESS": "yellow",
+	"FETCH OPERANDS": "cyan", "EXECUTE": "red", "STORE RESULT": "green",
 }
-const DIM := Color("7f8794")
 
 var insn_label: Label
 var progress_label: Label
@@ -29,18 +29,11 @@ var selected := -1
 var follow_latest := true
 var asm := {}
 var font: Font
+var _dim_labels: Array[Label] = []
 
 
 func _ready() -> void:
 	font = Backend.mono_font()
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color("22262e")
-	sb.set_corner_radius_all(6)
-	sb.content_margin_left = 10
-	sb.content_margin_right = 10
-	sb.content_margin_top = 8
-	sb.content_margin_bottom = 8
-	add_theme_stylebox_override("panel", sb)
 
 	var cols := HBoxContainer.new()
 	cols.add_theme_constant_override("separation", 14)
@@ -66,7 +59,7 @@ func _ready() -> void:
 	progress_label = Label.new()
 	progress_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	progress_label.add_theme_font_size_override("font_size", 13)
-	progress_label.add_theme_color_override("font_color", DIM)
+	_dim_labels.append(progress_label)
 	v.add_child(progress_label)
 
 	phase_row = HBoxContainer.new()
@@ -82,7 +75,6 @@ func _ready() -> void:
 		chip.custom_minimum_size = Vector2(40, 22)
 		chip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var csb := StyleBoxFlat.new()
-		csb.bg_color = Color("2c313a")
 		csb.set_corner_radius_all(4)
 		chip.add_theme_stylebox_override("normal", csb)
 		phase_row.add_child(chip)
@@ -125,12 +117,31 @@ func _ready() -> void:
 	changes_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	Backend.program_loaded.connect(_on_program)
+	_apply_palette()
+	Palette.changed.connect(_apply_palette)
+
+
+func _apply_palette() -> void:
+	var sb := Palette.panel_box("panel", 6, 8)
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	add_theme_stylebox_override("panel", sb)
+	for l in _dim_labels:
+		l.add_theme_color_override("font_color", Palette.c("dim"))
+	if Backend.state.get("loaded", false):
+		update_state(Backend.state)
+	else:
+		_show_selected()
+
+
+func _phase_col(ph: String) -> Color:
+	return Palette.c(PHASE_KEYS[ph]) if PHASE_KEYS.has(ph) else Palette.c("text")
 
 
 func _heading(parent: Control, text: String) -> void:
 	var l := Label.new()
 	l.text = text
-	l.add_theme_color_override("font_color", DIM)
+	_dim_labels.append(l)
 	l.add_theme_font_size_override("font_size", 12)
 	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	parent.add_child(l)
@@ -174,15 +185,15 @@ func update_state(st: Dictionary) -> void:
 	for i in history.size():
 		var h: Dictionary = history[i]
 		list.add_item("%2d  %-16s %s" % [i, h["state"], h["phase"]])
-		list.set_item_custom_fg_color(i, PHASE_COLORS.get(h["phase"], Color.WHITE))
+		list.set_item_custom_fg_color(i, _phase_col(h["phase"]))
 	if st["in_insn"] and total > history.size():
 		for i in range(history.size(), total):
 			var idx := list.add_item("%2d  %s" % [i, "(next)" if i == history.size() else "…"])
-			list.set_item_custom_fg_color(idx, DIM)
+			list.set_item_custom_fg_color(idx, Palette.c("dim"))
 			list.set_item_selectable(idx, false)
 	elif not st["in_insn"]:
 		var idx := list.add_item(" 0  (next)           FETCH")
-		list.set_item_custom_fg_color(idx, DIM)
+		list.set_item_custom_fg_color(idx, Palette.c("dim"))
 		list.set_item_selectable(idx, false)
 
 	if follow_latest or selected >= history.size():
@@ -228,11 +239,11 @@ func _show_selected() -> void:
 	for p in phase_chips:
 		var chip: Label = phase_chips[p]
 		var csb: StyleBoxFlat = chip.get_theme_stylebox("normal")
-		csb.bg_color = Color("2c313a")
-		chip.add_theme_color_override("font_color", DIM)
+		csb.bg_color = Palette.c("panel_alt")
+		chip.add_theme_color_override("font_color", Palette.c("dim"))
 	if selected < 0 or selected >= history.size():
 		state_label.text = ""
-		desc.text = "[color=#7f8794]No cycle executed yet for this instruction.[/color]"
+		desc.text = "[color=%s]No cycle executed yet for this instruction.[/color]" % Palette.hex("dim")
 		signals_text.text = ""
 		changes_text.text = ""
 		cycle_selected.emit({})
@@ -243,19 +254,20 @@ func _show_selected() -> void:
 	if phase_chips.has(ph):
 		var chip: Label = phase_chips[ph]
 		var csb: StyleBoxFlat = chip.get_theme_stylebox("normal")
-		csb.bg_color = PHASE_COLORS[ph].darkened(0.35)
+		csb.bg_color = _phase_col(ph) if Palette.is_light() else _phase_col(ph).darkened(0.35)
 		chip.add_theme_color_override("font_color", Color.WHITE)
 	state_label.text = "%d · %s" % [selected, h["state"]]
-	state_label.add_theme_color_override("font_color", PHASE_COLORS.get(ph, Color.WHITE))
+	state_label.add_theme_color_override("font_color", _phase_col(ph))
+	var dim := Palette.hex("dim")
 	var d := "[b]%s[/b] phase.  %s" % [ph.capitalize(), _esc(h["desc"])]
 	if h["bus"] != null:
-		d += "\n[color=#7f8794]Bus carries[/color] [code]%s[/code]" % Backend.hex32(h["bus"])
+		d += "\n[color=%s]Bus carries[/color] [code]%s[/code]" % [dim, Backend.hex32(h["bus"])]
 	desc.text = d
 
 	var sigs := ""
 	for s in h["signals"]:
-		sigs += "[bgcolor=#2f3845] [code]%s[/code] [/bgcolor]  " % _esc(s)
-	signals_text.text = sigs if sigs != "" else "[color=#7f8794](none — the FSM only decodes)[/color]"
+		sigs += "[bgcolor=%s] [code]%s[/code] [/bgcolor]  " % [Palette.hex("sig_bg"), _esc(s)]
+	signals_text.text = sigs if sigs != "" else "[color=%s](none — the FSM only decodes)[/color]" % dim
 
 	var ch := ""
 	for c in h["changes"]:
@@ -274,15 +286,15 @@ func _show_selected() -> void:
 			"io":
 				line = "I/O write %s ← [b]%s[/b]" % [nm, Backend.hex32(n)]
 			"datapath":
-				line = "[color=#9da5b4]%s[/color]: %s → [b]%s[/b]" % [nm, _hexn(nm, o), _hexn(nm, n)]
+				line = "[color=%s]%s[/color]: %s → [b]%s[/b]" % [Palette.hex("muted"), nm, _hexn(nm, o), _hexn(nm, n)]
 			_:
 				line = "register [b]%s[/b]: %s → [b]%s[/b]" % [nm, Backend.hex32(o), Backend.hex32(n)]
 				if nm == "PC" and h["phase"] != "FETCH":
-					line += "  [color=#e06c75](control transfer)[/color]"
+					line += "  [color=%s](control transfer)[/color]" % Palette.hex("red")
 		ch += "• " + line + "\n"
 	if h["branch"] != null:
 		ch += "• [b]%s[/b]\n" % ("branch taken" if h["branch"] else "branch not taken — PC stays sequential")
-	changes_text.text = ch if ch != "" else "[color=#7f8794](no architectural or datapath state changed)[/color]"
+	changes_text.text = ch if ch != "" else "[color=%s](no architectural or datapath state changed)[/color]" % dim
 	cycle_selected.emit(h)
 
 

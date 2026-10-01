@@ -41,7 +41,6 @@ const PIN_TIPS := {
 	"VSYS": "VSYS — main system input, 1.8–5.5 V", "VBUS": "VBUS — 5 V from the USB connector",
 }
 
-const C_BG := Color("15171c")
 const C_PCB := Color("1d7a40")
 const C_PCB_DARK := Color("145a2f")
 const C_PCB_LIGHT := Color("2a9152")
@@ -57,8 +56,12 @@ const C_HIGH := Color("39d353")
 const C_LOW := Color("5b6472")
 const C_IN := Color("61afef")
 const C_CHANGED := Color("f2cc60")
-const C_TEXT := Color("d7dae0")
-const C_DIM := Color("7f8794")
+const C_CHIP_TEXT := Color("7f8794")
+# Colours of things drawn on the board stay fixed; text and the background
+# around it follow the colour scheme (set in _load_colors).
+var C_BG: Color
+var C_TEXT: Color
+var C_DIM: Color
 
 ## Small passives (x, y, w, h in canvas units) scattered as on the real board.
 const PASSIVES := [
@@ -85,6 +88,8 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	tooltip_text = " "
 	resized.connect(queue_redraw)
+	_load_colors()
+	Palette.changed.connect(_load_colors)
 
 	btn_full = Button.new()
 	btn_full.text = "⛶ Enlarge"
@@ -95,6 +100,13 @@ func _ready() -> void:
 	btn_full.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	btn_full.toggled.connect(_on_full_toggled)
 	add_child(btn_full)
+
+
+func _load_colors() -> void:
+	C_BG = Palette.c("surface")
+	C_TEXT = Palette.c("text")
+	C_DIM = Palette.c("dim")
+	queue_redraw()
 
 
 func set_fullscreen(on: bool) -> void:
@@ -251,7 +263,7 @@ func _draw_components() -> void:
 
 	# buck-boost regulator (RT6150) and its inductor, by VBUS/VSYS
 	_box(_r(172, 196, 34, 28), C_CHIP, 2, Color("2c2e33"), 1, 3)
-	_text(_p(189, 214), "RT6150", 6.5, C_DIM, null, true)
+	_text(_p(189, 214), "RT6150", 6.5, C_CHIP_TEXT, null, true)
 	_box(_r(220, 190, 42, 38), Color("3a3d42"), 5, Color("55595f"), 1.5, 3)
 	_text(_p(241, 214), "2R2", 8, Color("9aa0a8"), null, true)
 
@@ -356,9 +368,9 @@ func _draw_pin(num: int, changed: Dictionary) -> void:
 	if typeof(info) == TYPE_STRING:
 		var col := C_DIM
 		if info == "GND" or info == "AGND":
-			col = Color("6b7280")
+			col = Palette.c("gnd")
 		elif info.begins_with("3V3") or info.begins_with("V"):
-			col = Color("e06c75")
+			col = Palette.c("red")
 		_text(_p(pos.x, label_y), info, 9.5, col, null, true)
 		return
 
@@ -369,7 +381,7 @@ func _draw_pin(num: int, changed: Dictionary) -> void:
 	_text(_p(pos.x, label_y), "GP%d" % gp, 10.5, C_TEXT if level != null else C_DIM, null, true)
 	var tag := "out" if is_out else ("in" if level != null else "")
 	if tag != "":
-		_text(_p(pos.x, label_y + (-12 if top else 13)), tag, 8, C_IN if not is_out else C_DIM, null, true)
+		_text(_p(pos.x, label_y + (-12 if top else 13)), tag, 8, Palette.c("accent") if not is_out else C_DIM, null, true)
 
 	# live value badge on the pad
 	if level != null:
@@ -407,7 +419,7 @@ func _draw_io_caption() -> void:
 		_text(_p(12, y), "Last I/O write:  " + text, 12, C_TEXT, mono)
 		y += 20
 	if not parts.is_empty():
-		_text(_p(12, y), "Changed by the last step:  " + ", ".join(parts), 12, C_CHANGED, mono)
+		_text(_p(12, y), "Changed by the last step:  " + ", ".join(parts), 12, Palette.c("changed"), mono)
 
 
 func _draw_legend() -> void:

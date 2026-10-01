@@ -332,30 +332,32 @@ static func title(id: String) -> String:
 
 
 ## BBCode for one component; `names` maps ids to display names for the links.
-static func bbcode(id: String, names: Dictionary) -> String:
+static func bbcode(id: String, names: Dictionary, title_size := 17) -> String:
 	if not INFO.has(id):
 		return ""
 	var e: Dictionary = INFO[id]
-	var t := "[font_size=17][b]%s[/b][/font_size]\n[color=#7f8794]%s[/color]\n\n" % [e["title"], e["kind"]]
-	t += "[color=#61afef][b]What it does[/b][/color]\n%s\n\n" % e["what"]
-	t += "[color=#61afef][b]How it works[/b][/color]\n%s\n\n" % e["how"]
+	var dim := Palette.hex("dim")
+	var head := Palette.hex("accent")
+	var t := "[font_size=%d][b]%s[/b][/font_size]\n[color=%s]%s[/color]\n\n" % [title_size, e["title"], dim, e["kind"]]
+	t += "[color=%s][b]What it does[/b][/color]\n%s\n\n" % [head, e["what"]]
+	t += "[color=%s][b]How it works[/b][/color]\n%s\n\n" % [head, e["how"]]
 	var ins := ""
 	var outs := ""
 	for l in e["links"]:
 		var other: String = names.get(l[1], l[1])
 		var line := "• [b]%s[/b]" % other if other != "" else "•"
 		if l[2] != "":
-			line += "  [color=#c678dd][code]%s[/code][/color]" % l[2]
+			line += "  [color=%s][code]%s[/code][/color]" % [Palette.hex("purple"), l[2]]
 		if l[3] != "":
-			line += "  [color=#9da5b4]— %s[/color]" % l[3]
+			line += "  [color=%s]— %s[/color]" % [Palette.hex("muted"), l[3]]
 		if l[0] == "in":
 			ins += line + "\n"
 		else:
 			outs += line + "\n"
-	t += "[color=#61afef][b]Connects to[/b][/color]\n"
+	t += "[color=%s][b]Connects to[/b][/color]\n" % head
 	if ins != "":
-		t += "[color=#7f8794]receives from[/color]\n" + ins
+		t += "[color=%s]receives from[/color]\n" % dim + ins
 	if outs != "":
-		t += "[color=#7f8794]sends to[/color]\n" + outs
-	t += "\n[color=#61afef][b]When it is used[/b][/color]\n%s" % e["when"]
+		t += "[color=%s]sends to[/color]\n" % dim + outs
+	t += "\n[color=%s][b]When it is used[/b][/color]\n%s" % [head, e["when"]]
 	return t

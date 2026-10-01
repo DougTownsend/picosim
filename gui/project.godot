@@ -12,6 +12,7 @@ config/features=PackedStringArray("4.7")
 
 [autoload]
 
+Palette="*res://scripts/palette.gd"
 Backend="*res://scripts/backend.gd"
 
 [display]

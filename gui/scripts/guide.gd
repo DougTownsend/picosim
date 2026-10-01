@@ -5,17 +5,24 @@ extends Node
 ## Self-contained: main.gd only creates it if this file exists, so deleting
 ## guide.gd removes the Guide button and nothing else.  The "CPU diagram
 ## components" topic is built from component_info.gd when that file exists.
+##
+## Making the window bigger than it opened at makes the text bigger with it
+## (by the square root of the area, up to 3×); it never drops below normal.
 
 const INFO_PATH := "res://scripts/component_info.gd"
-const ACCENT := "#61afef"
-const DIM := "#7f8794"
-const KEY := "#e5c07b"
+const TEXT_SCALE_MAX := 3.0
+## Base font sizes: [control, theme item, size at text scale 1].
+var _fonts: Array = []
 
 var win: Window
 var topics: ItemList
 var body: RichTextLabel
 var _ids: Array = []
 var _text := {}
+var bg: PanelContainer
+var _shown := ""
+var text_scale := 1.0
+var _open_size := Vector2i.ZERO   # window size when opened: text scale 1
 
 
 func _ready() -> void:
@@ -26,24 +33,18 @@ func _ready() -> void:
 	win.min_size = Vector2i(560, 360)
 	win.close_requested.connect(win.hide)
 	win.window_input.connect(_on_window_input)
+	win.size_changed.connect(_on_win_resized)
 	add_child(win)
 
-	var bg := PanelContainer.new()
+	bg = PanelContainer.new()
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color("1b1e24")
-	sb.content_margin_left = 10
-	sb.content_margin_right = 10
-	sb.content_margin_top = 10
-	sb.content_margin_bottom = 10
-	bg.add_theme_stylebox_override("panel", sb)
 	win.add_child(bg)
 
 	var split := HSplitContainer.new()
 	bg.add_child(split)
 	topics = ItemList.new()
 	topics.custom_minimum_size.x = 210
-	topics.add_theme_font_size_override("font_size", 14)
+	_fonts.append([topics, "font_size", 14])
 	topics.item_selected.connect(func(i): _show(_ids[i]))
 	split.add_child(topics)
 
@@ -52,23 +53,16 @@ func _ready() -> void:
 	body.selection_enabled = true
 	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	body.add_theme_font_override("mono_font", Backend.mono_font())
-	body.add_theme_font_size_override("normal_font_size", 15)
-	body.add_theme_font_size_override("bold_font_size", 15)
-	body.add_theme_font_size_override("mono_font_size", 14)
+	_fonts.append([body, "normal_font_size", 15])
+	_fonts.append([body, "bold_font_size", 15])
+	_fonts.append([body, "mono_font_size", 14])
+	for f in _fonts:
+		f[0].add_theme_font_size_override(f[1], f[2])
 	body.meta_clicked.connect(func(m): open(str(m)))
-	var bsb := StyleBoxFlat.new()
-	bsb.bg_color = Color("22262e")
-	bsb.set_corner_radius_all(6)
-	bsb.content_margin_left = 16
-	bsb.content_margin_right = 16
-	bsb.content_margin_top = 12
-	bsb.content_margin_bottom = 12
-	body.add_theme_stylebox_override("normal", bsb)
 	split.add_child(body)
 
-	_add_topics()
-	topics.select(0)
-	_show(_ids[0])
+	_apply_palette()
+	Palette.changed.connect(_apply_palette)
 	var args := OS.get_cmdline_user_args()
 	var i := args.find("--guide")
 	if i >= 0:
@@ -81,7 +75,28 @@ func open(topic := "") -> void:
 		topics.select(_ids.find(topic))
 		_show(topic)
 	var area := get_viewport().get_visible_rect().size
+	_open_size = Vector2i.ZERO   # ignore the resize popup_centered itself makes
 	win.popup_centered(Vector2i(mini(int(area.x * 0.8), 1100), int(area.y * 0.85)))
+	_open_size = win.size
+	_set_text_scale(1.0)
+
+
+func _on_win_resized() -> void:
+	if _open_size.x <= 0 or _open_size.y <= 0:
+		return
+	var growth := float(win.size.x * win.size.y) / float(_open_size.x * _open_size.y)
+	var s := clampf(sqrt(growth), 1.0, TEXT_SCALE_MAX)
+	_set_text_scale(maxf(1.0, floorf(s / 0.05 + 0.001) * 0.05))
+
+
+func _set_text_scale(s: float) -> void:
+	if is_equal_approx(s, text_scale):
+		return
+	text_scale = s
+	for f in _fonts:
+		f[0].add_theme_font_size_override(f[1], roundi(f[2] * s))
+	topics.custom_minimum_size.x = 210 * s
+	_rebuild()   # headings have their size baked into the BBCode
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -99,7 +114,46 @@ func _on_window_input(event: InputEvent) -> void:
 		win.set_input_as_handled()
 
 
+## Restyle and rebuild the topics: their text has the scheme's colours baked in.
+func _apply_palette() -> void:
+	win.theme = Palette.ui_theme
+	bg.add_theme_stylebox_override("panel", Palette.panel_box("bg", 0, 10))
+	var bsb := Palette.panel_box("panel", 6, 12)
+	bsb.content_margin_left = 16
+	bsb.content_margin_right = 16
+	body.add_theme_stylebox_override("normal", bsb)
+	_rebuild()
+
+
+## Rebuild every topic's text (colours and heading sizes are baked into it),
+## keeping the shown topic and roughly the same scroll position.
+func _rebuild() -> void:
+	var shown := _shown
+	var bar := body.get_v_scroll_bar()
+	var pos := bar.value / maxf(1.0, bar.max_value)
+	_ids.clear()
+	_text.clear()
+	topics.clear()
+	_add_topics()
+	if shown == "":
+		shown = _ids[0]
+	topics.select(_ids.find(shown))
+	_show(shown)
+	_restore_scroll.call_deferred(pos)
+
+
+func _restore_scroll(pos: float) -> void:
+	var bar := body.get_v_scroll_bar()
+	bar.value = pos * bar.max_value
+
+
+## BBCode colour for a palette key.
+static func _c(key: String) -> String:
+	return Palette.hex(key)
+
+
 func _show(id: String) -> void:
+	_shown = id
 	body.text = _text[id]
 	body.scroll_to_line(0)
 
@@ -110,20 +164,20 @@ func _topic(id: String, name: String, bb: String) -> void:
 	topics.add_item(name)
 
 
-static func _h(s: String) -> String:
-	return "[font_size=22][b]%s[/b][/font_size]\n\n" % s
+func _h(s: String) -> String:
+	return "[font_size=%d][b]%s[/b][/font_size]\n\n" % [roundi(22 * text_scale), s]
 
 
 static func _sub(s: String) -> String:
-	return "\n[color=%s][b]%s[/b][/color]\n" % [ACCENT, s]
+	return "\n[color=%s][b]%s[/b][/color]\n" % [_c("accent"), s]
 
 
 static func _k(s: String) -> String:
-	return "[color=%s][code]%s[/code][/color]" % [KEY, s]
+	return "[color=%s][code]%s[/code][/color]" % [_c("yellow"), s]
 
 
 static func _link(id: String, s: String) -> String:
-	return "[url=%s][color=%s][u]%s[/u][/color][/url]" % [id, ACCENT, s]
+	return "[url=%s][color=%s][u]%s[/u][/color][/url]" % [id, _c("accent"), s]
 
 
 # ── content ─────────────────────────────────────────────────────────────────
@@ -139,7 +193,7 @@ func _add_topics() -> void:
 		"• " + _k("Run") + " / " + _k("Pause") + " (" + _k("F5") + ") — run continuously at the speed set by the slider.\n" +
 		"• " + _k("Reload") + " (" + _k("Ctrl/Cmd+R") + ") — re-assemble the file from disk and reset the CPU. Use it after editing your code, or to start over after the program halts.\n" +
 		_sub("3. Watch it") +
-		"Anything that changed in the last step turns [color=#f2cc60]yellow[/color] — registers, flags, memory bytes and pins. Click " + _k("Show CPU Diagram") + " to see the datapath and the " + _link("cycles", "cycle-by-cycle") + " inspector.\n" +
+		"Anything that changed in the last step turns [color=" + _c("changed") + "]yellow[/color] — registers, flags, memory bytes and pins. Click " + _k("Show CPU Diagram") + " to see the datapath and the " + _link("cycles", "cycle-by-cycle") + " inspector.\n" +
 		_sub("The screen") +
 		"• Top left — " + _link("registers", "Registers") + "\n" +
 		"• Middle left — " + _link("memory", "Disassembly and Memory") + "\n" +
@@ -162,7 +216,7 @@ func _add_topics() -> void:
 		"• [code]0x10000[/code] and up — memory-mapped I/O. The GPIO registers of the RP2040 are here: SIO at [code]0xD0000000[/code], IO_BANK0 at [code]0x40014000[/code], PADS_BANK0 at [code]0x4001C000[/code]. Writing them changes the " + _link("pico", "Pico board") + "'s pins.\n")
 
 	_topic("registers", "Registers", _h("Registers panel") +
-		"Shows R0–R12, SP (R13), LR (R14) and PC (R15) in hex. Values changed by the last step are [color=#f2cc60]yellow[/color]. Hover a register to see it as signed and unsigned decimal.\n" +
+		"Shows R0–R12, SP (R13), LR (R14) and PC (R15) in hex. Values changed by the last step are [color=" + _c("changed") + "]yellow[/color]. Hover a register to see it as signed and unsigned decimal.\n" +
 		_sub("Editing") +
 		"Click a register, type a new value — hex like [code]0x1F[/code] or decimal like [code]31[/code] — and press " + _k("Enter") + ". Click a flag (N, Z, C, V) to toggle it.\n" +
 		_sub("Datapath registers") +
@@ -177,7 +231,7 @@ func _add_topics() -> void:
 		"Your program as the CPU sees it: address, raw instruction bits, label and instruction. The row with ▶ is the instruction being executed. With " + _k("Follow PC") + " ticked the list scrolls to it automatically.\n\n" +
 		"[b]Breakpoints:[/b] click the narrow first column of a row to put a red ● there; click again to remove it. " + _k("Run") + " stops when it reaches a breakpoint (before executing that instruction).\n" +
 		_sub("Memory tab") +
-		"• A hex dump of 256 bytes with an ASCII column. Changed bytes are [color=#f2cc60]yellow[/color], the byte at SP is highlighted blue and the current instruction brown.\n" +
+		"• A hex dump of 256 bytes with an ASCII column. Changed bytes are [color=" + _c("changed") + "]yellow[/color], the byte at SP is highlighted blue and the current instruction brown.\n" +
 		"• [b]Go to[/b] — type an address ([code]0x3000[/code]) or a label and press " + _k("Enter") + ", or jump with " + _k("PC") + ", " + _k("SP") + " or " + _k("main") + ".\n" +
 		"• [b]Write bytes at[/b] — enter an address and hex bytes ([code]de ad be ef[/code]) and press " + _k("Write") + " to change memory.\n" +
 		"• [b]Stack (from SP)[/b] — the words on the stack, with [code]SP→[/code] marking the top.")
@@ -185,11 +239,11 @@ func _add_topics() -> void:
 	_topic("pico", "Raspberry Pi Pico board", _h("Raspberry Pi Pico board") +
 		"A to-scale drawing of the Pico with its 40-pin header, showing what your program does to the RP2040's GPIO pins.\n" +
 		_sub("Reading the pins") +
-		"• [color=#39d353]green 1[/color] — output driven high\n" +
+		"• [color=" + _c("green") + "]green 1[/color] — output driven high\n" +
 		"• dim [b]0[/b] — output (or pulled input) low\n" +
-		"• [color=#61afef]blue 1[/color] — input reading high\n" +
+		"• [color=" + _c("accent") + "]blue 1[/color] — input reading high\n" +
 		"• blank — floating (nothing drives it)\n" +
-		"• [color=#f2cc60]yellow ring[/color] — changed by the last step\n" +
+		"• [color=" + _c("changed") + "]yellow ring[/color] — changed by the last step\n" +
 		"The on-board LED lights when GP25 is high. Under the board, the last I/O register write is decoded (for example [code]IO_BANK0 GPIO20_CTRL ← 0x331F[/code]). Hover any pin for its name, direction and level.\n" +
 		_sub("Driving inputs") +
 		"Click an [i]input[/i] pin to drive it like a switch: floating (Z) → 1 → 0 → floating. Your program sees it when it reads [code]GPIO_IN[/code]. Output pins cannot be clicked.\n" +
@@ -199,13 +253,13 @@ func _add_topics() -> void:
 	_topic("diagram", "CPU diagram", _h("CPU diagram") +
 		"Click " + _k("Show CPU Diagram") + " in the toolbar. The diagram is the multi-cycle datapath from the course text: one shared 32-bit bus, MAR/MDR, IR/IR2, a separate address adder, the ALU, the register file and the FSM that controls them.\n" +
 		_sub("What the colors mean") +
-		"• [color=#61afef]Bright blue wires and boxes[/color] carry data in the cycle being shown.\n" +
-		"• [color=#c678dd]Purple dashed wires[/color] are control signals (BranchTaken).\n" +
-		"• [color=#f2cc60]Yellow[/color] boxes changed at this cycle's clock edge; the caption shows old → new.\n" +
+		"• [color=" + _c("accent") + "]Bright blue wires and boxes[/color] carry data in the cycle being shown.\n" +
+		"• [color=" + _c("purple") + "]Purple dashed wires[/color] are control signals (BranchTaken).\n" +
+		"• [color=" + _c("changed") + "]Yellow[/color] boxes changed at this cycle's clock edge; the caption shows old → new.\n" +
 		"• Triangles on the bus are tri-state gates: the lit one is the block driving the bus. The bus value is printed above the bus.\n" +
 		"When you step, a glowing pulse travels along the active wires in the order the data flows. Its speed follows the speed slider; at high speeds animation is skipped.\n" +
 		_sub("Learning the components") +
-		"Hover a block for a one-line summary. [b]Click a block[/b] (or the bus) to open a card explaining what it does, how it works, what it connects to and when it is used; the block and its wires are outlined in [color=#ffb86c]orange[/color]. Click it again, click empty space, press ✕ or " + _k("Esc") + " to close. The same descriptions are in " + _link("components", "CPU diagram components") + ".")
+		"Hover a block for a one-line summary. [b]Click a block[/b] (or the bus) to open a card explaining what it does, how it works, what it connects to and when it is used; the block and its wires are outlined in [color=" + _c("sel") + "]orange[/color]. Click it again, click empty space, press ✕ or " + _k("Esc") + " to close. The same descriptions are in " + _link("components", "CPU diagram components") + ".")
 
 	_topic("cycles", "Cycle by cycle", _h("Cycle-by-cycle inspector") +
 		"Shown below the CPU diagram. It follows the instruction being executed one clock cycle at a time.\n" +
@@ -267,7 +321,7 @@ func _add_topics() -> void:
 
 
 static func _row(k: String, what: String) -> String:
-	return "[cell][color=%s][code]%s[/code][/color]    [/cell][cell]%s[/cell]" % [KEY, k, what]
+	return "[cell][color=%s][code]%s[/code][/color]    [/cell][cell]%s[/cell]" % [_c("yellow"), k, what]
 
 
 func _add_components() -> void:
@@ -279,6 +333,6 @@ func _add_components() -> void:
 		names[id] = str(info.INFO[id]["title"]).get_slice(" — ", 0)
 	var t := _h("CPU diagram components") + "Every block on the " + _link("diagram", "CPU diagram") + ", in the order data usually flows. Click a block on the diagram to see the same text next to it.\n"
 	for id in info.ORDER:
-		t += "\n[color=%s]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/color]\n\n" % DIM
-		t += info.bbcode(id, names) + "\n"
+		t += "\n[color=%s]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/color]\n\n" % _c("dim")
+		t += info.bbcode(id, names, roundi(17 * text_scale)) + "\n"
 	_topic("components", "CPU diagram components", t)

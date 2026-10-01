@@ -8,11 +8,9 @@ extends PanelContainer
 const NAMES := ["R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7",
 	"R8", "R9", "R10", "R11", "R12", "SP", "LR", "PC"]
 const DP_NAMES := ["MAR", "MDR", "IR", "IR2"]
-const HILITE := Color("f2cc60")
-const NORMAL := Color("d7dae0")
-const DIM := Color("7f8794")
 
 var reg_edits: Array[LineEdit] = []
+var _dim_labels: Array[Label] = []
 var flag_boxes := {}
 var dp_labels := {}
 var info_label: Label
@@ -27,14 +25,6 @@ var _widths: Array = []          # [control, base minimum width]
 
 func _ready() -> void:
 	font = Backend.mono_font()
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color("22262e")
-	sb.set_corner_radius_all(6)
-	sb.content_margin_left = 10
-	sb.content_margin_right = 10
-	sb.content_margin_top = 8
-	sb.content_margin_bottom = 8
-	add_theme_stylebox_override("panel", sb)
 
 	# A plain Control between the panel and the content: it keeps the panel's
 	# minimum size at the unscaled layout, so a scaled-up panel can still be
@@ -62,7 +52,7 @@ func _ready() -> void:
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		l.add_theme_font_override("font", font)
 		_font(l, 14)
-		l.add_theme_color_override("font_color", DIM)
+		_dim_labels.append(l)
 		grid.add_child(l)
 		var e := LineEdit.new()
 		e.text = "0x00000000"
@@ -80,7 +70,7 @@ func _ready() -> void:
 	v.add_child(row)
 	var fl := Label.new()
 	fl.text = "Flags"
-	fl.add_theme_color_override("font_color", DIM)
+	_dim_labels.append(fl)
 	_font(fl, 14)
 	row.add_child(fl)
 	for f in ["N", "Z", "C", "V"]:
@@ -112,7 +102,7 @@ func _ready() -> void:
 	info_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	info_label.add_theme_font_override("font", font)
 	_font(info_label, 13)
-	info_label.add_theme_color_override("font_color", DIM)
+	_dim_labels.append(info_label)
 	v.add_child(info_label)
 
 	# Measure the layout once with placeholder text in the long rows.
@@ -123,6 +113,18 @@ func _ready() -> void:
 	info_label.text = ""
 	holder.custom_minimum_size = base_size
 	holder.resized.connect(_fit)
+	_apply_palette()
+	Palette.changed.connect(_apply_palette)
+
+
+func _apply_palette() -> void:
+	var sb := Palette.panel_box("panel", 6, 8)
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	add_theme_stylebox_override("panel", sb)
+	for l in _dim_labels:
+		l.add_theme_color_override("font_color", Palette.c("dim"))
+	update_state(Backend.state)
 
 
 func _font(c: Control, base: int) -> void:
@@ -174,7 +176,7 @@ func update_state(st: Dictionary) -> void:
 		if not e.has_focus():
 			e.text = Backend.hex32(st["regs"][i])
 		var hot := changed.has(NAMES[i])
-		e.add_theme_color_override("font_color", HILITE if hot else NORMAL)
+		e.add_theme_color_override("font_color", Palette.c("changed") if hot else Palette.c("text"))
 		var val := int(st["regs"][i])
 		var sval := val - 0x100000000 if val >= 0x80000000 else val
 		e.tooltip_text = "%s = %d (unsigned %d)\nType a new value and press Enter" % [NAMES[i], sval, val]
@@ -182,14 +184,15 @@ func update_state(st: Dictionary) -> void:
 	for f in flag_boxes:
 		var cb: CheckBox = flag_boxes[f]
 		cb.set_pressed_no_signal(int(flags[f]) != 0)
-		cb.add_theme_color_override("font_color", HILITE if changed.has(f) else NORMAL)
-		cb.add_theme_color_override("font_pressed_color", HILITE if changed.has(f) else NORMAL)
+		var fc := Palette.c("changed") if changed.has(f) else Palette.c("text")
+		cb.add_theme_color_override("font_color", fc)
+		cb.add_theme_color_override("font_pressed_color", fc)
 	var dpv: Dictionary = st["datapath"]
 	for n in DP_NAMES:
 		var l: Label = dp_labels[n]
 		var fmt := "%s %s" % [n, Backend.hex16(dpv[n]) if n.begins_with("IR") else Backend.hex32(dpv[n])]
 		l.text = fmt
-		l.add_theme_color_override("font_color", HILITE if changed.has(n) else DIM)
+		l.add_theme_color_override("font_color", Palette.c("changed") if changed.has(n) else Palette.c("dim"))
 	var state_txt: String = st["next_state"]
 	var where := ""
 	if st["in_insn"]:
