@@ -31,8 +31,19 @@ func _ready() -> void:
 	tabs.add_child(_build_hex())
 	tabs.set_tab_title(0, "Disassembly")
 	tabs.set_tab_title(1, "Memory")
+	tabs.set_tab_tooltip(0, "Your program, one instruction per row")
+	tabs.set_tab_tooltip(1, "The bytes in memory, and the stack")
+	set_level(Level.current)
+	Level.changed.connect(func(): set_level(Level.current))
 	_apply_palette()
 	Palette.changed.connect(_apply_palette)
+
+
+## The Memory tab appears from level 2 (Memory & I/O).
+func set_level(n: int) -> void:
+	tabs.set_tab_hidden(1, n < 2)
+	if n < 2:
+		tabs.current_tab = 0
 
 
 func _apply_palette() -> void:
@@ -70,6 +81,7 @@ func _build_disasm() -> Control:
 	follow.text = "Follow PC"
 	follow.button_pressed = true
 	follow.focus_mode = Control.FOCUS_NONE
+	follow.tooltip_text = "Keep the instruction being run (▶) in view"
 	top.add_child(follow)
 	var hint := Label.new()
 	hint.text = "click ● to toggle a breakpoint"
@@ -107,12 +119,15 @@ func _build_hex() -> Control:
 	goto_edit.custom_minimum_size.x = 140
 	goto_edit.add_theme_font_override("font", font)
 	goto_edit.text_submitted.connect(_on_goto)
+	goto_edit.tooltip_text = "Type an address (like 0x3000) or a label from your program and press Enter"
 	top.add_child(goto_edit)
 	for spec in [["PC", "pc"], ["SP", "sp"], ["main", "main"]]:
 		var b := Button.new()
 		b.text = spec[0]
 		b.focus_mode = Control.FOCUS_NONE
 		b.pressed.connect(_goto_special.bind(spec[1]))
+		b.tooltip_text = {"pc": "Show the memory at the PC (the instruction being run)",
+			"sp": "Show the memory at SP (the top of the stack)", "main": "Show the start of your program"}[spec[1]]
 		top.add_child(b)
 
 	hex_text = RichTextLabel.new()
@@ -133,16 +148,19 @@ func _build_hex() -> Control:
 	write_addr.placeholder_text = "0x2000"
 	write_addr.custom_minimum_size.x = 90
 	write_addr.add_theme_font_override("font", font)
+	write_addr.tooltip_text = "The address of the first byte to change"
 	wr.add_child(write_addr)
 	write_data = LineEdit.new()
 	write_data.placeholder_text = "de ad be ef"
 	write_data.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	write_data.add_theme_font_override("font", font)
 	write_data.text_submitted.connect(func(_t): _on_write())
+	write_data.tooltip_text = "The new bytes in hex, separated by spaces"
 	wr.add_child(write_data)
 	var wb := Button.new()
 	wb.text = "Write"
 	wb.pressed.connect(_on_write)
+	wb.tooltip_text = "Write the bytes into memory"
 	wr.add_child(wb)
 
 	var sl := Label.new()

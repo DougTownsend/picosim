@@ -18,6 +18,7 @@ add_executable(firmware
 
 target_link_libraries(firmware
     pico_stdlib
+    pico_multicore      # core 1 reports live pin levels (wrapper_main.c)
 )
 
 # Route stdio over USB; disable UART stdio

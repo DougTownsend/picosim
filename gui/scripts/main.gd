@@ -2,6 +2,9 @@ extends Control
 ## Top-level layout:
 ##   left  — registers (top) and memory (bottom)
 ##   right — toolbar, optional CPU diagram + cycle inspector, serial console
+## While no program is loaded a welcome page (welcome.gd) replaces the panels.
+## The Level menu (level.gd) decides which controls and panels are shown, so
+## beginners start with only the basics; see _apply_level.
 
 const RegistersPanel := preload("res://scripts/registers_panel.gd")
 const MemoryPanel := preload("res://scripts/memory_panel.gd")
@@ -10,6 +13,8 @@ const DiagramView := preload("res://scripts/diagram_view.gd")
 const CyclePanel := preload("res://scripts/cycle_panel.gd")
 const PicoView := preload("res://scripts/pico_view.gd")
 const PipelineView := preload("res://scripts/pipeline_view.gd")
+const Welcome := preload("res://scripts/welcome.gd")
+const SettingsDialog := preload("res://scripts/settings_dialog.gd")
 const MACHINES := ["multicycle", "pico2"]
 
 ## Clock-speed presets (cycles per second); 0 = as fast as possible.
@@ -44,6 +49,10 @@ var layout_root: VBoxContainer
 var right_split: VSplitContainer
 var pico_overlay: Control
 var pico_home: Control
+var panels: Control              # everything under the toolbar except the welcome page
+var welcome: Control
+var tip_bar: PanelContainer
+var guide: Node
 
 var btn_open: Button
 var btn_reload: Button
@@ -60,6 +69,12 @@ var btn_flash: Button
 var btn_diagram: Button
 var machine_select: OptionButton
 var theme_select: OptionButton
+var level_select: OptionButton
+var examples_menu: MenuButton
+var btn_perf: Button
+var btn_settings: Button
+var settings_dialog: ConfirmationDialog
+var mode_sep: VSeparator
 var status_label: Label
 var _status_bad := false
 var bg: ColorRect
@@ -73,6 +88,7 @@ var _demo_click_pin := 0
 var _demo_component := ""
 var _demo_click_gate := ""        # --demo-click-gate ID: click that buffer with a real mouse event
 var _demo_machine := ""          # --machine=pico2: start on that machine
+var _demo_settings := false      # --settings: open the program's settings form
 var _text_panels: Array = []     # [{panel, fonts, growth, size, scale}] — see _setup_text_scaling
 var _drag_frame := -100          # process frame of the last splitter drag
 
@@ -91,6 +107,8 @@ func _ready() -> void:
 	Backend.disconnected.connect(func(): _set_status("Simulator backend disconnected", true))
 	_set_status("Connecting to simulator…", false)
 	Palette.changed.connect(_on_palette)
+	Level.changed.connect(_apply_level)
+	_apply_level()
 	_update_controls()
 	var args := OS.get_cmdline_user_args()
 	for i in args.size():
@@ -110,6 +128,8 @@ func _ready() -> void:
 			_demo_click_gate = args[i + 1]
 		if args[i].begins_with("--machine="):
 			_demo_machine = args[i].substr(10)
+		if args[i] == "--settings":
+			_demo_settings = true
 		if args[i] == "--shot-frames" and i + 1 < args.size():
 			_screenshot_wait = int(args[i + 1])
 
@@ -141,7 +161,8 @@ func _process(_delta: float) -> void:
 	if _demo_component != "" and Backend.state.get("loaded", false) and _screenshot_frames == 10:
 		diagram.select_component(_demo_component)
 		_demo_component = ""
-	if _screenshot_path != "" and Backend.state.get("loaded", false):
+	# (with no program the welcome page is shown, once the backend has answered)
+	if _screenshot_path != "" and Backend.state.has("loaded"):
 		_screenshot_frames += 1
 		if _screenshot_frames == _screenshot_wait:
 			get_viewport().get_texture().get_image().save_png(_screenshot_path)
@@ -166,10 +187,17 @@ func _build_ui() -> void:
 	add_child(root)
 
 	root.add_child(_build_toolbar())
+	root.add_child(_build_tip_bar())
 
 	var hsplit := HSplitContainer.new()
 	hsplit.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	hsplit.visible = false   # until a program is loaded
 	root.add_child(hsplit)
+	panels = hsplit
+	welcome = Welcome.new()
+	welcome.open_file_requested.connect(_open_dialog)
+	welcome.guide_requested.connect(func(): if guide: guide.open("start"))
+	root.add_child(welcome)
 
 	# left column
 	var left := VSplitContainer.new()
@@ -254,6 +282,9 @@ func _build_ui() -> void:
 	file_dialog.use_native_dialog = true
 	file_dialog.title = "Open assembly program"
 	file_dialog.file_selected.connect(func(p): Backend.send("load", {"path": p}))
+	var ex_dir := ProjectSettings.globalize_path("res://").path_join("../examples").simplify_path()
+	if DirAccess.dir_exists_absolute(ex_dir):
+		file_dialog.current_dir = ex_dir
 	add_child(file_dialog)
 
 	error_dialog = AcceptDialog.new()
@@ -277,13 +308,24 @@ func _sep() -> VSeparator:
 func _build_toolbar() -> Control:
 	var bar := HBoxContainer.new()
 	bar.add_theme_constant_override("separation", 6)
-	btn_open = _button("Open…", "Open a .s file (Ctrl+O)", func(): file_dialog.popup_centered_ratio(0.6))
-	btn_reload = _button("Reload", "Re-assemble the file and reset the CPU (Ctrl+R)", func(): Backend.send("reload"))
-	btn_cycle = _button("Step Cycle", "Advance one clock cycle (F11)", _step_cycle)
-	btn_insn = _button("Step Insn", "Finish the current instruction (F10)", _step_insn)
-	btn_run = _button("Run", "Run / pause (F5)", _toggle_run)
+	btn_open = _button("Open…", "Open an assembly (.s) file (Ctrl+O)", _open_dialog)
+	examples_menu = MenuButton.new()
+	examples_menu.text = "Examples"
+	examples_menu.tooltip_text = "Open one of the example programs"
+	examples_menu.focus_mode = Control.FOCUS_NONE
+	examples_menu.flat = false
+	examples_menu.about_to_popup.connect(_fill_examples)
+	examples_menu.get_popup().id_pressed.connect(_on_example)
+	btn_reload = _button("Reload", "Start the program over: read the file again and reset the CPU (Ctrl+R)", func(): Backend.send("reload"))
+	settings_dialog = SettingsDialog.new()
+	add_child(settings_dialog)
+	btn_settings = _button("⚙ Settings", "This program's settings, such as which pins your LED and button are on", func(): settings_dialog.open())
+	btn_settings.visible = false
+	btn_cycle = _button("Step cycle", "Advance one clock cycle (F11)", _step_cycle)
+	btn_insn = _button("Step instruction", "Run one instruction, then stop (F10)", _step_insn)
+	btn_run = _button("Run", "Run the program by itself, or pause it (F5)", _toggle_run)
 	btn_run.custom_minimum_size.x = 70
-	for b in [btn_open, btn_reload, _sep(), btn_cycle, btn_insn, btn_run]:
+	for b in [btn_open, examples_menu, btn_reload, btn_settings, _sep(), btn_insn, btn_cycle, btn_run]:
 		bar.add_child(b)
 
 	var sl := Label.new()
@@ -298,22 +340,27 @@ func _build_toolbar() -> Control:
 	speed_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	speed_slider.focus_mode = Control.FOCUS_NONE
 	speed_slider.value_changed.connect(_on_speed)
+	speed_slider.tooltip_text = "How fast Run goes, in clock cycles per second (Max = as fast as possible)"
+	sl.tooltip_text = speed_slider.tooltip_text
 	bar.add_child(speed_slider)
 	speed_label = Label.new()
 	speed_label.custom_minimum_size.x = 90
 	bar.add_child(speed_label)
 	_on_speed(speed_slider.value)
 
-	bar.add_child(_sep())
+	mode_sep = _sep()
+	bar.add_child(mode_sep)
 	mode_select = OptionButton.new()
 	mode_select.add_item("Simulator", 0)
 	mode_select.add_item("Pico (USB serial)", 1)
 	mode_select.focus_mode = Control.FOCUS_NONE
 	mode_select.item_selected.connect(_on_mode)
+	mode_select.tooltip_text = "Simulator — run your program here on screen\nPico (USB serial) — talk to a real Raspberry Pi Pico plugged in by USB"
 	bar.add_child(mode_select)
 	port_select = OptionButton.new()
 	port_select.custom_minimum_size.x = 180
 	port_select.focus_mode = Control.FOCUS_NONE
+	port_select.tooltip_text = "The USB serial port your Pico is on (marked (Pico))"
 	bar.add_child(port_select)
 	btn_ports = _button("⟳", "Refresh serial ports", func(): Backend.send("serial_list"))
 	btn_connect = _button("Connect", "Open the selected serial port", _on_connect)
@@ -345,7 +392,7 @@ func _build_toolbar() -> Control:
 	machine_select.add_item("Multi-cycle")
 	machine_select.add_item("2-stage pipeline")
 	machine_select.focus_mode = Control.FOCUS_NONE
-	machine_select.tooltip_text = "What the diagram shows and Step Cycle steps:\nMulti-cycle — the teaching datapath, one FSM state per cycle\n2-stage pipeline — the real Pico's Cortex-M0+, two instructions in flight"
+	machine_select.tooltip_text = "What the diagram shows and Step cycle steps:\nMulti-cycle — the teaching datapath, one FSM state per cycle\n2-stage pipeline — the real Pico's Cortex-M0+, two instructions in flight"
 	machine_select.item_selected.connect(_on_machine)
 	bar.add_child(machine_select)
 	theme_select = OptionButton.new()
@@ -358,13 +405,112 @@ func _build_toolbar() -> Control:
 	bar.add_child(theme_select)
 	var perf: Node = load("res://scripts/perf_window.gd").new()
 	add_child(perf)
-	bar.add_child(_button("Performance", "Cycles, CPI, the RP2040 pipeline and design comparisons (F2)", func(): perf.open()))
+	btn_perf = _button("Performance", "Cycles, CPI, the RP2040 pipeline and design comparisons (F2)", func(): perf.open())
+	bar.add_child(btn_perf)
 	perf_window = perf
+	level_select = OptionButton.new()
+	for n in range(1, Level.MAX + 1):
+		level_select.add_item("Level " + Level.title(n))
+		level_select.set_item_tooltip(n - 1, Level.ABOUT[n - 1])
+	level_select.focus_mode = Control.FOCUS_NONE
+	level_select.tooltip_text = "How much of picosim to show. Start at 1 and move up as your class covers more:\n" + \
+		"\n".join(range(1, Level.MAX + 1).map(func(n): return Level.title(n) + " — " + Level.ABOUT[n - 1]))
+	level_select.item_selected.connect(func(i): Level.set_level(i + 1))
+	bar.add_child(level_select)
 	if ResourceLoader.exists(GUIDE):
-		var guide: Node = load(GUIDE).new()
+		guide = load(GUIDE).new()
 		add_child(guide)
 		bar.add_child(_button("Guide", "How to use picosim (F1)", func(): guide.open()))
 	return bar
+
+
+## A slim "how to start" strip shown above the panels after the first program
+## a student ever loads; closing it is remembered ([ui] tips_seen).
+func _build_tip_bar() -> Control:
+	tip_bar = PanelContainer.new()
+	tip_bar.visible = false
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 18)
+	tip_bar.add_child(h)
+	var l := RichTextLabel.new()
+	l.bbcode_enabled = true
+	l.fit_content = true
+	l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	l.scroll_active = false
+	l.name = "Text"
+	h.add_child(l)
+	var ok := _button("Got it ✕", "Hide this tip", _dismiss_tips)
+	h.add_child(ok)
+	_style_tip_bar()
+	return tip_bar
+
+
+func _style_tip_bar() -> void:
+	tip_bar.add_theme_stylebox_override("panel", Palette.panel_box("box_active", 6, 8))
+	var a := Palette.hex("changed")
+	tip_bar.get_child(0).get_node("Text").text = (
+		"[b]How to start:[/b]   ① [b]Step instruction[/b] (F10) runs one line of your program" +
+		"     ② values that just changed turn [color=%s]yellow[/color]" +
+		"     ③ [b]Run[/b] (F5) goes by itself — [b]Reload[/b] starts over") % a
+
+
+func _dismiss_tips() -> void:
+	tip_bar.visible = false
+	var cfg := ConfigFile.new()
+	cfg.load(SETTINGS)
+	cfg.set_value("ui", "tips_seen", true)
+	cfg.save(SETTINGS)
+
+
+func _open_dialog() -> void:
+	file_dialog.popup_centered_ratio(0.6)
+
+
+func _fill_examples() -> void:
+	var pop := examples_menu.get_popup()
+	pop.clear()
+	var list: Array = Welcome.examples()
+	for i in list.size():
+		var e: Dictionary = list[i]
+		var tag := "" if Level.at_least(int(e["level"])) else "   (Level %d)" % int(e["level"])
+		pop.add_item(str(e["title"]) + tag, i)
+		pop.set_item_tooltip(i, str(e["about"]))
+		pop.set_item_metadata(i, e["path"])
+	if list.is_empty():
+		pop.add_item("no examples folder found")
+		pop.set_item_disabled(0, true)
+
+
+func _on_example(id: int) -> void:
+	var path = examples_menu.get_popup().get_item_metadata(examples_menu.get_popup().get_item_index(id))
+	if path != null:
+		Backend.send("load", {"path": path})
+
+
+## Show only what the current level needs. Lowering the level also undoes what
+## the hidden controls had switched on (the diagram, the pipeline, Pico mode).
+func _apply_level() -> void:
+	var lv: int = Level.current
+	level_select.select(lv - 1)
+	if lv < 4 and machine_select.selected == 1:
+		machine_select.select(0)
+		_on_machine(0)
+	if lv < 3 and btn_diagram.button_pressed:
+		btn_diagram.button_pressed = false
+	if lv < 2 and mode_select.selected == 1:
+		mode_select.select(0)
+		_on_mode(0)
+	if lv < 2 and pico_overlay.visible:
+		pico_view.set_fullscreen(false)
+	btn_cycle.visible = lv >= 3
+	btn_diagram.visible = lv >= 3
+	machine_select.visible = lv >= 4
+	btn_perf.visible = lv >= 4
+	mode_select.visible = lv >= 2
+	mode_sep.visible = lv >= 2
+	pico_view.visible = lv >= 2
+	_update_controls()
 
 
 # ── text scaling ────────────────────────────────────────────────────────────
@@ -422,12 +568,18 @@ func _default_zoom(win_size := Vector2i.ZERO) -> float:
 		win_size = get_window().size
 	# Measure with the Pico-mode toolbar controls shown too, so switching
 	# modes later does not overflow the toolbar.
-	var extra: Array = [port_select, btn_ports, btn_connect, btn_flash].filter(func(c): return not c.visible)
+	# Likewise the controls of higher levels and the panels behind the welcome
+	# page, so raising the level or loading a program never overflows either.
+	var extra: Array = [port_select, btn_ports, btn_connect, btn_flash, btn_cycle, btn_diagram,
+		machine_select, btn_perf, mode_select, pico_view, panels].filter(func(c): return not c.visible)
 	for c in extra:
 		c.visible = true
+	var wv := welcome.visible
+	welcome.visible = false
 	var need := layout_root.get_combined_minimum_size() + Vector2(12, 12)  # + root margins
 	for c in extra:
 		c.visible = false
+	welcome.visible = wv
 	var fit := minf(win_size.x / need.x, win_size.y / need.y) * 0.98
 	return clampf(floorf(fit / 0.05) * 0.05, ZOOM_MIN, ZOOM_MAX)
 
@@ -536,7 +688,7 @@ func _apply_machine() -> void:
 	cycle_panel.visible = not pipe
 	caption_panel.visible = pipe
 	btn_cycle.tooltip_text = "Advance one pipeline cycle (F11)" if pipe else "Advance one clock cycle (F11)"
-	btn_insn.tooltip_text = "Go to the next instruction's first Execute cycle (F10)" if pipe else "Finish the current instruction (F10)"
+	btn_insn.tooltip_text = "Go to the next instruction's first Execute cycle (F10)" if pipe else "Run one instruction, then stop (F10)"
 	caption_panel.add_theme_stylebox_override("panel", Palette.panel_box("panel", 6, 10))
 
 
@@ -568,13 +720,15 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				return
 			pico_view.set_fullscreen(false)
 		KEY_F11:
-			if sim: _step_cycle()
+			if sim and Level.at_least(3): _step_cycle()
 		KEY_F10:
 			if sim: _step_insn()
 		KEY_F5:
 			if sim: _toggle_run()
+		KEY_F2:
+			if Level.at_least(4): perf_window.open()
 		KEY_O:
-			if k.is_command_or_control_pressed(): file_dialog.popup_centered_ratio(0.6)
+			if k.is_command_or_control_pressed(): _open_dialog()
 		KEY_R:
 			if k.is_command_or_control_pressed(): Backend.send("reload")
 		KEY_EQUAL, KEY_PLUS, KEY_KP_ADD:
@@ -608,8 +762,18 @@ func _on_state(st: Dictionary) -> void:
 		pipe_caption.text = PipelineView.caption(p)
 		pipe_caption.get_v_scroll_bar().value = scroll
 	_update_controls()
-	if st.get("loaded", false):
+	var loaded: bool = st.get("loaded", false)
+	if loaded == welcome.visible:
+		welcome.visible = not loaded
+		panels.visible = loaded
+		if loaded:
+			var cfg := ConfigFile.new()
+			cfg.load(SETTINGS)
+			tip_bar.visible = not cfg.get_value("ui", "tips_seen", false)
+	if loaded:
 		var s := "insn %d · cycle %d" % [int(st["steps"]), int(st["cycles"])]
+		if not Level.at_least(3):
+			s = "instruction %d" % int(st["steps"])   # clock cycles come in at level 3
 		if p is Dictionary:
 			s = "insn %d · pipeline cycle %d" % [int(p["insns"]), int(p["cycle"])]
 		if st.get("halted", false):
@@ -621,6 +785,13 @@ func _on_state(st: Dictionary) -> void:
 
 func _on_program(prog: Dictionary) -> void:
 	mem_panel.set_program(prog)
+	btn_settings.visible = not prog.get("settings", []).is_empty()
+	btn_settings.text = "⚙ Settings •" if settings_dialog.changed() else "⚙ Settings"
+	btn_settings.tooltip_text = "This program's settings, such as which pins your LED and button are on" + \
+		("\n• You have changed some from the program's defaults." if settings_dialog.changed() else "")
+	if _demo_settings and btn_settings.visible:
+		settings_dialog.open.call_deferred()
+		_demo_settings = false
 	get_window().title = "picosim — " + str(prog["path"]).get_file()
 
 
@@ -657,6 +828,7 @@ func _on_flash_done(ok: bool) -> void:
 
 func _on_palette() -> void:
 	bg.color = Palette.c("bg")
+	_style_tip_bar()
 	caption_panel.add_theme_stylebox_override("panel", Palette.panel_box("panel", 6, 10))
 	if Backend.state.get("pipe") is Dictionary:
 		pipe_caption.text = PipelineView.caption(Backend.state["pipe"])
@@ -687,9 +859,10 @@ func _update_controls() -> void:
 	btn_insn.disabled = not (loaded and sim) or halted
 	btn_run.disabled = not (loaded and sim) or halted
 	btn_run.text = "Pause" if st.get("running", false) else "Run"
-	port_select.visible = not sim
-	btn_ports.visible = not sim
-	btn_connect.visible = not sim
-	btn_flash.visible = not sim
+	var pico_ctl := not sim and Level.at_least(2)
+	port_select.visible = pico_ctl
+	btn_ports.visible = pico_ctl
+	btn_connect.visible = pico_ctl
+	btn_flash.visible = pico_ctl
 	btn_connect.text = "Disconnect" if st.get("serial") != null else "Connect"
 	btn_flash.disabled = not loaded or not str(st.get("path", "")).ends_with(".s")

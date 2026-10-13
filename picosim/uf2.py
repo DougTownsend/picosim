@@ -96,14 +96,56 @@ def _ninja_exe():
     return shutil.which("ninja")
 
 
+def _has_newlib(gcc):
+    """True if *gcc* can link Cortex-M0+ programs, i.e. ships the C library.
+
+    Homebrew's ``arm-none-eabi-gcc`` formula has no newlib, so linking the
+    SDK fails with "cannot find -lc"; the Arm GNU Toolchain includes it.
+    """
+    try:
+        r = subprocess.run([gcc, "-mcpu=cortex-m0plus", "-mthumb", "-print-file-name=libc.a"],
+                           capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    path = r.stdout.strip()
+    return os.path.isabs(path) and os.path.isfile(path)
+
+
+def _arm_bin_dir():
+    """Directory of the ARM toolchain to build with, or ``None``.
+
+    Tries $PICO_TOOLCHAIN_PATH, the compiler on PATH and Arm GNU Toolchain
+    installs in /Applications (newest first), and picks the first one that
+    has the C library; failing that, the one on PATH (the build then
+    explains what is missing).
+    """
+    import glob
+    cands = []
+    if os.environ.get("PICO_TOOLCHAIN_PATH"):
+        cands.append(os.path.join(os.environ["PICO_TOOLCHAIN_PATH"], "bin"))
+    on_path = shutil.which("arm-none-eabi-gcc")
+    if on_path:
+        cands.append(os.path.dirname(os.path.realpath(on_path)))
+    cands += sorted(glob.glob("/Applications/ArmGNUToolchain/*/arm-none-eabi/bin"), reverse=True)
+    for d in cands:
+        gcc = os.path.join(d, "arm-none-eabi-gcc")
+        if os.path.isfile(gcc) and os.path.isfile(os.path.join(d, "arm-none-eabi-g++")) \
+                and _has_newlib(gcc):
+            return d
+    return os.path.dirname(os.path.realpath(on_path)) if on_path else None
+
+
 def _arm_gcc():
     """Return the ARM GCC executable used by the Pico SDK build."""
-    return shutil.which("arm-none-eabi-gcc")
+    d = _arm_bin_dir()
+    return os.path.join(d, "arm-none-eabi-gcc") if d else None
 
 
 def _arm_gxx():
     """Return the ARM G++ executable used by the Pico SDK build."""
-    return shutil.which("arm-none-eabi-g++")
+    d = _arm_bin_dir()
+    gxx = os.path.join(d, "arm-none-eabi-g++") if d else None
+    return gxx if gxx and os.path.isfile(gxx) else None
 
 
 def _arm_toolchain_root(compiler):
@@ -201,6 +243,12 @@ def build_uf2(s_file):
         print("Install the ARM GNU Toolchain and make sure its bin directory is on PATH.",
               file=sys.stderr)
         return False
+    if not _has_newlib(arm_gcc):
+        print(f"Error: {arm_gcc} has no C library (newlib), so the Pico SDK cannot link.",
+              file=sys.stderr)
+        print("Install the Arm GNU Toolchain instead:  brew install --cask gcc-arm-embedded",
+              file=sys.stderr)
+        return False
 
     src_dir  = _script_dir()
     cache    = _cache_dir()
@@ -235,6 +283,9 @@ def build_uf2(s_file):
         r'.global asm_main\n.type asm_main, %function\n\1',
         asm_src,
     )
+    # Let programs tell the real Pico from the simulator (.ifdef
+    # PICOSIM_HARDWARE), e.g. to use a delay long enough to see an LED blink.
+    asm_src = ".set PICOSIM_HARDWARE, 1\n" + asm_src
     _write_if_changed(os.path.join(src_root, "asm_main.s"), asm_src)
 
     env = os.environ.copy()
@@ -291,9 +342,14 @@ def build_uf2(s_file):
     print("Building with ninja...")
     r = subprocess.run(
         [ninja],
-        cwd=build_dir, env=env, check=False,
+        cwd=build_dir, env=env, check=False, capture_output=True, text=True,
     )
     if r.returncode != 0:
+        # show the compiler's own messages (the GUI console only sees ours)
+        lines = (r.stdout + r.stderr).splitlines()
+        errors = [l for l in lines if "error" in l.lower() or "cannot find" in l]
+        for l in (errors or lines)[-15:]:
+            print(l, file=sys.stderr)
         print("Error: ninja build failed.", file=sys.stderr)
         return False
 

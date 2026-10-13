@@ -117,6 +117,55 @@ This needs Godot 4 (`godot` on your PATH, or set `PICOSIM_GODOT` to the
 binary). The Godot project lives in [gui/](gui/) and talks to a Python backend
 ([picosim/server.py](picosim/server.py)) over a local TCP socket.
 
+### For beginners: levels and examples
+
+With no program loaded, picosim opens on a welcome page listing the example
+programs in [examples/](examples/). One click opens one, starting with
+`01_hello.s`. Each example begins with comments that say what it does and
+what to watch. The toolbar's **Examples** menu opens them later too.
+
+The **Level** menu (top right, remembered between runs) controls how much of
+the app is shown. Students can start at level 1 and move up as the course
+goes on:
+
+| Level | Shows |
+|---|---|
+| 1 · Basics | Step instruction, Run, the registers and flags (in hex, decimal or signed), the disassembly and the serial console |
+| 2 · Memory & I/O | + the Memory tab and stack, the Pico board, Pico (USB serial) mode |
+| 3 · Inside the CPU | + Step cycle, the CPU diagram and cycle inspector, MAR/MDR/IR, the program walkthrough |
+| 4 · Pipeline & performance | + the 2-stage pipeline and the Performance window (the whole app) |
+
+The examples that use the Pico's pins (`05_blink_led.s`, `08_button_led.s`)
+work with any RP2040 board and any breadboard layout: the pins (and, for the
+button, which way the button and LED are wired) are **program settings**.
+Students set them with the toolbar's **⚙ Settings** button; picosim stores
+their values per program in the user's data folder and fills them in when it
+assembles (for the simulator, the walkthroughs and Flash), so the program
+file is never edited. To give your own program settings, mark `.equ` lines
+with a comment starting `<-`:
+
+```
+        .equ    LED_PIN,   15   @ <- the GPIO number of your LED
+        .equ    WIRED_GND, 1    @ <- 1: wired to GND; 0: wired to 3V3
+```
+
+Help text of the form `value: meaning; value: meaning` becomes a drop-down.
+
+`08_button_led.s` ("Buttons and LEDs") also works out those settings for a
+student's own circuit: with its `FIND_PINS` setting on "find my pins" it
+switches each pin in turn while printing its number (to find LEDs), then
+reports every pin that changes as buttons are pressed.
+
+In Pico (USB serial) mode, while a flashed board is connected, the Pico
+board drawing shows the real board's pins live. The firmware picosim builds
+uses the RP2040's second core to send the pin levels over USB about 50 times
+a second, as `\x02P<levels>,<directions>\x03` frames; picosim removes these
+from the console text (another serial monitor would show them).
+
+The guide (F1) lists only the topics for the current level. Pass
+`--level=N` after Godot's `--` to override the level for one run, e.g. for
+classroom demos or screenshots.
+
 - **Registers** (top left): R0–R12, SP, LR, PC, the NZCV flags and the
   datapath registers MAR, MDR, IR and IR2. Anything changed by the last step
   is shown in yellow. Type a value and press Enter to change a register, or
@@ -128,7 +177,9 @@ binary). The Godot project lives in [gui/](gui/) and talks to a Python backend
   header. Every GPIO shows its live level right on its pin: a green **1**
   for an output driven high, **0** for low, blue for an input that reads 1,
   and blank when floating. Pins changed by the last step get a yellow ring,
-  the on-board LED lights when GP25 is high, and the most recent I/O
+  the drawing's on-board LED lights when GP25 is high (as on a plain Pico;
+  on a Pico W that LED is not on GP25, so the examples use an LED wired to
+  a GPIO pin instead), and the most recent I/O
   register write is decoded underneath (for example
   `IO_BANK0 GPIO20_CTRL ← 0x331F`). Click an input pin to drive it
   (Z → 1 → 0 → Z). Hover a pin to see its details.
@@ -149,7 +200,7 @@ binary). The Godot project lives in [gui/](gui/) and talks to a Python backend
 - **2-stage pipeline** (machine menu next to *Show CPU Diagram*): the
   diagram becomes the Pico's Cortex-M0+ pipeline (Fetch | IF/EX |
   Decode + Execute), with each instruction in flight drawn as a labelled
-  token. *Step Cycle* advances one pipeline cycle. Taken branches show the
+  token. *Step cycle* advances one pipeline cycle. Taken branches show the
   predict-not-taken flush and refill, and multi-cycle instructions make the
   next one wait. A strip shows the last 8 cycles.
 - **Performance** (F2): cycles and CPI of the run so far on the multi-cycle

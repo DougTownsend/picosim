@@ -573,6 +573,8 @@ func _redirecting() -> bool:
 func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), C_BG)
 	_scale = min(size.x / W, size.y / H)
+	if _scale <= 0.0:
+		return   # not laid out yet (e.g. the frame the panels replace the welcome page)
 	_origin = (size - Vector2(W, H) * _scale) / 2.0
 	if not st.get("loaded", false) or pipe.is_empty():
 		_text(_p(20, 40), "Load a program to see the pipeline." if not st.get("loaded", false)
@@ -900,7 +902,7 @@ static func caption(p: Dictionary, footnote := true) -> String:
 	out += "\n[color=%s][b]Fetch[/b][/color] — %s\n" % [Palette.hex("stage_f"), st["F"]]
 	if not footnote:
 		return out
-	out += "\n[color=%s]The core runs each instruction as a whole, so the registers show the state after the instruction in Execute has finished. Step Cycle (F11) moves the pipeline one cycle; Step Insn (F10) jumps to the next instruction's first Execute cycle.[/color]" % dim
+	out += "\n[color=%s]The core runs each instruction as a whole, so the registers show the state after the instruction in Execute has finished. Step cycle (F11) moves the pipeline one cycle; Step instruction (F10) jumps to the next instruction's first Execute cycle.[/color]" % dim
 	return out
 
 

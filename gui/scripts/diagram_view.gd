@@ -345,7 +345,7 @@ func _live_status(id: String) -> String:
 	var head := Palette.hex("accent")
 	var t := "\n\n[color=%s][b]This cycle[/b][/color]\n" % head
 	if cycle.is_empty():
-		return t + "No cycle has run yet. Press Step Cycle (F11)."
+		return t + "No cycle has run yet. Press Step cycle (F11)."
 	var src: String = BOXES[GATES[id][2]][4]
 	if _has(sig):
 		var v = cycle.get("bus")
@@ -703,6 +703,8 @@ func _box_poly(r: Rect2, shape: String, orient := "") -> PackedVector2Array:
 func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), C_BG)
 	_scale = min(size.x / W, size.y / H)
+	if _scale <= 0.0:
+		return   # not laid out yet (e.g. the frame the panels replace the welcome page)
 	_origin = (size - Vector2(W, H) * _scale) / 2.0
 	if not st.get("loaded", false):
 		_text(_p(20, 40), "Load a program to see the datapath.", 18, C_DIM)

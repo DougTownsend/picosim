@@ -18,6 +18,7 @@ signal pipe_walkthrough_received(data: Dictionary)
 signal walkthrough_received(data: Dictionary)
 signal perf_received(data: Dictionary)
 signal sources_received(sources: Dictionary)
+signal settings_error(message: String)
 
 var tcp := StreamPeerTCP.new()
 var port := 0
@@ -121,6 +122,8 @@ func _handle(msg: Variant) -> void:
 			perf_received.emit(msg)
 		"sources":
 			sources_received.emit(msg["sources"])
+		"settings_error":
+			settings_error.emit(msg["message"])
 
 
 func send(cmd: String, args: Dictionary = {}) -> void:

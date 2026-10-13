@@ -3,8 +3,9 @@
 .thumb
 
 /*
- * echo_test.s — Reads characters from stdin and echoes them back.
- * Exits the loop (and returns from main) when 'q' is typed.
+ * gpio.s — Turns on GPIO20 by setting its IO_BANK0 control register
+ * (output enable forced on, output level forced high), then echoes
+ * characters from stdin until 'q' is typed.
  *
  * Compatible with the Pico SDK: link against the SDK and the same .s file
  * works over USB serial on the Pico.

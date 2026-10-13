@@ -19,6 +19,10 @@ extends Node
 ##
 ## Making the window bigger than it opened at makes the text bigger with it
 ## (by the square root of the area, up to 3×); it never drops below normal.
+##
+## The topic list follows the Level menu (level.gd): a section or topic above
+## the current level is left out of the list, but its page still opens from a
+## link, so nothing a lower-level page mentions is ever a dead end.
 
 const INFO_PATH := "res://scripts/component_info.gd"
 const DIAGRAM_PATH := "res://scripts/diagram_view.gd"
@@ -40,6 +44,7 @@ var bg: PanelContainer
 var _shown := ""
 var text_scale := 1.0
 var _open_size := Vector2i.ZERO   # window size when opened: text scale 1
+var _sec_level := 1               # level of the section being added (see _section)
 
 var _wt: Dictionary = {}          # the walkthrough message for the loaded program
 var _wt_waiting := false          # asked the backend, no answer yet
@@ -105,6 +110,7 @@ func _ready() -> void:
 	Backend.pipe_walkthrough_received.connect(_on_pipewalk)
 	Backend.program_loaded.connect(func(_p): _wt_reset(); _pw_reset())
 	Backend.state_changed.connect(_on_state)
+	Level.changed.connect(_rebuild)
 
 	_apply_palette()
 	Palette.changed.connect(_apply_palette)
@@ -120,7 +126,7 @@ func _ready() -> void:
 ## Show the guide, optionally at a topic id.
 func open(topic := "") -> void:
 	if topic != "" and _text.has(topic):
-		topics.select(_ids.find(topic))
+		_select(topic)
 		_show(topic)
 	var area := get_viewport().get_visible_rect().size
 	_open_size = Vector2i.ZERO   # ignore the resize popup_centered itself makes
@@ -220,7 +226,7 @@ func _rebuild() -> void:
 	_add_topics()
 	if shown == "":
 		shown = _ids.filter(func(x): return x != "")[0]
-	topics.select(_ids.find(shown))
+	_select(shown)
 	_show(shown)
 	_restore_scroll.call_deferred(pos)
 
@@ -268,14 +274,30 @@ func _on_meta(m: Variant) -> void:
 		open(s)
 
 
-func _topic(id: String, name: String, bb: String) -> void:
-	_ids.append(id)
+## Highlight topic `id` in the list, or nothing if it is not listed at this level.
+func _select(id: String) -> void:
+	var i := _ids.find(id)
+	if i >= 0:
+		topics.select(i)
+	else:
+		topics.deselect_all()
+
+
+## Add a topic; it is listed only if its level (or its section's) is reached.
+func _topic(id: String, name: String, bb: String, lvl := 0) -> void:
 	_text[id] = bb
+	if maxi(lvl, _sec_level) > Level.current:
+		return
+	_ids.append(id)
 	topics.add_item("    " + name)
 
 
-## A heading in the topic list: groups the topics under it.
-func _section(name: String) -> void:
+## A heading in the topic list: groups the topics under it. `lvl` is the
+## level its topics appear at.
+func _section(name: String, lvl := 1) -> void:
+	_sec_level = lvl
+	if lvl > Level.current:
+		return
 	_ids.append("")
 	var i := topics.add_item(name.to_upper())
 	topics.set_item_selectable(i, false)
@@ -304,27 +326,26 @@ static func _link(id: String, s: String) -> String:
 func _add_topics() -> void:
 	_section("Getting started")
 
-	_topic("start", "Getting started", _h("Getting started") +
-		"picosim runs ARM Cortex-M0+ (Thumb) assembly and shows you how a processor carries it out, clock cycle by clock cycle. It can run your program on two machines (pick one in the toolbar's machine menu):\n" +
-		"• " + _k("Multi-cycle") + " — the course's multi-cycle datapath: one instruction at a time, each broken into the FSM's states. See " + _link("diagram", "Datapath diagram") + ".\n" +
-		"• " + _k("2-stage pipeline") + " — the Raspberry Pi Pico's real Cortex-M0+: two instructions in flight at once. See " + _link("pipeline", "Pipeline diagram") + ".\n" +
-		"Both run the same instructions with the same results; only the timing differs.\n" +
-		_sub("1. Load a program") +
-		"Click " + _k("Open…") + " (" + _k("Ctrl/Cmd+O") + ") and pick a [code].s[/code] file, or start picosim with [code]picosim --gui file.s[/code]. The file is assembled and loaded; if the assembler reports an error it is shown in a dialog.\n" +
-		_sub("2. Run it") +
-		"• " + _k("Step Cycle") + " (" + _k("F11") + ") — advance one clock cycle.\n" +
-		"• " + _k("Step Insn") + " (" + _k("F10") + ") — finish the current instruction (or run one whole instruction).\n" +
-		"• " + _k("Run") + " / " + _k("Pause") + " (" + _k("F5") + ") — run continuously at the speed set by the slider.\n" +
-		"• " + _k("Reload") + " (" + _k("Ctrl/Cmd+R") + ") — re-assemble the file from disk and reset the CPU. Use it after editing your code, or to start over after the program halts.\n" +
-		_sub("3. Watch it") +
-		"Anything that changed in the last step turns [color=" + _c("changed") + "]yellow[/color] — registers, flags, memory bytes and pins. Click " + _k("Show CPU Diagram") + " to see the " + _link("diagram", "datapath") + " and the " + _link("cycles", "cycle-by-cycle") + " inspector, or the " + _link("pipeline", "pipeline") + " when the machine menu is on " + _k("2-stage pipeline") + ".\n" +
-		_sub("The screen") +
-		"• Top left — " + _link("registers", "Registers") + "\n" +
-		"• Middle left — " + _link("memory", "Disassembly and Memory") + "\n" +
-		"• Bottom left — the " + _link("pico", "Raspberry Pi Pico board") + "\n" +
-		"• Right — the " + _link("diagram", "CPU diagram") + " or " + _link("pipeline", "pipeline") + " (when shown), the " + _link("cycles", "cycle inspector") + " and the " + _link("serial", "USB serial console") + "\n\n" +
-		"To see what your program does in words, open the " + _link("walkthrough", "Program walkthrough") + " or the " + _link("pipewalk", "Pipeline walkthrough") + ".\n\n" +
-		"Drag the bars between panels to resize them. See " + _link("layout", "Layout and zoom") + ".")
+	var levels := ""
+	for n in range(1, Level.MAX + 1):
+		var here := "   [color=%s]← you are here[/color]" % _c("changed") if n == Level.current else ""
+		levels += "• [b]%s[/b] — %s%s\n" % [Level.title(n), Level.ABOUT[n - 1], here]
+	_topic("start", "Start here", _h("Start here") +
+		"picosim runs programs written in [b]assembly language[/b] — the instructions the Raspberry Pi Pico's processor understands — and lets you watch them run one step at a time. Try anything: nothing can break, and " + _k("Reload") + " always starts your program over.\n" +
+		_sub("Your first five minutes") +
+		"1. Click " + _k("Examples") + " in the toolbar and pick [b]Say hello[/b]. (Your own files open with " + _k("Open…") + ".)\n" +
+		"2. Press " + _k("Step instruction") + " (" + _k("F10") + "). In the Disassembly list, the row marked ▶ is the next instruction; each press runs one.\n" +
+		"3. Look at the " + _link("registers", "Registers") + ": the one that just changed turns [color=" + _c("changed") + "]yellow[/color]. After the first [code]movs[/code], R0 holds [code]0x00000048[/code] — the code for the letter H.\n" +
+		"4. Keep stepping. When [code]putchar[/code] runs, an [b]H[/b] appears in the " + _link("serial", "serial console") + " on the right.\n" +
+		"5. Press " + _k("Run") + " (" + _k("F5") + ") to let the rest go by itself, then " + _k("Reload") + " to watch it again.\n" +
+		_sub("Words you will meet") +
+		"• [b]Register[/b] — a small storage box inside the processor that holds one number. R0–R12 are for your values; SP, LR and PC have special jobs.\n" +
+		"• [b]PC[/b] (program counter) — the address of the next instruction. Watch it move as you step.\n" +
+		"• [b]Hex[/b] — numbers written in base 16 with a [code]0x[/code] in front: [code]0x2A[/code] = 42. Hover a register to see it in decimal, or switch the Registers panel's " + _k("Hex") + " menu to " + _k("Decimal") + ".\n" +
+		"• [b]Flags[/b] N Z C V — four yes/no facts about the last result (negative? zero? …) that branches like [code]BNE[/code] use to decide where to go.\n" +
+		_sub("Levels: see more when you are ready") +
+		"The " + _k("Level") + " menu (top right) decides how much of picosim is shown. Each level adds to the one before:\n" + levels +
+		"\nNext, read " + _link("programs", "Writing programs") + " to write your own, or work through the other examples in order.")
 
 	_topic("programs", "Writing programs", _h("Writing programs") +
 		"A program is a GNU-assembler Thumb file. A minimal one:\n\n" +
@@ -335,6 +356,9 @@ func _add_topics() -> void:
 		"• [code]bl putchar[/code] — prints the character in [code]r0[/code] to the " + _link("serial", "serial console") + ".\n" +
 		"• [code]bl getchar[/code] — waits for one key typed in the console and returns it in [code]r0[/code].\n" +
 		"They behave the same on a real Pico, so the same file runs on both.\n" +
+		_sub("Settings") +
+		"Some programs have settings, such as which pin an LED is on. When a program has them, " + _k("⚙ Settings") + " appears next to " + _k("Reload") + ": pick your values and click " + _k("Apply and reload") + ". picosim remembers them for you and uses them when it runs or flashes the program; the file itself is not changed (a • on the button means you changed something). Not sure what your circuit uses? Open the [b]Buttons and LEDs[/b] example and set its FIND_PINS setting to [i]find my pins[/i].\n" +
+		"To give your own program settings, end an [code].equ[/code] line with a comment that starts with [code]<-[/code], for example [code].equ LED_PIN, 15  @ <- the GPIO number of your LED[/code]. A comment like [code]@ <- 1: wired to GND; 0: wired to 3V3[/code] becomes a menu.\n" +
 		_sub("Memory map") +
 		"• [code]0x0000–0x2FFF[/code] — the built-in OS\n" +
 		"• [code]0x3000–0xFFFF[/code] — your code and data; the stack starts at the top of RAM ([code]SP = 0x00010000[/code]) and grows down\n" +
@@ -371,11 +395,13 @@ func _add_topics() -> void:
 		"• [color=" + _c("accent") + "]blue 1[/color] — input reading high\n" +
 		"• blank — floating (nothing drives it)\n" +
 		"• [color=" + _c("changed") + "]yellow ring[/color] — changed by the last step\n" +
-		"The on-board LED lights when GP25 is high. Under the board, the last I/O register write is decoded (for example [code]IO_BANK0 GPIO20_CTRL ← 0x331F[/code]). Hover any pin for its name, direction and level.\n" +
+		"The drawing's on-board LED lights when GP25 is high, as on a Raspberry Pi Pico. Real boards differ (on a Pico W that LED is wired to the Wi-Fi chip, not to GP25), so for programs that should work on any board, wire your own LED to a GPIO pin: see the [b]Blink an LED[/b] example. Under the board, the last I/O register write is decoded (for example [code]IO_BANK0 GPIO20_CTRL ← 0x331F[/code]). Hover any pin for its name, direction and level.\n" +
 		_sub("Driving inputs") +
 		"Click an [i]input[/i] pin to drive it like a switch: floating (Z) → 1 → 0 → floating. Your program sees it when it reads [code]GPIO_IN[/code]. Output pins cannot be clicked.\n" +
+		_sub("Live from your board") +
+		"In " + _k("Pico (USB serial)") + " mode, while a board you flashed from picosim is connected, the drawing shows your [i]real[/i] board's pins instead: the subtitle turns green and says LIVE. The pins update as your program runs (about 50 times a second), and pins that just changed get a yellow ring. You cannot click pins in this mode; use your real buttons. An input with nothing connected reads 0.\n" +
 		_sub("Full window") +
-		"Click " + _k("⛶ Enlarge") + " in the board's corner to fill the window with it; " + _k("✕ Close") + " or " + _k("Esc") + " returns.")
+		"Click " + _k("⛶ Enlarge") + " in the board's corner to fill the window with it; " + _k("✕ Close") + " or " + _k("Esc") + " returns.", 2)
 
 	_topic("serial", "Serial console", _h("USB Serial console") +
 		"Bottom right. Shows what your program prints with [code]putchar[/code].\n" +
@@ -388,9 +414,15 @@ func _add_topics() -> void:
 		"• [b]Resize panels[/b] by dragging the bars between them. The registers panel's text grows with it.\n" +
 		"• [b]Zoom[/b] the whole window with " + _k("−") + " / " + _k("+") + " in the toolbar, " + _k("Ctrl/Cmd +") + " / " + _k("Ctrl/Cmd −") + ", or " + _k("Ctrl/Cmd") + " + mouse wheel. Click the percentage (or " + _k("Ctrl/Cmd 0") + ") to reset. The zoom is remembered.\n" +
 		"• " + _k("Show / Hide CPU Diagram") + " toggles the diagram and the panel under it. The machine menu next to it switches the diagram between the " + _link("diagram", "multi-cycle datapath") + " and the " + _link("pipeline", "2-stage pipeline") + ".\n" +
-		"• The Pico board can fill the window — see " + _link("pico", "Raspberry Pi Pico board") + ".")
+		"• The Pico board can fill the window — see " + _link("pico", "Raspberry Pi Pico board") + ".\n" +
+		_sub("The screen") +
+		"• Top left — " + _link("registers", "Registers") + "\n" +
+		"• Middle left — " + _link("memory", "Disassembly and Memory") + "\n" +
+		"• Bottom left — the " + _link("pico", "Raspberry Pi Pico board") + " (from level 2)\n" +
+		"• Right — the " + _link("serial", "serial console") + ", and from level 3 the " + _link("diagram", "CPU diagram") + " and " + _link("cycles", "cycle inspector") + " above it\n" +
+		"Which panels and buttons you see depends on the " + _k("Level") + " menu; see " + _link("start", "Start here") + ".")
 
-	_section("Multi-cycle datapath")
+	_section("Multi-cycle datapath", 3)
 
 	_topic("diagram", "Datapath diagram", _h("Datapath diagram") +
 		"Click " + _k("Show CPU Diagram") + " in the toolbar, with the machine menu next to it on " + _k("Multi-cycle") + ". The diagram is the multi-cycle datapath from the course text: one shared 32-bit bus, MAR/MDR, IR/IR2, a separate address adder, the ALU, the register file and the FSM that controls them.\n" +
@@ -414,7 +446,7 @@ func _add_topics() -> void:
 		"• The instruction's address and text, and how far through it the CPU is.\n" +
 		"• The phase chips — " + _k("F") + " Fetch, " + _k("D") + " Decode, " + _k("EA") + " Evaluate address, " + _k("FO") + " Fetch operands, " + _k("EX") + " Execute, " + _k("SR") + " Store result — light up for the selected cycle. Hover one for its name.\n" +
 		"• The list of this instruction's cycles: number, FSM state and phase. Click a row to look at an earlier cycle again; the diagram shows that cycle.\n" +
-		"• " + _k("◀ Prev") + " and " + _k("Next ▶") + " move through the cycles. At the latest cycle, Next clocks the CPU (the same as Step Cycle).\n" +
+		"• " + _k("◀ Prev") + " and " + _k("Next ▶") + " move through the cycles. At the latest cycle, Next clocks the CPU (the same as Step cycle).\n" +
 		_sub("Right side") +
 		"• The state name and a plain-language description of what the cycle does, including the value on the bus.\n" +
 		"• [b]Control signals asserted[/b] — what the FSM turns on. [code]GateX[/code] puts X on the bus, [code]LD.X[/code] makes X load at the clock edge, [code]XMUX=…[/code] picks a multiplexer input, [code]ALUK=…[/code] picks the ALU operation.\n" +
@@ -426,7 +458,7 @@ func _add_topics() -> void:
 
 	_topic("walkthrough", "Program walkthrough", "")   # built in _show_walkthrough
 
-	_section("2-stage pipeline (RP2040)")
+	_section("2-stage pipeline (RP2040)", 4)
 
 	_topic("pipeline", "Pipeline diagram", _h("Pipeline diagram") +
 		"Pick " + _k("2-stage pipeline") + " in the toolbar's machine menu, next to " + _k("Show CPU Diagram") + ". The diagram turns into the Raspberry Pi Pico's own processor, the Cortex-M0+, which overlaps instructions in a [b]2-stage pipeline[/b]. Pick " + _k("Multi-cycle") + " to go back to the " + _link("diagram", "datapath diagram") + ".\n" +
@@ -458,8 +490,8 @@ func _add_topics() -> void:
 
 	_topic("pipecycles", "Pipeline cycle by cycle", _h("Pipeline cycle by cycle") +
 		_sub("Stepping") +
-		"• " + _k("Step Cycle") + " (" + _k("F11") + ") — one pipeline clock cycle: every token moves on one stage.\n" +
-		"• " + _k("Step Insn") + " (" + _k("F10") + ") — jump to the next instruction's first Execute cycle.\n" +
+		"• " + _k("Step cycle") + " (" + _k("F11") + ") — one pipeline clock cycle: every token moves on one stage.\n" +
+		"• " + _k("Step instruction") + " (" + _k("F10") + ") — jump to the next instruction's first Execute cycle.\n" +
 		"• " + _k("Run") + " (" + _k("F5") + ") — run at the speed slider's rate in pipeline cycles per second. At high speeds the animation is skipped.\n" +
 		"• Breakpoints stop the run when the instruction is in Fetch, just before it executes.\n" +
 		"The status bar and the diagram's title show the pipeline cycle, the instructions finished so far, and the CPI (cycles per instruction).\n" +
@@ -484,7 +516,7 @@ func _add_topics() -> void:
 
 	_topic("pipewalk", "Pipeline walkthrough", "")   # built in _show_pipewalk
 
-	_section("Measuring performance")
+	_section("Measuring performance", 4)
 
 	_topic("performance", "Performance window", _h("Performance window") +
 		"Click " + _k("Performance") + " in the toolbar (" + _k("F2") + "). The window counts every instruction your program has completed since it was loaded and updates while it runs. The same run is timed on three machines; they execute the same instructions with the same results, so only the number of clock cycles differs.\n" +
@@ -503,7 +535,7 @@ func _add_topics() -> void:
 		"• Not timed, and listed separately instead of guessed: SVC and BKPT (the datasheet gives no fixed count), and the extra bus cycles of APB peripheral accesses (datasheet §2.1.3) — the window tells you how many there were.\n" +
 		"• The exact cycle in which the real Cortex-M0+ fetches is not published (it fetches up to 32 bits ahead), so the chart's F marks when an instruction is in this model's fetch stage; the execute-stage counts are the datasheet's.\n")
 
-	_section("Real hardware")
+	_section("Real hardware", 2)
 
 	_topic("hardware", "Running on a real Pico", _h("Running on a real Pico") +
 		"The same [code].s[/code] file can run on a Raspberry Pi Pico connected by USB.\n" +
@@ -515,19 +547,26 @@ func _add_topics() -> void:
 
 	_section("Help")
 
-	_topic("keys", "Keyboard shortcuts", _h("Keyboard shortcuts") +
-		"[table=2]" +
-		_row("F1", "open this guide") + _row("F11", "step one clock cycle (hold to repeat)") +
-		_row("F10", "step one instruction (hold to repeat)") + _row("F5", "run / pause") +
-		_row("F2", "open the Performance window") +
-		_row("Ctrl/Cmd+O", "open a .s file") + _row("Ctrl/Cmd+R", "reload (re-assemble and reset)") +
-		_row("Ctrl/Cmd + / −", "zoom in / out") + _row("Ctrl/Cmd 0", "reset zoom") +
-		_row("Esc", "close the enlarged Pico board, a component card, or this guide") +
-		"[/table]\n\nOn the 2-stage pipeline, F11 steps one pipeline cycle and F10 jumps to the next instruction's first Execute cycle. F5, F10 and F11 only work in Simulator mode. While you are typing in the serial console, other keys go to your program.")
+	# only the keys that do something at this level
+	var keys := _row("F1", "open this guide") + _row("F10", "run one instruction (hold to repeat)") + \
+		_row("F5", "run / pause")
+	if Level.at_least(3):
+		keys += _row("F11", "step one clock cycle (hold to repeat)")
+	if Level.at_least(4):
+		keys += _row("F2", "open the Performance window")
+	keys += _row("Ctrl/Cmd+O", "open a .s file") + _row("Ctrl/Cmd+R", "reload (start the program over)") + \
+		_row("Ctrl/Cmd + / −", "zoom in / out") + _row("Ctrl/Cmd 0", "reset zoom") + \
+		_row("Esc", "close this guide" + (", the enlarged Pico board or a component card" if Level.at_least(2) else ""))
+	var note := "F5 and F10 only work in Simulator mode. While you are typing in the serial console, other keys go to your program."
+	if Level.at_least(4):
+		note = "On the 2-stage pipeline, F11 steps one pipeline cycle and F10 jumps to the next instruction's first Execute cycle. " + note
+	_topic("keys", "Keyboard shortcuts", _h("Keyboard shortcuts") + "[table=2]" + keys + "[/table]\n\n" + note)
 
 	_topic("trouble", "Troubleshooting", _h("Troubleshooting") +
 		_sub("Nothing happens when I press Step or Run") +
 		"The program has halted (the status bar says [i]halted[/i]) — press " + _k("Reload") + ". Or you are in Pico mode — switch to Simulator. Or no program is loaded.\n" +
+		_sub("I can't find a button or panel from the guide") +
+		"Some appear only at higher levels. Raise the " + _k("Level") + " menu in the toolbar; see " + _link("start", "Start here") + ".\n" +
 		_sub("The diagram shows the wrong machine") +
 		"The machine menu next to " + _k("Show CPU Diagram") + " picks it: " + _k("Multi-cycle") + " for the datapath with the cycle inspector, " + _k("2-stage pipeline") + " for the Pico's pipeline.\n" +
 		_sub("The program stops and waits") +
@@ -538,6 +577,13 @@ func _add_topics() -> void:
 		"The Python backend stopped. Close picosim and start it again with [code]picosim --gui[/code].\n" +
 		_sub("A pin will not respond to clicks") +
 		"Only input pins can be driven. If your program configured the pin as an output (via [code]GPIO_OE[/code]), it controls the pin.")
+
+	if Level.current < Level.MAX:
+		_ids.append("")
+		var i := topics.add_item("More at higher levels…")
+		topics.set_item_selectable(i, false)
+		topics.set_item_custom_fg_color(i, Palette.c("dim"))
+		topics.set_item_tooltip(i, "Change the Level menu in the toolbar to see more of picosim and more of this guide")
 
 
 # ── program walkthrough ─────────────────────────────────────────────────────

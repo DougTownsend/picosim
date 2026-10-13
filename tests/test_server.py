@@ -97,6 +97,67 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(st['gpio'][3]['level'], 1)
         self.assertEqual(st['gpio_changed'], [3])
 
+    def test_program_settings(self):
+        """Settings from the GUI change the program that runs, are stored
+        outside the program file, and bad values are refused."""
+        with tempfile.TemporaryDirectory() as tmp:
+            old = os.environ.get('PICOSIM_SETTINGS_DIR')
+            os.environ['PICOSIM_SETTINGS_DIR'] = tmp
+            try:
+                path = os.path.join(ROOT, 'examples', '05_blink_led.s')
+                with open(path, 'rb') as f:
+                    original = f.read()
+                c = start(path)
+                prog, _ = c.until(lambda m: m['type'] == 'program')
+                led = {s['name']: s for s in prog['settings']}['LED_PIN']
+                self.assertEqual((led['value'], led['default']), ('15', '15'))
+
+                c.send(cmd='set_settings', values={'LED_PIN': '20'})
+                prog, _ = c.until(lambda m: m['type'] == 'program')
+                self.assertEqual(prog['settings'][0]['value'], '20')
+                c.until(lambda m: m['type'] == 'state')     # the reload's own state
+                for _ in range(12):     # the OS's 3 instructions, then main up to the first flip
+                    c.send(cmd='step_insn')
+                    st, _ = c.until(lambda m: m['type'] == 'state')
+                self.assertEqual(st['gpio'][20]['level'], 1)
+                self.assertNotEqual(st['gpio'][15]['level'], 1)
+
+                c.send(cmd='set_settings', values={'LED_PIN': 'abc'})
+                err, _ = c.until(lambda m: m['type'] == 'settings_error')
+                self.assertIn('LED_PIN', err['message'])
+
+                c.send(cmd='set_settings', defaults=True)
+                prog, _ = c.until(lambda m: m['type'] == 'program')
+                self.assertEqual(prog['settings'][0]['value'], '15')
+                with open(path, 'rb') as f:
+                    self.assertEqual(f.read(), original)   # file never touched
+            finally:
+                if old is None:
+                    os.environ.pop('PICOSIM_SETTINGS_DIR', None)
+                else:
+                    os.environ['PICOSIM_SETTINGS_DIR'] = old
+
+    def test_board_pin_frames(self):
+        """Live-pin frames from a real board are taken out of the console
+        text (even when split across reads) and become the drawn pins."""
+        srv = Server(0)
+        shown = []
+        srv.console = lambda text, source='pico': shown.append(text)
+        srv.send_state = lambda: None
+        srv.mode, srv.serial = 'pico', object()
+        srv.serial_text('Hi\x02P0010')                 # a frame cut in half
+        srv.serial_text('0000,00008000\x03 there\n')
+        self.assertEqual(''.join(shown), 'Hi there\n')
+        self.assertTrue(srv.board_live())
+        pins = srv.gpio_pins()
+        self.assertEqual((pins[20]['level'], pins[15]['dir']), (1, 'out'))
+        srv.serial_text('\x02P00000000,00008000\x03')  # GP20 goes low
+        self.assertEqual(srv.board_changed, [20])
+        srv.serial_text('a \x02 b\n')                  # a stray \x02 that is no frame
+        srv.serial_text('x' * 50)
+        self.assertTrue(''.join(shown).endswith('a \x02 b\n' + 'x' * 50))
+        srv.serial = None
+
     def test_walkthrough(self):
         c = start(os.path.join(ROOT, 'test_asm_files', 'gpio.s'))
         c.until(lambda m: m['type'] == 'state')

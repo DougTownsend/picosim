@@ -143,6 +143,11 @@ func _pin_pos(num: int) -> Vector2:
 	return Vector2(X0 + (40 - num) * PITCH, TOP_Y)
 
 
+## True when the pins come from a real board (Pico mode, connected), not the simulator.
+func _board() -> bool:
+	return st.get("gpio_source", "sim") == "board"
+
+
 func _gpio(i: int) -> Dictionary:
 	var pins: Array = st.get("gpio", [])
 	return pins[i] if i < pins.size() else {}
@@ -189,7 +194,11 @@ func _draw() -> void:
 	_origin = (size - Vector2(W, H) * _scale) / 2.0
 
 	_text(_p(W / 2, 36), "Raspberry Pi Pico", 34, C_TEXT, null, true)
-	_text(_p(W / 2, 58), "live GPIO levels · click an input pin to drive it (Z → 1 → 0)", 13, C_DIM, null, true)
+	if _board():
+		_text(_p(W / 2, 58), "LIVE from your board over USB · the pins update as your program runs", 13,
+			Palette.c("green"), null, true)
+	else:
+		_text(_p(W / 2, 58), "live GPIO levels · click an input pin to drive it (Z → 1 → 0)", 13, C_DIM, null, true)
 
 	_draw_pcb()
 	_draw_traces()
@@ -399,7 +408,7 @@ func _draw_pin(num: int, changed: Dictionary) -> void:
 
 func _draw_io_caption() -> void:
 	# Most recent I/O write of the current instruction, decoded.
-	var hist: Array = st.get("history", [])
+	var hist: Array = [] if _board() else st.get("history", [])
 	var text := ""
 	for i in range(hist.size() - 1, -1, -1):
 		for ch in hist[i]["changes"]:
@@ -419,7 +428,8 @@ func _draw_io_caption() -> void:
 		_text(_p(12, y), "Last I/O write:  " + text, 12, C_TEXT, mono)
 		y += 20
 	if not parts.is_empty():
-		_text(_p(12, y), "Changed by the last step:  " + ", ".join(parts), 12, Palette.c("changed"), mono)
+		_text(_p(12, y), ("Just changed on the board:  " if _board() else "Changed by the last step:  ") +
+			", ".join(parts), 12, Palette.c("changed"), mono)
 
 
 func _draw_legend() -> void:
@@ -465,8 +475,8 @@ func _gui_input(event: InputEvent) -> void:
 		return
 	var gp: int = PINS[num]
 	var g := _gpio(gp)
-	if g.get("dir", "in") == "out":
-		return
+	if g.get("dir", "in") == "out" or _board():
+		return   # outputs, and a real board's pins, cannot be driven from here
 	# cycle the external drive: floating → 1 → 0 → floating
 	var nxt = 1
 	if g.get("driven", false):
@@ -502,4 +512,6 @@ func _get_tooltip(at_position: Vector2) -> String:
 	if g.get("driven", false):
 		extra += ", driven externally"
 	var hint := "" if dir == "output" else "\nClick to drive it: Z → 1 → 0 → Z"
+	if _board():
+		hint = "\nLive from your board (an input with nothing connected reads 0)"
 	return "Pin %d: GP%d — %s, %s%s%s" % [num, info, dir, level, extra, hint]

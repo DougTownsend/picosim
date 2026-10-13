@@ -37,6 +37,7 @@ func _ready() -> void:
 	head.add_child(status)
 	var clear := Button.new()
 	clear.text = "Clear"
+	clear.tooltip_text = "Empty the console (your program keeps running)"
 	clear.focus_mode = Control.FOCUS_NONE
 	clear.pressed.connect(func(): out.clear(); _segs.clear())
 	head.add_child(clear)
@@ -58,6 +59,7 @@ func _ready() -> void:
 	line_edit = LineEdit.new()
 	line_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	line_edit.placeholder_text = "Type a line and press Enter (sent with \\r)"
+	line_edit.tooltip_text = "Type a whole line here and press Enter to send it to your program\n(or click the output above and type: each key is sent at once)"
 	line_edit.add_theme_font_override("font", font)
 	line_edit.text_submitted.connect(_on_line)
 	row.add_child(line_edit)

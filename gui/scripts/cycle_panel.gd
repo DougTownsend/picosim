@@ -81,6 +81,7 @@ func _ready() -> void:
 		phase_chips[p] = chip
 
 	list = ItemList.new()
+	list.tooltip_text = "This instruction's clock cycles so far: click one to see it on the diagram"
 	list.custom_minimum_size.y = 110
 	list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	list.size_flags_stretch_ratio = 0.8
@@ -93,6 +94,7 @@ func _ready() -> void:
 	v.add_child(nav)
 	btn_prev = Button.new()
 	btn_prev.text = "◀ Prev"
+	btn_prev.tooltip_text = "Look at the previous clock cycle of this instruction again"
 	btn_prev.focus_mode = Control.FOCUS_NONE
 	btn_prev.pressed.connect(_prev)
 	nav.add_child(btn_prev)
@@ -206,7 +208,7 @@ func update_state(st: Dictionary) -> void:
 			else "done in %d cycles — next insn at %04X" % [history.size(), int(st["pc"])]
 	else:
 		insn_label.text = "%04X:  %s" % [int(st["pc"]), _asm_at(int(st["pc"]))]
-		progress_label.text = "not started — press Step Cycle (F11)"
+		progress_label.text = "not started — press Step cycle (F11)"
 	_show_selected()
 
 

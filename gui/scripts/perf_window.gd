@@ -334,7 +334,7 @@ func _fill_metrics() -> void:
 		dim, str(Backend.state.get("path", "")).get_file(),
 		(" (the instruction in progress, %d cycles so far, is not included yet)" % int(data["cycles_in_progress"])) if data["in_insn"] else ""]
 	if int(s["insns"]) == 0:
-		metrics.text = t + "Nothing has run yet. Press Step Cycle, Step Insn or Run."
+		metrics.text = t + "Nothing has run yet. Press Step cycle, Step instruction or Run."
 		phase_bars.set_rows([])
 		mix_bars.set_rows([])
 		get_meta("metrics_tail").text = ""

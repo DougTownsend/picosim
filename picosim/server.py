@@ -22,6 +22,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import select
 import socket
 import sys
@@ -30,6 +31,7 @@ import time
 from collections import deque
 
 from .loader import load_program, LoadError
+from . import settings as prog_settings
 from .cpu import SimulatorError
 from .pipeline import Pipeline
 
@@ -75,6 +77,9 @@ class Server:
         self.machine = 'multicycle'  # what Step Cycle steps: see MACHINES
         self.pipe = None             # Pipeline of the loaded program
         self.serial = None
+        self.serial_buf = ''         # serial text not shown yet (may end in half a pin frame)
+        self.board_pins = None       # (levels, output-enables) last reported by a real board
+        self.board_changed = []      # pins that changed in the board's last report
         self.flash_thread = None
         self.flash_result = None
 
@@ -173,6 +178,8 @@ class Server:
         gpio_changed = [p['pin'] for p in pins
                         if p['pin'] in before and
                         (p['level'], p['dir']) != (before[p['pin']]['level'], before[p['pin']]['dir'])]
+        if self.board_live():
+            gpio_changed = self.board_changed
         self.send({
             'type': 'state', 'loaded': True, 'path': self.prog.path,
             'regs': list(c.regs), 'flags': {'N': c.N, 'Z': c.Z, 'C': c.C, 'V': c.V},
@@ -192,6 +199,7 @@ class Server:
             'stack': {'addr': stack_lo, 'data': self.mem_hex(stack_lo, 64)},
             'gpio': pins,
             'gpio_changed': gpio_changed,
+            'gpio_source': 'board' if self.board_live() else 'sim',
             'mode': self.mode,
             'serial': self.serial.port if self.serial else None,
             'machine': self.machine,
@@ -209,7 +217,7 @@ class Server:
             listing.append({'addr': addr, 'raw': raw, 'text': p.asm_map[addr],
                             'label': p.sym_map.get(addr, '')})
         self.send({'type': 'program', 'path': p.path, 'main': p.main_addr,
-                   'listing': listing,
+                   'listing': listing, 'settings': prog_settings.describe(p.path),
                    'labels': {k: v for k, v in p.label_map.items()}})
 
     # ── SVC handling for the GUI console ─────────────────────────────────────
@@ -252,7 +260,16 @@ class Server:
             else:
                 self.changed.add(ch['name'])
 
+    def board_live(self):
+        """True when the Pico board drawing should show a real board's pins."""
+        return self.mode == 'pico' and self.serial is not None and self.board_pins is not None
+
     def gpio_pins(self):
+        if self.board_live():
+            levels, oe = self.board_pins
+            return [{'pin': i, 'dir': 'out' if oe >> i & 1 else 'in', 'level': levels >> i & 1,
+                     'pull': None, 'driven': False, 'func': 5 if oe >> i & 1 else 0x1F}
+                    for i in range(30)]
         g = self.prog.cpu.gpio if self.prog else None
         return g.pin_states() if g else []
 
@@ -385,10 +402,15 @@ class Server:
             return self.error("no program to load")
         path = os.path.abspath(os.path.expanduser(path))
         try:
-            prog = load_program(path)
+            # assemble with the student's program settings filled in (if any)
+            prog = load_program(prog_settings.effective_source(path))
         except LoadError as e:
             self.send({'type': 'load_error', 'path': path, 'message': str(e)})
             return
+        except OSError as e:
+            self.send({'type': 'load_error', 'path': path, 'message': str(e)})
+            return
+        prog.path = path
         self.prog, self.path = prog, path
         self.core.svc_handler = self._svc
         self.running = False
@@ -400,10 +422,29 @@ class Server:
         self.breakpoints &= set(prog.asm_map)
         self.hexview = (max(prog.main_addr, 0x3000) & ~0xF, HEX_DEFAULT[1])
         self.send_program()
-        self.console(f"[loaded {os.path.basename(path)}]\n", 'system')
+        note = ''
+        if prog_settings.declared(path):
+            note = " — this program has settings: click Settings in the toolbar"
+        self.console(f"[loaded {os.path.basename(path)}{note}]\n", 'system')
         self.send_state()
 
     def cmd_reload(self, msg):
+        self.cmd_load({'path': self.path})
+
+    def cmd_set_settings(self, msg):
+        """Store the student's values for the loaded program's settings
+        (never in the file itself) and load it again with them."""
+        if not self.path:
+            return self.error("no program loaded")
+        try:
+            if msg.get('defaults'):
+                prog_settings.clear(self.path)
+            else:
+                prog_settings.set_values(self.path, msg.get('values') or {})
+        except ValueError as e:
+            return self.send({'type': 'settings_error', 'message': str(e)})
+        except OSError as e:
+            return self.send({'type': 'settings_error', 'message': f"could not save settings: {e}"})
         self.cmd_load({'path': self.path})
 
     cmd_reset = cmd_reload
@@ -606,7 +647,9 @@ class Server:
             return self.send({'type': 'walkthrough', 'path': '', 'steps': [],
                               'stopped': 'No program is loaded.', 'output': '', 'limit': 0})
         from .walkthrough import build, DEFAULT_LIMIT
-        self.send(build(self.path, int(msg.get('limit', DEFAULT_LIMIT))))
+        wt = build(prog_settings.effective_source(self.path), int(msg.get('limit', DEFAULT_LIMIT)))
+        wt['path'] = self.path
+        self.send(wt)
 
     def cmd_pipe_walkthrough(self, msg):
         """The walkthrough on the 2-stage pipeline (user guide)."""
@@ -614,7 +657,9 @@ class Server:
             return self.send({'type': 'pipe_walkthrough', 'path': '', 'steps': [],
                               'stopped': 'No program is loaded.', 'output': '', 'limit': 0})
         from .walkthrough import build_pipeline, DEFAULT_LIMIT
-        self.send(build_pipeline(self.path, int(msg.get('limit', DEFAULT_LIMIT))))
+        wt = build_pipeline(prog_settings.effective_source(self.path), int(msg.get('limit', DEFAULT_LIMIT)))
+        wt['path'] = self.path
+        self.send(wt)
 
     # ── real Pico over USB serial ────────────────────────────────────────────
 
@@ -679,7 +724,10 @@ class Server:
             except OSError:
                 pass
             self.serial = None
+            self.serial_buf = ''
+            self.board_pins = None
             self.console("[serial disconnected]\n", 'system')
+            self.send_state()
 
     def poll_serial(self):
         if not self.serial:
@@ -687,10 +735,52 @@ class Server:
         try:
             n = self.serial.in_waiting
             if n:
-                self.console(self.serial.read(n).decode('latin-1'), 'pico')
+                self.serial_text(self.serial.read(n).decode('latin-1'))
         except OSError as e:
             self.serial = None
+            self.serial_buf = ''
+            self.board_pins = None
             self.console(f"[serial lost: {e}]\n", 'system')
+            self.send_state()
+
+    def serial_text(self, text):
+        """Show text from the board, taking out its live-pin frames
+        (\\x02P<levels>,<output-enables>\\x03, see wrapper_main.c) and
+        updating the board drawing from them."""
+        buf = self.serial_buf + text
+        shown = []
+        while True:
+            start = buf.find('\x02')
+            if start < 0:
+                shown.append(buf)
+                buf = ''
+                break
+            shown.append(buf[:start])
+            end = buf.find('\x03', start)
+            if end < 0:
+                if len(buf) - start > 40:      # not a frame after all: show it
+                    shown.append(buf[start:])
+                    buf = ''
+                else:
+                    buf = buf[start:]          # the rest arrives in the next read
+                break
+            self.board_frame(buf[start + 1:end])
+            buf = buf[end + 1:]
+        self.serial_buf = buf
+        out = ''.join(shown)
+        if out:
+            self.console(out, 'pico')
+
+    def board_frame(self, body):
+        m = re.fullmatch(r'P([0-9a-fA-F]{8}),([0-9a-fA-F]{8})', body)
+        if not m:
+            return
+        new = (int(m.group(1), 16), int(m.group(2), 16))
+        old = self.board_pins
+        diff = 0 if old is None else (old[0] ^ new[0]) | (old[1] ^ new[1])
+        self.board_changed = [i for i in range(30) if diff >> i & 1]
+        if new != old:
+            self.board_pins = new
             self.send_state()
 
     def cmd_flash(self, msg):
@@ -700,7 +790,7 @@ class Server:
             return self.error("flash already in progress")
         self.close_serial()
         self.console(f"[building and flashing {os.path.basename(self.path)}...]\n", 'system')
-        path = self.path
+        path = prog_settings.effective_source(self.path)   # with the student's settings
 
         def work():
             from .uf2 import flash_uf2
