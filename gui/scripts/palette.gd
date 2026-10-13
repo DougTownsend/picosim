@@ -28,6 +28,8 @@ const SCHEMES := {
 		"label": "7fd1b9", "bp": "ff6b6b", "focus": "4a78c2", "sp_bg": "3a4f7a", "pc_bg": "5a4a20",
 		"pc_row": "f2cc6038", "sig_bg": "2f3845", "glow": "bfe6ff", "glow_ctrl": "f0c8ff",
 		"glow_head": "ffffff", "shadow": "00000080", "gnd": "6b7280",
+		# pipeline stages + single-series bars (dataviz reference slots 1-3, dark steps)
+		"stage_f": "3987e5", "stage_d": "d95926", "stage_e": "199e70", "on_stage": "ffffff",
 	},
 	"dark": {
 		"bg": "141414", "panel": "1d1d1d", "panel_alt": "2a2a2a", "surface": "0e0e0e", "card": "202020",
@@ -38,6 +40,7 @@ const SCHEMES := {
 		"label": "7fd1b9", "bp": "ff6b6b", "focus": "4a78c2", "sp_bg": "2f4468", "pc_bg": "54441a",
 		"pc_row": "f2cc6033", "sig_bg": "333333", "glow": "bfe6ff", "glow_ctrl": "f0c8ff",
 		"glow_head": "ffffff", "shadow": "00000099", "gnd": "737373",
+		"stage_f": "3987e5", "stage_d": "d95926", "stage_e": "199e70", "on_stage": "ffffff",
 		# control theme
 		"btn": "2b2b2b", "btn_hover": "353535", "btn_pressed": "1f3048", "input": "121212",
 		"hover": "2a2a2a", "select": "1f3048", "scroll": "4a4a4a",
@@ -51,6 +54,7 @@ const SCHEMES := {
 		"label": "0d6660", "bp": "d1242f", "focus": "0b5cb5", "sp_bg": "aec5e6", "pc_bg": "dcc787",
 		"pc_row": "f2b8244a", "sig_bg": "c5cad1", "glow": "0a3d91", "glow_ctrl": "4c2a99",
 		"glow_head": "0a3069", "shadow": "0000002e",
+		"stage_f": "2a78d6", "stage_d": "eb6834", "stage_e": "1baf7a", "on_stage": "111418",
 		# control theme
 		"btn": "cbcfd3", "btn_hover": "c0c4c9", "btn_pressed": "b9cce4", "input": "dcdfe2",
 		"hover": "c9cdd1", "select": "b9cce4", "scroll": "9aa1aa",

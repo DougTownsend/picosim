@@ -112,6 +112,113 @@ class ServerTest(unittest.TestCase):
         st, _ = c.until(lambda m: m['type'] == 'state')
         self.assertEqual(st['cycles'], 0)
 
+    def test_pipe_walkthrough(self):
+        c = start(os.path.join(ROOT, 'test_asm_files', 'uint16_loop_test.s'))
+        c.until(lambda m: m['type'] == 'state')
+        c.send(cmd='pipe_walkthrough', limit=40)
+        m, _ = c.until(lambda m: m['type'] == 'pipe_walkthrough')
+        steps = m['steps']
+        self.assertEqual(len(steps), 40)
+        self.assertIsNone(steps[0]['cycles'][0]['view']['E'])         # the first fetch
+        cycle = 0
+        for i, s in enumerate(steps):
+            self.assertTrue(s['summary'])
+            for k, cy in enumerate(s['cycles']):
+                v = cy['view']
+                self.assertEqual(v['cycle'], cycle)                    # no gaps, no repeats
+                cycle += 1
+                if not (i == 0 and k == 0):
+                    self.assertEqual(v['E']['addr'], s['addr'])        # this step executes
+        self.assertTrue(any(s['flushes'] for s in steps))
+        c.send(cmd='state')
+        st, _ = c.until(lambda m: m['type'] == 'state')
+        self.assertEqual(st['cycles'], 0)                              # the GUI's machine is untouched
+
+    def test_perf_and_sources(self):
+        c = start(os.path.join(ROOT, 'test_asm_files', 'gpio.s'))
+        c.until(lambda m: m['type'] == 'state')
+        c.send(cmd='step_insn')
+        c.send(cmd='step_insn')
+        c.until(lambda m: m['type'] == 'state' and m['steps'] == 2)
+        c.send(cmd='perf', machine='pipe3', n=8)
+        m, _ = c.until(lambda m: m['type'] == 'perf')
+        self.assertEqual(m['stock']['insns'], 2)
+        self.assertEqual(m['stock']['machines']['pico2']['cycles'], 4)   # two LDRs: 2 + 2
+        self.assertEqual(m['stock']['machines']['multicycle']['cycles'], 14)
+        self.assertTrue(m['schedule']['rows'][-1]['pending'])          # the next instruction
+        c.send(cmd='component_source')
+        m, _ = c.until(lambda m: m['type'] == 'sources')
+        self.assertIn('class ALU', m['sources']['alu'])
+        self.assertIn('def tri_state', m['sources']['gatePC'])
+
+    def test_pipeline_machine(self):
+        """2-stage pipeline: the instruction behind the one executing is
+        always in Fetch, a taken branch flushes it, and the cycles stepped
+        are the RP2040's Table 81 counts."""
+        from picosim import timing
+        c = start(os.path.join(ROOT, 'test_asm_files', 'uint16_loop_test.s'))
+        c.until(lambda m: m['type'] == 'state')
+        c.send(cmd='set_machine', machine='pico2')
+        st, _ = c.until(lambda m: m['type'] == 'state' and m['machine'] == 'pico2')
+        self.assertIsNone(st['pipe']['E'])
+        self.assertEqual(st['pipe']['F']['addr'], st['pc'])      # the first fetch
+        seen = {'held': False, 'redirect': False}
+        prev_e = None
+        for _ in range(60):
+            c.send(cmd='step_cycle')
+            st, _ = c.until(lambda m: m['type'] == 'state')
+            p = st['pipe']
+            e, f = p['E'], p['F']
+            self.assertIsNotNone(e)
+            self.assertIsNotNone(f)
+            self.assertGreater(f['id'], e['id'])                  # one step behind
+            if f['status'] == 'held':
+                seen['held'] = True
+                self.assertGreater(e['cycles'], 1)
+            if e['redirect']:
+                seen['redirect'] = True
+                self.assertTrue(f['flushed'])                    # the wrong-path fetch
+            if prev_e is not None and prev_e['redirect']:
+                self.assertTrue(e['refilling'])                   # target enters Fetch
+                self.assertFalse(f['flushed'])
+            prev_e = e
+        self.assertTrue(seen['held'])
+        self.assertTrue(seen['redirect'])
+        self.assertEqual(p['cycle'], 60)
+        # the cycles stepped match Table 81 for the instructions finished
+        c.send(cmd='perf', machine='pico2', n=64)
+        m, _ = c.until(lambda m: m['type'] == 'perf')
+        done = [r for r in m['schedule']['rows'] if not r['flushed'] and not r.get('pending')]
+        finished = sum(r['cycles'] for r in done[:p['insns']])
+        self.assertEqual(finished + e['k'], 60)                  # + the one in Execute
+        # Step Insn moves to the next instruction's first execute cycle
+        c.send(cmd='step_insn')
+        st, _ = c.until(lambda m: m['type'] == 'state')
+        self.assertEqual(st['pipe']['E']['k'], 1)
+        # back to the multi-cycle machine
+        c.send(cmd='set_machine', machine='multicycle')
+        st, _ = c.until(lambda m: m['type'] == 'state' and m['machine'] == 'multicycle')
+        self.assertIsNone(st['pipe'])
+        c.send(cmd='step_cycle')
+        st, _ = c.until(lambda m: m['type'] == 'state')
+        self.assertEqual(st['history'][-1]['state'], 'FETCH_ADDR')
+
+    def test_pipeline_run(self):
+        c = start(os.path.join(ROOT, 'test_asm_files', 'test_main.s'))
+        prog, _ = c.until(lambda m: m['type'] == 'program')
+        c.until(lambda m: m['type'] == 'state')
+        c.send(cmd='set_machine', machine='pico2')
+        c.send(cmd='set_bp', addr=prog['main'])
+        c.send(cmd='run', cps=0)
+        st, _ = c.until(lambda m: m['type'] == 'state' and m['machine'] == 'pico2' and not m['running']
+                        and m['steps'] > 0)
+        self.assertEqual(st['pc'], prog['main'])
+        self.assertEqual(st['pipe']['F']['addr'], prog['main'])  # about to execute
+        c.send(cmd='clear_bp', addr=prog['main'])
+        c.send(cmd='run', cps=0)
+        st, _ = c.until(lambda m: m['type'] == 'state' and m['halted'] and not m['running'])
+        self.assertFalse(st['pipe']['more'])
+
     def test_load_error(self):
         with tempfile.TemporaryDirectory() as d:
             bad = os.path.join(d, 'bad.s')

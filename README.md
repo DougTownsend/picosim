@@ -144,12 +144,28 @@ binary). The Godot project lives in [gui/](gui/) and talks to a Python backend
   the control signals asserted, the value on the bus, the wires carrying
   data, and every register, flag or memory byte that changed (old → new).
   Use *Prev* and *Next* to review earlier cycles of the instruction.
+  Click a block or tri-state buffer for what it does, its connections and
+  its Python model (`picosim/components.py`).
+- **2-stage pipeline** (machine menu next to *Show CPU Diagram*): the
+  diagram becomes the Pico's Cortex-M0+ pipeline (Fetch | IF/EX |
+  Decode + Execute), with each instruction in flight drawn as a labelled
+  token. *Step Cycle* advances one pipeline cycle. Taken branches show the
+  predict-not-taken flush and refill, and multi-cycle instructions make the
+  next one wait. A strip shows the last 8 cycles.
+- **Performance** (F2): cycles and CPI of the run so far on the multi-cycle
+  machine, the RP2040's 2-stage Cortex-M0+ pipeline (RP2040 datasheet
+  Table 81 counts) and a 3-stage teaching pipeline; datapath use,
+  instruction mix, design options (multiplier, memory wait states) and a
+  cycle-by-cycle pipeline chart. See `picosim/timing.py` for exactly what
+  is and is not modelled.
 
 | Key | Action |
 |-----|--------|
 | F11 | step one clock cycle |
 | F10 | step one instruction (finishes the current one) |
 | F5  | run / pause (the speed slider sets cycles per second) |
+| F2  | Performance window |
+| F1  | user guide |
 | Ctrl/Cmd+O | open a `.s` file |
 | Ctrl/Cmd+R | reload (re-assemble and reset) |
 

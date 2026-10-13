@@ -9,6 +9,8 @@ const ConsolePanel := preload("res://scripts/console_panel.gd")
 const DiagramView := preload("res://scripts/diagram_view.gd")
 const CyclePanel := preload("res://scripts/cycle_panel.gd")
 const PicoView := preload("res://scripts/pico_view.gd")
+const PipelineView := preload("res://scripts/pipeline_view.gd")
+const MACHINES := ["multicycle", "pico2"]
 
 ## Clock-speed presets (cycles per second); 0 = as fast as possible.
 const ZOOM_MIN := 0.5
@@ -29,7 +31,12 @@ var mem_panel
 var console_panel
 var diagram
 var cycle_panel
+var pipe_view
+var pipe_caption: RichTextLabel
+var caption_panel: PanelContainer
+var cycle_area: Control
 var pico_view
+var perf_window
 var zoom := 1.0
 var zoom_label: Button
 var diagram_area: Control
@@ -51,6 +58,7 @@ var btn_ports: Button
 var btn_connect: Button
 var btn_flash: Button
 var btn_diagram: Button
+var machine_select: OptionButton
 var theme_select: OptionButton
 var status_label: Label
 var _status_bad := false
@@ -64,6 +72,7 @@ var _demo_cycles := 0
 var _demo_click_pin := 0
 var _demo_component := ""
 var _demo_click_gate := ""        # --demo-click-gate ID: click that buffer with a real mouse event
+var _demo_machine := ""          # --machine=pico2: start on that machine
 var _text_panels: Array = []     # [{panel, fonts, growth, size, scale}] — see _setup_text_scaling
 var _drag_frame := -100          # process frame of the last splitter drag
 
@@ -99,12 +108,18 @@ func _ready() -> void:
 			_demo_click_pin = int(args[i + 1])
 		if args[i] == "--demo-click-gate" and i + 1 < args.size():
 			_demo_click_gate = args[i + 1]
+		if args[i].begins_with("--machine="):
+			_demo_machine = args[i].substr(10)
 		if args[i] == "--shot-frames" and i + 1 < args.size():
 			_screenshot_wait = int(args[i + 1])
 
 
 func _process(_delta: float) -> void:
 	# --screenshot PATH: grab the window once the UI has settled, then quit.
+	if _demo_machine != "" and Backend.state.get("loaded", false):
+		machine_select.select(maxi(0, MACHINES.find(_demo_machine)))
+		_on_machine(machine_select.selected)
+		_demo_machine = ""
 	if _demo_cycles > 0 and Backend.state.get("loaded", false):
 		for i in _demo_cycles:
 			Backend.send("step_cycle")
@@ -184,29 +199,47 @@ func _build_ui() -> void:
 	right_split.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hsplit.add_child(right_split)
 
+	# the multi-cycle datapath and the 2-stage pipeline share one area
+	diagram_area = MarginContainer.new()   # stacks its children, full size
+	diagram_area.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	diagram_area.size_flags_stretch_ratio = 2.2
+	diagram_area.custom_minimum_size = Vector2(500, 300)
+	right_split.add_child(diagram_area)
 	diagram = DiagramView.new()
-	diagram.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	diagram.size_flags_stretch_ratio = 2.2
-	diagram.custom_minimum_size = Vector2(500, 300)
-	diagram_area = diagram
 	diagram.set_speed(SPEEDS[int(speed_slider.value)])
-	right_split.add_child(diagram)
+	diagram_area.add_child(diagram)
+	pipe_view = PipelineView.new()
+	pipe_view.set_speed(SPEEDS[int(speed_slider.value)])
+	pipe_view.visible = false
+	diagram_area.add_child(pipe_view)
 
 	var bottom := HSplitContainer.new()
 	bottom.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	right_split.add_child(bottom)
+	# the cycle inspector, or in the pipeline the explanation of the cycle shown
+	cycle_area = MarginContainer.new()
+	cycle_area.custom_minimum_size.x = 600
+	cycle_area.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cycle_area.size_flags_stretch_ratio = 1.6
+	bottom.add_child(cycle_area)
 	cycle_panel = CyclePanel.new()
-	cycle_panel.custom_minimum_size.x = 600
-	cycle_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	cycle_panel.size_flags_stretch_ratio = 1.6
-	bottom.add_child(cycle_panel)
+	cycle_area.add_child(cycle_panel)
+	caption_panel = PanelContainer.new()
+	caption_panel.visible = false
+	cycle_area.add_child(caption_panel)
+	pipe_caption = RichTextLabel.new()
+	pipe_caption.bbcode_enabled = true
+	pipe_caption.scroll_active = true
+	pipe_caption.selection_enabled = true
+	pipe_caption.add_theme_font_override("mono_font", Backend.mono_font())
+	caption_panel.add_child(pipe_caption)
 	cycle_panel.cycle_selected.connect(diagram.show_cycle)
 	console_panel = ConsolePanel.new()
 	console_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	console_panel.custom_minimum_size.x = 280
 	bottom.add_child(console_panel)
-	diagram.visible = false
-	cycle_panel.visible = false
+	diagram_area.visible = false
+	cycle_area.visible = false
 
 	# Full-window host for the Pico board; pico_view is moved in here on demand.
 	pico_overlay = Control.new()
@@ -308,6 +341,13 @@ func _build_toolbar() -> Control:
 	btn_diagram.tooltip_text = "Show the datapath and step through each cycle"
 	btn_diagram.toggled.connect(_on_diagram_toggled)
 	bar.add_child(btn_diagram)
+	machine_select = OptionButton.new()
+	machine_select.add_item("Multi-cycle")
+	machine_select.add_item("2-stage pipeline")
+	machine_select.focus_mode = Control.FOCUS_NONE
+	machine_select.tooltip_text = "What the diagram shows and Step Cycle steps:\nMulti-cycle — the teaching datapath, one FSM state per cycle\n2-stage pipeline — the real Pico's Cortex-M0+, two instructions in flight"
+	machine_select.item_selected.connect(_on_machine)
+	bar.add_child(machine_select)
 	theme_select = OptionButton.new()
 	for name in Palette.ORDER:
 		theme_select.add_item(Palette.TITLES[name])
@@ -316,6 +356,10 @@ func _build_toolbar() -> Control:
 	theme_select.tooltip_text = "Colour scheme (System follows your OS light/dark setting)"
 	theme_select.item_selected.connect(func(i): Palette.set_scheme(Palette.ORDER[i]))
 	bar.add_child(theme_select)
+	var perf: Node = load("res://scripts/perf_window.gd").new()
+	add_child(perf)
+	bar.add_child(_button("Performance", "Cycles, CPI, the RP2040 pipeline and design comparisons (F2)", func(): perf.open()))
+	perf_window = perf
 	if ResourceLoader.exists(GUIDE):
 		var guide: Node = load(GUIDE).new()
 		add_child(guide)
@@ -452,6 +496,8 @@ func _on_speed(v: float) -> void:
 	speed_label.text = "Max" if cps == 0 else ("%d cyc/s" % cps)
 	if diagram:
 		diagram.set_speed(cps)
+	if pipe_view:
+		pipe_view.set_speed(cps)
 	if Backend.state.get("running", false):
 		Backend.send("set_speed", {"cps": cps})
 
@@ -472,9 +518,31 @@ func _on_connect() -> void:
 	Backend.send("serial_open", {"port": port})
 
 
+func _on_machine(idx: int) -> void:
+	Backend.send("set_machine", {"machine": MACHINES[idx]})
+	_apply_machine()
+	if idx == 1 and not btn_diagram.button_pressed:
+		btn_diagram.button_pressed = true
+
+
+func _pipeline() -> bool:
+	return machine_select.selected == 1
+
+
+func _apply_machine() -> void:
+	var pipe := _pipeline()
+	diagram.visible = not pipe
+	pipe_view.visible = pipe
+	cycle_panel.visible = not pipe
+	caption_panel.visible = pipe
+	btn_cycle.tooltip_text = "Advance one pipeline cycle (F11)" if pipe else "Advance one clock cycle (F11)"
+	btn_insn.tooltip_text = "Go to the next instruction's first Execute cycle (F10)" if pipe else "Finish the current instruction (F10)"
+	caption_panel.add_theme_stylebox_override("panel", Palette.panel_box("panel", 6, 10))
+
+
 func _on_diagram_toggled(on: bool) -> void:
 	diagram_area.visible = on
-	cycle_panel.visible = on
+	cycle_area.visible = on
 	btn_diagram.text = "Hide CPU Diagram" if on else "Show CPU Diagram"
 	console_panel.set_compact(on)
 
@@ -529,9 +597,21 @@ func _on_state(st: Dictionary) -> void:
 	console_panel.update_state(st)
 	cycle_panel.update_state(st)
 	diagram.update_state(st)
+	var m := MACHINES.find(str(st.get("machine", "multicycle")))
+	if m >= 0 and m != machine_select.selected:
+		machine_select.select(m)
+		_apply_machine()
+	pipe_view.update_state(st)
+	var p = st.get("pipe")
+	if p is Dictionary:
+		var scroll := pipe_caption.get_v_scroll_bar().value
+		pipe_caption.text = PipelineView.caption(p)
+		pipe_caption.get_v_scroll_bar().value = scroll
 	_update_controls()
 	if st.get("loaded", false):
 		var s := "insn %d · cycle %d" % [int(st["steps"]), int(st["cycles"])]
+		if p is Dictionary:
+			s = "insn %d · pipeline cycle %d" % [int(p["insns"]), int(p["cycle"])]
 		if st.get("halted", false):
 			s += "   — halted"
 		elif st.get("waiting_input", false):
@@ -577,6 +657,9 @@ func _on_flash_done(ok: bool) -> void:
 
 func _on_palette() -> void:
 	bg.color = Palette.c("bg")
+	caption_panel.add_theme_stylebox_override("panel", Palette.panel_box("panel", 6, 10))
+	if Backend.state.get("pipe") is Dictionary:
+		pipe_caption.text = PipelineView.caption(Backend.state["pipe"])
 	_set_status(status_label.text, _status_bad)
 
 
@@ -596,6 +679,9 @@ func _update_controls() -> void:
 	var loaded: bool = st.get("loaded", false)
 	var sim: bool = mode_select.selected == 0
 	var halted: bool = st.get("halted", false)
+	var p = st.get("pipe")
+	if p is Dictionary:
+		halted = not bool(p.get("more", true))   # the pipeline can still drain
 	btn_reload.disabled = not loaded
 	btn_cycle.disabled = not (loaded and sim) or halted
 	btn_insn.disabled = not (loaded and sim) or halted

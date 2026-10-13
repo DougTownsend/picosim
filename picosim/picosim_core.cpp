@@ -11,6 +11,7 @@
 #include <pybind11/functional.h>
 #include <pybind11/stl.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -46,6 +47,38 @@ struct CycleInfo {
 };
 
 struct MemWrite { uint32_t addr; int width; uint32_t old_v; bool io; uint32_t val; };
+
+// ── performance profiling ────────────────────────────────────────────────────
+// Data accesses (not instruction fetches) are classified by where they go on
+// the RP2040: RAM below 0x10000 (SRAM, zero wait states), the SIO block on the
+// single-cycle IOPORT (0xD0000000-0xDFFFFFFF), the APB peripherals
+// (0x40000000-0x4FFFFFFF, which have bus wait states) or other AHB space.
+enum Region { RG_RAM = 0, RG_SIO = 1, RG_APB = 2, RG_AHB = 3 };
+
+static int region_of(uint32_t addr) {
+    if (addr < 0x10000u) return RG_RAM;
+    if ((addr & 0xF0000000u) == 0xD0000000u) return RG_SIO;
+    if ((addr & 0xF0000000u) == 0x40000000u) return RG_APB;
+    return RG_AHB;
+}
+
+// One completed instruction.
+struct InsnRec {
+    uint64_t seq;            // instruction number (CPUCore::steps when it completed)
+    uint32_t addr;
+    uint16_t hw1, hw2;
+    bool     branched;       // the PC did not move on to the next instruction
+    bool     cond_taken;     // a B<cond> whose condition was true
+    uint8_t  reads[4];       // data reads per Region
+    uint8_t  writes[4];      // data writes per Region
+};
+
+// Totals for every execution of the instruction at one address.
+struct AddrProf {
+    uint64_t execs = 0, branched = 0, taken = 0;
+    uint64_t reads[4] = {0, 0, 0, 0}, writes[4] = {0, 0, 0, 0};
+    uint16_t hw1 = 0, hw2 = 0;
+};
 
 static std::string hex32(uint32_t v) {
     char b[16]; std::snprintf(b, sizeof b, "0x%08X", v); return b;
@@ -103,6 +136,47 @@ public:
     uint64_t cycles = 0;
     std::vector<MemWrite>* mem_log = nullptr;
 
+    // profiling (see InsnRec / AddrProf)
+    static const size_t RECENT = 512;
+    bool     count_data = false;      // data accesses are being counted
+    InsnRec  cur_rec{};               // the instruction in progress
+    std::vector<InsnRec> recent = std::vector<InsnRec>(RECENT);
+    uint64_t recent_n = 0;            // records written so far
+    std::vector<AddrProf> prof = std::vector<AddrProf>(0x8000);
+
+    void note_access(uint32_t addr, bool write) {
+        if (!count_data) return;
+        uint8_t* c = write ? cur_rec.writes : cur_rec.reads;
+        int r = region_of(addr);
+        if (c[r] < 255) c[r]++;
+    }
+
+    void begin_rec() {
+        cur_rec = InsnRec{};
+        cur_rec.addr = _insn_addr;
+    }
+
+    // Called once an instruction has completed (both execution paths).
+    void finish_rec(uint16_t hw1, uint16_t hw2, bool wide) {
+        cur_rec.seq = steps;
+        cur_rec.hw1 = hw1;
+        cur_rec.hw2 = wide ? hw2 : 0;
+        cur_rec.branched = regs[15] != _insn_addr + (wide ? 4u : 2u);
+        recent[recent_n % RECENT] = cur_rec;
+        recent_n++;
+        AddrProf& a = prof[(_insn_addr >> 1) & 0x7FFF];
+        a.execs++;
+        a.branched += cur_rec.branched;
+        a.taken += cur_rec.cond_taken;
+        a.hw1 = cur_rec.hw1; a.hw2 = cur_rec.hw2;
+        for (int i = 0; i < 4; ++i) { a.reads[i] += cur_rec.reads[i]; a.writes[i] += cur_rec.writes[i]; }
+    }
+
+    void reset_profile() {
+        recent_n = 0;
+        for (auto& a : prof) a = AddrProf{};
+    }
+
     // ── register helpers ─────────────────────────────────────────────────────
 
     uint32_t get_pc() const { return regs[15]; }
@@ -133,6 +207,7 @@ public:
     bool is_peripheral(uint32_t addr) const { return addr >= 0x10000u; }
 
     uint8_t  read8 (uint32_t addr) {
+        note_access(addr, false);
         if (is_peripheral(addr)) {
             if (peripheral_read) return (uint8_t)peripheral_read(addr, 1);
             return 0;
@@ -141,6 +216,7 @@ public:
     }
 
     uint16_t read16(uint32_t addr) {
+        note_access(addr, false);
         if (is_peripheral(addr)) {
             if (peripheral_read) return (uint16_t)peripheral_read(addr, 2);
             return 0;
@@ -151,6 +227,7 @@ public:
     }
 
     uint32_t read32(uint32_t addr) {
+        note_access(addr, false);
         if (is_peripheral(addr)) {
             if (peripheral_read) return peripheral_read(addr, 4);
             return 0;
@@ -161,6 +238,7 @@ public:
     }
 
     void log_write(uint32_t addr, int width, uint32_t val) {
+        note_access(addr, true);
         if (!mem_log) return;
         if (is_peripheral(addr)) { mem_log->push_back({addr, width, 0, true, val}); return; }
         uint32_t old = 0;
@@ -317,6 +395,7 @@ public:
         }
         steps++;
         _insn_addr = regs[15];
+        begin_rec();
 
         uint16_t hw1 = fetch16();
         IR = hw1;
@@ -325,10 +404,16 @@ public:
             IR2 = hw2;
             cycles += insn_cycle_count(hw1, hw2);
             uint32_t word = ((uint32_t)hw1 << 16) | hw2;
-            exec32(_insn_addr, word);
+            count_data = true;
+            try { exec32(_insn_addr, word); } catch (...) { count_data = false; throw; }
+            count_data = false;
+            finish_rec(hw1, hw2, true);
         } else {
             cycles += insn_cycle_count(hw1, 0);
-            exec16(_insn_addr, hw1);
+            count_data = true;
+            try { exec16(_insn_addr, hw1); } catch (...) { count_data = false; throw; }
+            count_data = false;
+            finish_rec(hw1, 0, false);
         }
     }
 
@@ -691,8 +776,10 @@ public:
                     "UDF at 0x" + std::to_string(addr));
             }
             int32_t offset = sign_extend(hw & 0xFF, 8) * 2;
-            if (check_cond(cond))
+            if (check_cond(cond)) {
+                cur_rec.cond_taken = true;
                 set_pc(u32((int32_t)(regs[15] + 2) + offset));
+            }
             return;
         }
 
@@ -1158,6 +1245,7 @@ public:
         add("FETCH_ADDR", "FETCH", [this](CycleInfo& ci) {
             _insn_addr = regs[15];
             steps++;
+            begin_rec();
             MAR = regs[15];
             regs[15] += 2;
             ci.signals = {"GatePC", "LD.MAR", "PCINC=+2", "PCMUX=PC+2", "LD.PC"};
@@ -1305,6 +1393,9 @@ public:
                     c.signals.push_back("LD.REG");
                 }
                 c.has_bus = true; c.bus = regs[a.rd];
+                // a write to the PC goes bus -> CLR THUMB -> PCMUX: the bus carries
+                // the ALU result before bit 0 is cleared (MOV PC, Rm / ADD PC, Rm)
+                if (a.rd == 15) c.bus = a.op == "MOV" ? ALU_B : u32((uint64_t)ALU_A + ALU_B);
                 d += "; " + std::string(REGN[a.rd]) + " <- " + hex32(regs[a.rd]);
                 if (a.rd == 15 && regs[15] != pc_before) c.branch = 1;
             }
@@ -1570,12 +1661,15 @@ public:
         auto fn = uops[upc].fn;   // copy: DECODE may grow uops
         ci.state = state; ci.phase = phase; ci.index = (int)upc;
         mem_log = &mlog;
+        // instruction fetches are not data accesses
+        count_data = phase != "FETCH";   // FETCH_OPERANDS (phase FETCH OPERANDS) does count
         try {
             fn(ci);
         } catch (...) {
-            mem_log = nullptr; in_insn = false; uops.clear();
+            mem_log = nullptr; count_data = false; in_insn = false; uops.clear();
             throw;
         }
+        count_data = false;
         mem_log = nullptr;
         ci.insn_addr = _insn_addr;
         upc++; cycles++;
@@ -1599,6 +1693,8 @@ public:
         if (upc >= uops.size()) {
             in_insn = false;
             ci.last = true;
+            bool wide = is_32bit_thumb((uint16_t)IR);
+            finish_rec((uint16_t)IR, (uint16_t)IR2, wide);
             check_halt();
         }
         return ci;
@@ -1736,6 +1832,39 @@ PYBIND11_MODULE(_picosim_core, m) {
             d["ALU_A"] = s.ALU_A; d["ALU_B"] = s.ALU_B;
             return d;
         })
+        // ── profiling ──────────────────────────────────────────────────────
+        .def("reset_profile", &CPUCore::reset_profile)
+        .def("profile", [](const CPUCore& s) {
+            // one dict per address that has executed: totals over all executions
+            py::list out;
+            for (size_t i = 0; i < s.prof.size(); ++i) {
+                const AddrProf& a = s.prof[i];
+                if (!a.execs) continue;
+                py::dict d;
+                d["addr"] = (uint32_t)(i << 1); d["hw1"] = a.hw1; d["hw2"] = a.hw2;
+                d["execs"] = a.execs; d["branched"] = a.branched; d["taken"] = a.taken;
+                d["reads"] = std::vector<uint64_t>(a.reads, a.reads + 4);
+                d["writes"] = std::vector<uint64_t>(a.writes, a.writes + 4);
+                out.append(d);
+            }
+            return out;
+        }, "Per-address execution totals: execs, branched, data reads/writes by region [RAM, SIO, APB, AHB].")
+        .def("recent", [](const CPUCore& s, size_t n) {
+            // the last n completed instructions, oldest first
+            py::list out;
+            uint64_t have = std::min<uint64_t>(s.recent_n, CPUCore::RECENT);
+            n = std::min<uint64_t>(n, have);
+            for (uint64_t k = s.recent_n - n; k < s.recent_n; ++k) {
+                const InsnRec& r = s.recent[k % CPUCore::RECENT];
+                py::dict d;
+                d["seq"] = r.seq; d["addr"] = r.addr; d["hw1"] = r.hw1; d["hw2"] = r.hw2;
+                d["branched"] = r.branched; d["cond_taken"] = r.cond_taken;
+                d["reads"] = std::vector<int>(r.reads, r.reads + 4);
+                d["writes"] = std::vector<int>(r.writes, r.writes + 4);
+                out.append(d);
+            }
+            return out;
+        }, py::arg("n") = 64, "The last n completed instructions with their data accesses by region.")
         .def_static("insn_cycle_count", [](uint16_t hw1, uint16_t hw2) {
             return CPUCore::insn_cycle_count(hw1, hw2);
         })

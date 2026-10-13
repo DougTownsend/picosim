@@ -14,7 +14,10 @@ signal error_received(message: String)
 signal load_failed(path: String, message: String)
 signal serial_ports_listed(ports: Array)
 signal flash_finished(ok: bool)
+signal pipe_walkthrough_received(data: Dictionary)
 signal walkthrough_received(data: Dictionary)
+signal perf_received(data: Dictionary)
+signal sources_received(sources: Dictionary)
 
 var tcp := StreamPeerTCP.new()
 var port := 0
@@ -112,6 +115,12 @@ func _handle(msg: Variant) -> void:
 			flash_finished.emit(msg["ok"])
 		"walkthrough":
 			walkthrough_received.emit(msg)
+		"pipe_walkthrough":
+			pipe_walkthrough_received.emit(msg)
+		"perf":
+			perf_received.emit(msg)
+		"sources":
+			sources_received.emit(msg["sources"])
 
 
 func send(cmd: String, args: Dictionary = {}) -> void:

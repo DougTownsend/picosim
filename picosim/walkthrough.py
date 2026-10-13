@@ -199,11 +199,60 @@ class Walkthrough:
                     'cycles': []}
             prev = pre
             for cy in cycles:
-                cy['text'] = self.explain(cy['info'], prev, cy['post'], text)
+                cy.update(self.explain(cy['info'], prev, cy['post'], text))
                 prev = cy['post']
                 step['cycles'].append(cy)
             steps.append(step)
         return {'type': 'walkthrough', 'path': self.prog.path, 'steps': steps,
+                'stopped': stopped, 'output': self.output, 'limit': self.limit}
+
+    def build_pipeline(self):
+        """The same run on the RP2040's 2-stage pipeline.  Each step is one
+        instruction with a picture of the pipeline in every cycle it spends
+        in Execute; the first step also starts with the very first fetch."""
+        from .pipeline import Pipeline
+        c = self.core
+        pipe = Pipeline(c, self.prog.asm_map)
+        steps = []
+        stopped = ''
+        regs = lambda: {'regs': list(c.regs), 'flags': {'N': c.N, 'Z': c.Z, 'C': c.C, 'V': c.V}}
+        first = [{'view': pipe.view(-1), 'post': regs()}]
+        while True:
+            if c.halted:
+                stopped = "The processor has halted: the program is finished."
+                break
+            if len(steps) >= self.limit:
+                stopped = (f"The walkthrough stops after the first {self.limit} instructions; "
+                           "the program itself keeps going when you run it.")
+                break
+            pc = c.pc
+            if c.read16(pc) == 0xDF03:
+                stopped = ("Next the program calls getchar (SVC #3), which waits for you to type a key in the "
+                           "serial console. The walkthrough stops here because what happens next depends on "
+                           "that key; run the program to continue.")
+                break
+            pre = _snap(c)
+            cycles = []
+            try:
+                while True:
+                    info = c.step_cycle()
+                    cycles.append({'info': info, 'post': _snap(c)})
+                    if info['last'] or c.halted:
+                        break
+            except (RuntimeError, SimulatorError) as e:
+                stopped = f"The CPU stopped with a fault: {e}"
+                break
+            pipe.sync()
+            row = [r for r in pipe.rows if not r['flushed']][-1]
+            post = regs()
+            views = [{'view': pipe.view(u), 'post': post}
+                     for u in range(row['start'], row['start'] + row['cycles'])]
+            text = self.prog.asm_map.get(pc, '???')
+            steps.append({'addr': pc, 'text': text, 'label': self.label(pc),
+                          'summary': self.summary(text, pre, cycles[-1]['post'], cycles),
+                          'row': row['row'], 'flushes': row['refill'] > 0,
+                          'cycles': (first if not steps else []) + views})
+        return {'type': 'pipe_walkthrough', 'path': self.prog.path, 'steps': steps,
                 'stopped': stopped, 'output': self.output, 'limit': self.limit}
 
     # ── one-line overview of an instruction ──────────────────────────────────
@@ -341,6 +390,9 @@ class Walkthrough:
     # ── a cycle in words ─────────────────────────────────────────────────────
 
     def explain(self, info, pre, post, text):
+        """One cycle in words: {'what': the cycle's purpose, 'how': one sentence
+        per part of the datapath involved, 'edge': what the clock edge stores
+        (old → new) or why nothing is, 'text': all of it as one paragraph}."""
         st = info['state']
         regs0 = pre['regs']
         dp0, dp1 = pre['datapath'], post['datapath']
@@ -466,8 +518,7 @@ class Walkthrough:
                 if s in names:
                     loads.append(names[s])
         if loads:
-            out.append("Load enables: " + _join(loads) + ". They capture their inputs at the clock edge that ends "
-                       "this cycle — during the cycle they still hold their old values.")
+            out.append("Load enables: " + _join(loads) + ". They take their new values at the clock edge.")
 
         # what the edge does
         edge = []
@@ -485,13 +536,14 @@ class Walkthrough:
             else:
                 edge.append(f"{nm.replace('ALU_', 'ALU ')} {h32(o)} → {h32(n)}")
         if edge:
-            out.append("At the clock edge: " + '; '.join(edge) + ".")
+            last = "At the clock edge: " + '; '.join(edge) + "."
         elif st == 'DECODE':
-            out.append("At the clock edge nothing is stored; the FSM simply moves to its next state.")
+            last = "At the clock edge nothing is stored; the FSM simply moves to its next state."
         else:
-            out.append("At the clock edge no stored value changes"
-                       + (" (MDR is loaded with the value it already held)." if _has(info, 'LD.MDR') else "."))
-        return ' '.join(out)
+            last = ("At the clock edge no stored value changes"
+                    + (" (MDR is loaded with the value it already held)." if _has(info, 'LD.MDR') else "."))
+        return {'what': out[0], 'how': out[1:], 'edge': edge if edge else [last],
+                'text': ' '.join(out + [last])}
 
 
 def build(path, limit=DEFAULT_LIMIT):
@@ -500,4 +552,13 @@ def build(path, limit=DEFAULT_LIMIT):
         return Walkthrough(path, limit).build()
     except LoadError as e:
         return {'type': 'walkthrough', 'path': path, 'steps': [], 'stopped': f"Could not load: {e}",
+                'output': '', 'limit': limit}
+
+
+def build_pipeline(path, limit=DEFAULT_LIMIT):
+    """Walk through `path` on the 2-stage pipeline; the GUI's message."""
+    try:
+        return Walkthrough(path, limit).build_pipeline()
+    except LoadError as e:
+        return {'type': 'pipe_walkthrough', 'path': path, 'steps': [], 'stopped': f"Could not load: {e}",
                 'output': '', 'limit': limit}

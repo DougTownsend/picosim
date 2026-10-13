@@ -8,6 +8,8 @@ The server answers with events, also one JSON object per line:
     {"type": "program", ...}       disassembly listing after a load
     {"type": "console", "text"}    program (or Pico) output
     {"type": "walkthrough", ...}   the user guide's program walkthrough
+    {"type": "pipe_walkthrough", ...}  the same on the 2-stage pipeline
+    {"type": "perf", ...}          performance metrics, machine comparison, pipeline
     {"type": "error", "message"}
 
 All CPU access happens on the single server thread, so the GUI never races
@@ -29,6 +31,7 @@ from collections import deque
 
 from .loader import load_program, LoadError
 from .cpu import SimulatorError
+from .pipeline import Pipeline
 
 REG_NAMES = ['R0', 'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7',
              'R8', 'R9', 'R10', 'R11', 'R12', 'SP', 'LR', 'PC']
@@ -36,6 +39,8 @@ MAX_SPEED = 0            # cps value meaning "as fast as possible"
 FRAME = 1 / 30           # state broadcast interval while running
 HEX_DEFAULT = (0x3000, 256)
 PICO_VID = 0x2E8A
+MACHINES = ('multicycle', 'pico2')
+PIPE_SYNC = 256          # lay out the pipeline at least this often at max speed
 
 
 class Server:
@@ -67,6 +72,8 @@ class Server:
         self.dirty = False         # a state update is pending
 
         self.mode = 'sim'          # 'sim' or 'pico'
+        self.machine = 'multicycle'  # what Step Cycle steps: see MACHINES
+        self.pipe = None             # Pipeline of the loaded program
         self.serial = None
         self.flash_thread = None
         self.flash_result = None
@@ -187,6 +194,8 @@ class Server:
             'gpio_changed': gpio_changed,
             'mode': self.mode,
             'serial': self.serial.port if self.serial else None,
+            'machine': self.machine,
+            'pipe': self.pipe.view() if self.machine == 'pico2' else None,
         })
 
     def send_program(self):
@@ -300,13 +309,28 @@ class Server:
             if not c.in_insn:
                 return True
 
+    # ── 2-stage pipeline (machine 'pico2', see picosim/pipeline.py) ────────
+
+    def _run_insn(self):
+        return self.one_insn(record=True)
+
+    def pipe_step(self):
+        return self.pipe.step(self._run_insn)
+
+    def pipe_step_insn(self):
+        return self.pipe.step_insn(self._run_insn)
+
+    def _pipe_draining(self):
+        return self.machine == 'pico2' and self.pipe is not None and self.pipe.draining()
+
     # ── run loop ─────────────────────────────────────────────────────────────
 
     def run_slice(self):
         c = self.core
         now = time.monotonic()
         start = now
-        if c is None or c.halted:
+        pipe = self.machine == 'pico2'
+        if c is None or (c.halted and not self._pipe_draining()):
             self.running = False
             self.send_state()
             return
@@ -314,15 +338,19 @@ class Server:
         if self.cps == MAX_SPEED:
             before = list(c.regs)
             while time.monotonic() - start < 0.01:
-                for _ in range(2000):
+                for _ in range(PIPE_SYNC if pipe else 2000):
                     if not self.one_insn(record=False):
                         break
                     if c.pc in self.breakpoints:
                         hit = True
                         break
                 else:
+                    if pipe:
+                        self.pipe.sync()
                     continue
                 break
+            if pipe:
+                self.pipe.follow()
             after = c.regs
             self.changed |= {REG_NAMES[i] for i in range(16) if before[i] != after[i]}
         else:
@@ -330,13 +358,20 @@ class Server:
             self.cycle_credit = min(self.cycle_credit, self.cps * 0.1 + 1)
             while self.cycle_credit >= 1:
                 self.cycle_credit -= 1
+                if pipe:
+                    if not self.pipe_step():
+                        break
+                    if self.pipe.at_breakpoint(self.breakpoints):
+                        hit = True
+                        break
+                    continue
                 if not self.one_cycle():
                     break
                 if not c.in_insn and c.pc in self.breakpoints:
                     hit = True
                     break
         self.last_tick = now
-        if hit or c.halted:
+        if hit or (c.halted and not self._pipe_draining()):
             self.running = False
         if not self.running or now - self.last_frame >= FRAME or self.waiting_input:
             self.last_frame = now
@@ -360,6 +395,7 @@ class Server:
         self.waiting_input = False
         self.history = []
         self.exit_code = None
+        self.pipe = Pipeline(self.core, prog.asm_map)
         self._begin_action()
         self.breakpoints &= set(prog.asm_map)
         self.hexview = (max(prog.main_addr, 0x3000) & ~0xF, HEX_DEFAULT[1])
@@ -377,7 +413,10 @@ class Server:
             return
         self.running = False
         self._begin_action()
-        self.one_cycle()
+        if self.machine == 'pico2':
+            self.pipe_step()
+        else:
+            self.one_cycle()
         self.send_state()
 
     def cmd_step_insn(self, msg):
@@ -385,11 +424,15 @@ class Server:
             return
         self.running = False
         self._begin_action()
-        self.one_insn(record=True)
+        if self.machine == 'pico2':
+            self.pipe_step_insn()
+        else:
+            self.one_insn(record=True)
         self.send_state()
 
     def cmd_run(self, msg):
-        if not self.core or self.core.halted:
+        c = self.core
+        if not c or (c.halted and not self._pipe_draining()):
             return self.send_state()
         self.cps = max(0, int(msg.get('cps', self.cps)))
         self._begin_action()
@@ -397,12 +440,35 @@ class Server:
         self.last_tick = time.monotonic()
         self.cycle_credit = 1.0
         # step off a breakpoint we are sitting on
-        c = self.core
-        if not c.in_insn and c.pc in self.breakpoints:
+        if self.machine == 'pico2':
+            if self.pipe.at_breakpoint(self.breakpoints):
+                if self.cps == MAX_SPEED:
+                    self.one_insn(record=False)
+                    self.pipe.follow()
+                else:
+                    self.pipe_step()
+        elif not c.in_insn and c.pc in self.breakpoints:
             if self.cps == MAX_SPEED:
                 self.one_insn(record=False)
             else:
                 self.one_cycle()
+        self.send_state()
+
+    def cmd_set_machine(self, msg):
+        """Choose what Step Cycle / Step Insn / Run step: the multi-cycle
+        datapath's clock cycles or the RP2040's 2-stage pipeline cycles."""
+        m = msg.get('machine', 'multicycle')
+        if m not in MACHINES:
+            return self.error(f"bad machine {m}")
+        if m != self.machine:
+            self.running = False
+            c = self.core
+            if c and m == 'pico2' and c.in_insn:
+                self._begin_action()
+                self.one_insn(record=True)    # the pipeline starts between instructions
+            self.machine = m
+            if self.pipe:
+                self.pipe.reset()
         self.send_state()
 
     def cmd_set_speed(self, msg):
@@ -484,6 +550,55 @@ class Server:
     def cmd_state(self, msg):
         self.send_state()
 
+    def cmd_component_source(self, msg):
+        """The Python model of every diagram block (picosim/components.py),
+        proven equal to the simulator by tests/test_datapath_model.py."""
+        import inspect
+        from . import components as C, datapath_model as D
+        objs = {
+            'pc': [C.Register], 'ir': [C.Register], 'ir2': [C.Register], 'mar': [C.Register],
+            'mdr': [C.Register], 'inc': [C.adder], 'marinc': [C.adder], 'adder': [C.adder],
+            'pcmux': [C.mux], 'addr1mux': [C.mux], 'addr2mux': [C.mux], 'sr2mux': [C.mux],
+            'clrt': [C.clr_thumb], 'sett': [C.set_thumb], 'align': [C.pc_read, C.align4],
+            'ext': [C.ImmExtract], 'cond': [C.cond_eval], 'bus': [C.bus],
+            'gatePC': [C.tri_state], 'gateAdder': [C.tri_state], 'gateMDR': [C.tri_state],
+            'gateALU': [C.tri_state], 'gateVector': [C.tri_state],
+            'mem': [C.Memory], 'loadext': [C.load_ext, C.sext], 'storealign': [C.store_align],
+            'regfile': [C.RegisterFile], 'alu': [C.ALU], 'flags': [C.Flags], 'fsm': [D.Datapath.cycle],
+        }
+        out = {k: '\n\n'.join(inspect.getsource(o).rstrip() for o in v) for k, v in objs.items()}
+        out['vec'] = 'VECTOR_SVCALL = 0x2C      # SVCall is exception 11, vector at 11 x 4'
+        self.send({'type': 'sources', 'sources': out})
+
+    def cmd_perf(self, msg):
+        """Performance report for the run so far (see picosim/timing.py).
+
+        msg: mul ('fast' | 'iterative'), wait (0-3, multi-cycle memory wait
+        states), machine ('pico2' | 'pipe3') and n (instructions in the
+        pipeline chart)."""
+        from . import timing
+        c = self.core
+        if c is None:
+            return self.send({'type': 'perf', 'loaded': False})
+        mul = 32 if msg.get('mul') == 'iterative' else 1
+        wait = max(0, min(3, int(msg.get('wait', 0))))
+        machine = msg.get('machine', 'pico2')
+        if machine not in timing.DEPTH:
+            machine = 'pico2'
+        n = max(1, min(timing_recent_max(), int(msg.get('n', 40))))
+        asm = self.prog.asm_map
+        prof = c.profile()
+        stock = timing.summarize(prof, 1, 0, asm)
+        custom = stock if (mul, wait) == (1, 0) else timing.summarize(prof, mul, wait, asm)
+        nxt = None if c.halted else (c.insn_addr if c.in_insn else c.pc)
+        sched = timing.schedule(machine, c.recent(n), mul, asm, nxt)
+        for row in sched['rows']:
+            row['stages'] = sorted([k, v] for k, v in row['stages'].items())
+        self.send({'type': 'perf', 'loaded': True, 'stock': stock, 'custom': custom,
+                   'schedule': sched, 'names': timing.MACHINE_NAMES,
+                   'clock_mhz': timing.PICO_CLOCK_MHZ, 'in_insn': c.in_insn,
+                   'cycles_in_progress': c.cycle_index if c.in_insn else 0})
+
     def cmd_walkthrough(self, msg):
         """Explain the loaded program step by step for the user guide.  Runs
         on a fresh copy, so the machine the GUI shows is not changed."""
@@ -492,6 +607,14 @@ class Server:
                               'stopped': 'No program is loaded.', 'output': '', 'limit': 0})
         from .walkthrough import build, DEFAULT_LIMIT
         self.send(build(self.path, int(msg.get('limit', DEFAULT_LIMIT))))
+
+    def cmd_pipe_walkthrough(self, msg):
+        """The walkthrough on the 2-stage pipeline (user guide)."""
+        if not self.path:
+            return self.send({'type': 'pipe_walkthrough', 'path': '', 'steps': [],
+                              'stopped': 'No program is loaded.', 'output': '', 'limit': 0})
+        from .walkthrough import build_pipeline, DEFAULT_LIMIT
+        self.send(build_pipeline(self.path, int(msg.get('limit', DEFAULT_LIMIT))))
 
     # ── real Pico over USB serial ────────────────────────────────────────────
 
@@ -609,6 +732,10 @@ class Server:
                 time.sleep(0.1)
             self.mode = 'pico'
             self.cmd_serial_open({})
+
+
+def timing_recent_max():
+    return 512   # CPUCore.RECENT
 
 
 def main(argv=None):

@@ -217,6 +217,7 @@ var text_scale := 1.0            # set by main when the diagram is dragged bigge
 var _card_pos = null             # Vector2 once the user has dragged the card
 var _card_grab = null            # mouse offset into the card while dragging
 var still := false               # snapshot mode (user-guide pictures): no animation
+var sources: Dictionary = {}     # component id → its Python model (server "component_source")
 
 
 func _ready() -> void:
@@ -231,6 +232,10 @@ func _ready() -> void:
 	_build_card()
 	_load_colors()
 	Palette.changed.connect(_load_colors)
+	Backend.sources_received.connect(func(src): sources = src)
+	Backend.connected.connect(func(): Backend.send("component_source"))
+	if Backend.online:
+		Backend.send("component_source")
 
 
 func _load_colors() -> void:
@@ -314,13 +319,21 @@ func select_component(id: String) -> void:
 			names[k] = BOXES[k][4]
 		for k in GATES:
 			names[k] = k
-		card_text.text = ComponentInfo.bbcode(id, names, roundi(17 * text_scale)) + _live_status(id)
+		card_text.text = ComponentInfo.bbcode(id, names, roundi(17 * text_scale)) + _live_status(id) + _python(id)
 		card_text.scroll_to_line(0)
 		_layout_card()
 		# the text's height is known once it has been laid out at the card's width
 		await get_tree().process_frame
 		_layout_card()
 	queue_redraw()
+
+
+## "How it works in Python" section: the component's model from components.py.
+func _python(id: String) -> String:
+	if not sources.has(id):
+		return ""
+	return "\n\n[color=%s][b]How it works in Python[/b][/color]\n[color=%s]From picosim/components.py. tests/test_datapath_model.py checks every cycle of every test program to prove this model does exactly what the simulator does.[/color]\n[code]%s[/code]" % [
+		Palette.hex("accent"), Palette.hex("dim"), str(sources[id]).replace("[", "[lb]")]
 
 
 ## "This cycle" section of a tri-state buffer's card: is its control signal

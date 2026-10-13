@@ -396,6 +396,147 @@ const INFO := {
 }
 
 
+## Blocks of the 2-stage pipeline view (pipeline_view.gd), same format.
+const PIPE_ORDER := ["p_pc", "p_inc", "p_pcmux", "p_imem", "p_ifex", "p_decode", "p_regfile",
+	"p_alu", "p_flags", "p_dmem", "p_resolve"]
+const PIPE_INFO := {
+	"p_pcmux": {
+		"title": "PC MUX — next fetch address",
+		"kind": "Multiplexer (Fetch stage)",
+		"what": "Chooses the address the next cycle fetches from: the next sequential halfword (PC + 2) or a branch target.",
+		"how": "The Cortex-M0+ has no branch predictor. Fetch always assumes the instruction it just fetched will not branch and selects PC + 2 (\"predict not-taken\"). Only when BRANCH RESOLVE finds a taken branch in Execute does it select the target instead, and the instruction already fetched from PC + 2 is flushed.",
+		"links": [
+			["in", "p_inc", "", "PC + 2 (sequential)"],
+			["in", "p_resolve", "", "branch target"],
+			["out", "p_pc", "", "next PC"],
+			["ctrl", "p_resolve", "select", "PC+2, or target when a branch is taken (dashed stub on its slanted side)"],
+		],
+		"when": "Every cycle; it picks the branch target in the cycle a taken branch resolves.",
+	},
+	"p_pc": {
+		"title": "PC — fetch address",
+		"kind": "Register (Fetch stage)",
+		"what": "The address of the instruction being fetched this cycle.",
+		"how": "Loaded from the PC MUX at every clock edge where Fetch moves on. When Execute is busy with a multi-cycle instruction, Fetch stalls and the PC holds its value. An instruction that reads PC as an operand still sees its own address + 4, as ARMv6-M defines.",
+		"links": [
+			["in", "p_pcmux", "", "next PC"],
+			["out", "p_imem", "", "fetch address"],
+			["out", "p_inc", "", "for PC + 2"],
+		],
+		"when": "Every fetch.",
+	},
+	"p_inc": {
+		"title": "+2 — sequential next address",
+		"kind": "Adder (Fetch stage)",
+		"what": "Computes PC + 2, the next Thumb halfword.",
+		"how": "This is the \"prediction\": whatever the instruction just fetched is, the next fetch comes from here unless a taken branch overrides it. A 32-bit BL is fetched as two halfwords.",
+		"links": [
+			["in", "p_pc", "", ""],
+			["out", "p_pcmux", "", "PC + 2"],
+		],
+		"when": "Every fetch.",
+	},
+	"p_imem": {
+		"title": "Instruction fetch",
+		"kind": "Bus read (Fetch stage)",
+		"what": "Reads the instruction at PC and places it in the IF/EX register.",
+		"how": "The fetch goes over the AHB-Lite bus to flash (through the XIP cache) or SRAM. The real M0+ fetches 32 bits at a time and can run up to a halfword ahead. This model fetches the instruction in the cycle before it executes, which gives the same cycle counts as datasheet Table 81.",
+		"links": [
+			["in", "p_pc", "", "address"],
+			["out", "p_ifex", "", "instruction"],
+		],
+		"when": "Every cycle in which Fetch is not stalled.",
+	},
+	"p_ifex": {
+		"title": "IF/EX — pipeline register",
+		"kind": "Register between the stages",
+		"what": "Holds the fetched instruction while Execute works on the one before it. This register is what lets two instructions be in flight at once.",
+		"how": "At each clock edge where Execute takes a new instruction, IF/EX passes its instruction on and captures the next fetch. While a multi-cycle instruction (LDR, STR, PUSH, BL…) occupies Execute, IF/EX keeps its instruction, which waits. A FLUSH from BRANCH RESOLVE throws its contents away and turns them into a bubble.",
+		"links": [
+			["in", "p_imem", "", "fetched instruction"],
+			["out", "p_decode", "", "to Execute"],
+			["ctrl", "p_resolve", "FLUSH", "discard on a taken branch"],
+		],
+		"when": "Every cycle.",
+	},
+	"p_decode": {
+		"title": "Decode",
+		"kind": "Combinational logic (Execute stage)",
+		"what": "Works out what the instruction in IF/EX does: its operation, the registers it reads and writes, and whether it can change the PC.",
+		"how": "The M0+ decodes in the first cycle of the Execute stage. That is why it has 2 stages and not 3: there is no separate Decode stage, so a taken branch only wastes the one instruction fetched behind it. The label under the box is the instruction's row in datasheet Table 81.",
+		"links": [
+			["in", "p_ifex", "", "instruction"],
+			["out", "p_regfile", "", "register numbers"],
+			["out", "p_resolve", "", "branch? condition, target"],
+		],
+		"when": "The first cycle of every instruction.",
+	},
+	"p_regfile": {
+		"title": "Register file",
+		"kind": "Registers (Execute stage)",
+		"what": "R0–R12, SP and LR, shown after the instruction in Execute has finished.",
+		"how": "Operands are read in Execute and the result is written back at its end. With only one Execute stage, an instruction's result is ready for the very next instruction, so this pipeline never has data hazards or forwarding.",
+		"links": [
+			["in", "p_decode", "", "register numbers"],
+			["in", "p_alu", "", "result"],
+			["in", "p_dmem", "", "loaded data"],
+			["out", "p_alu", "", "operands"],
+		],
+		"when": "Most instructions.",
+	},
+	"p_alu": {
+		"title": "ALU",
+		"kind": "Combinational (Execute stage)",
+		"what": "Arithmetic and logic operations, and the address of a load or store.",
+		"how": "Its operands from the register file enter its long top side and the result leaves its short bottom side, to the register file, the flags and (as an address) the data access. ALUK, its control input from Decode, enters a slanted side and selects the operation; for loads and stores it adds to form the address. One ALU operation per cycle; MULS takes 1 cycle with the RP2040's fast multiplier.",
+		"links": [
+			["in", "p_regfile", "", "operands"],
+			["out", "p_regfile", "", "result"],
+			["out", "p_flags", "", "N Z C V"],
+			["out", "p_dmem", "", "address"],
+			["ctrl", "p_decode", "ALUK", "the operation (dashed stub on its slanted side)"],
+		],
+		"when": "ALU instructions, loads and stores.",
+	},
+	"p_flags": {
+		"title": "N Z C V flags",
+		"kind": "Register (Execute stage)",
+		"what": "The condition flags.",
+		"how": "Set by CMP, CMN, TST and instructions ending in S. A conditional branch reads them in BRANCH RESOLVE.",
+		"links": [
+			["in", "p_alu", "", ""],
+			["out", "p_resolve", "", "for B<cond>"],
+		],
+		"when": "Flag-setting instructions, and B<cond>.",
+	},
+	"p_resolve": {
+		"title": "Branch resolve",
+		"kind": "Control (Execute stage)",
+		"what": "Decides whether a branch is taken and, if so, fixes up the pipeline.",
+		"how": "Fetch has already fetched the next sequential instruction (predict not-taken). If the branch is not taken (B<cond> with a false condition), that guess was right and nothing is lost: 1 cycle. If it is taken (B, BL, BX, BLX, POP {PC}, MOV/ADD PC, or B<cond> with a true condition), it sends the target to the PC MUX and asserts FLUSH so IF/EX discards the wrong instruction. Execute then spends one more cycle while the target is fetched (the refill). That is why Table 81 gives a taken B<cond> 2 cycles and a not-taken one 1.",
+		"links": [
+			["in", "p_decode", "", "branch, condition"],
+			["in", "p_flags", "", "for B<cond>"],
+			["out", "p_pcmux", "", "target address"],
+			["out", "p_pcmux", "select", "picks the target when taken"],
+			["out", "p_ifex", "FLUSH", "discard the wrong-path instruction"],
+		],
+		"when": "Branches, calls and returns.",
+	},
+	"p_dmem": {
+		"title": "Data access",
+		"kind": "Bus access (Execute stage)",
+		"what": "The data transfer of a load, store, PUSH or POP.",
+		"how": "Over AHB-Lite a transfer takes 2 cycles (address, then data), so Execute is busy and the instruction behind it waits in IF/EX. The SIO, which includes the GPIO registers, sits on the single-cycle IOPORT, so loads and stores there take 1 cycle. APB peripherals add bus wait states that Table 81 does not include.",
+		"links": [
+			["in", "p_alu", "", "address"],
+			["out", "p_regfile", "", "loaded data"],
+		],
+		"when": "LDR, STR, PUSH, POP, LDM, STM.",
+	},
+}
+
+
 static func title(id: String) -> String:
 	return INFO[id]["title"] if INFO.has(id) else id
 
@@ -404,7 +545,11 @@ static func title(id: String) -> String:
 static func bbcode(id: String, names: Dictionary, title_size := 17) -> String:
 	if not INFO.has(id):
 		return ""
-	var e: Dictionary = INFO[id]
+	return entry_bbcode(INFO[id], names, title_size)
+
+
+## BBCode for one INFO / PIPE_INFO entry.
+static func entry_bbcode(e: Dictionary, names: Dictionary, title_size := 17) -> String:
 	var dim := Palette.hex("dim")
 	var head := Palette.hex("accent")
 	var t := "[font_size=%d][b]%s[/b][/font_size]\n[color=%s]%s[/color]\n\n" % [title_size, e["title"], dim, e["kind"]]
