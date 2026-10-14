@@ -152,12 +152,20 @@ static func hex16(v: Variant) -> String:
 static func parse_number(text: String) -> Variant:
 	var t := text.strip_edges().to_lower().replace("_", "")
 	if t.begins_with("0x"):
-		return t.substr(2).hex_to_int() if t.substr(2).is_valid_hex_number() else null
+		var h := t.substr(2)
+		return h.hex_to_int() if h.is_valid_hex_number() and h.length() <= 8 else null
+	if t.begins_with("0b"):
+		var bits := t.substr(2)
+		if bits == "" or bits.length() > 32 or not bits.is_valid_int() or bits.lstrip("01") != "":
+			return null
+		return bits.bin_to_int()
 	if t.begins_with("#"):
 		t = t.substr(1)
 	if t.is_valid_int():
+		if t.length() > 11 or int(t) > 0xFFFFFFFF or int(t) < -0x80000000:
+			return null    # does not fit in a 32-bit register
 		return int(t) & 0xFFFFFFFF
-	if t.is_valid_hex_number():
+	if t.is_valid_hex_number() and t.length() <= 8:
 		return t.hex_to_int()
 	return null
 

@@ -38,12 +38,17 @@ EXAMPLES = [
     ("LDMIA R0!, {R1, R2}",      0xC806, 0,      None),
     ("SVC #n",                   0xDF02, 0,      None),
     ("BKPT",                     0xBE00, 0,      None),
+    ("NOP / WFI / CPSID i ...",  0xBF00, 0,      None),
+    ("DMB / DSB / ISB",          0xF3BF, 0x8F5F, None),
+    ("MRS R0, APSR",             0xF3EF, 0x8000, None),
+    ("MSR APSR, R0",             0xF380, 0x8800, None),
 ]
 
 
 def trace(hw1, hw2=0):
     """Clock one instruction on a scratch core; return the list of state names."""
     c = CPUCore()
+    c.strict = False          # e.g. BLX R3 to an even address: only the states matter here
     c.write16(0x100, hw1)
     c.write16(0x102, hw2)
     for r in range(8):

@@ -27,6 +27,40 @@ class SimulatorError(Exception):
     pass
 
 
+def unmapped_message(addr, write, insn_addr, access='data'):
+    """Why an access to `addr` failed, in words a student can act on.
+    access: 'fetch' (running code there), 'data' (a load or store) or 'debug'."""
+    if access == 'fetch':
+        where = f"The program jumped to 0x{addr:08X} and tried to run code there, where picosim has nothing."
+    elif access == 'data':
+        what = "writes to" if write else "reads from"
+        where = f"The instruction at 0x{insn_addr:X} {what} 0x{addr:08X}, where picosim has nothing."
+    else:
+        return (f"Nothing is at address 0x{addr:08X} in picosim: RAM is 0x0000-0xFFFF and the "
+                "simulated I/O registers are SIO (0xD0000000), IO_BANK0 (0x40014000), "
+                "PADS_BANK0 (0x4001C000) and RESETS (0x4000C000).")
+    if 0x20000000 <= addr < 0x20042000:
+        hint = (" That is the Pico's SRAM; in picosim RAM is at 0x0000-0xFFFF, so use labels "
+                "(ldr r0, =my_data) rather than fixed RAM addresses.")
+    elif 0x10000000 <= addr < 0x11000000:
+        hint = " That is the Pico's flash (XIP), which picosim does not simulate."
+    elif 0x40000000 <= addr < 0x60000000 or 0xD0000000 <= addr < 0xE0000000:
+        hint = (" picosim simulates only these Pico peripherals: SIO GPIO registers "
+                "(0xD0000000), IO_BANK0 (0x40014000), PADS_BANK0 (0x4001C000) and "
+                "RESETS (0x4000C000).")
+    else:
+        hint = " RAM is at 0x0000-0xFFFF; is the address in the register what you meant?"
+    return "Bus fault: " + where + hint + " On the Pico this would be a HardFault."
+
+
+def svc_write_data(core):
+    """The bytes SVC #0 (write) prints: R2 bytes from address R1, in RAM."""
+    buf, n = core.get_reg(1), core.get_reg(2)
+    if buf >= 0x10000 or buf + n > 0x10000:
+        raise SimulatorError(f"SVC #0 (write): {n} bytes at 0x{buf:X} run past the end of RAM (0xFFFF)")
+    return core.get_mem_slice(buf, n)
+
+
 # ── CPU ────────────────────────────────────────────────────────────────────────
 
 class CPU:
@@ -52,16 +86,28 @@ class CPU:
         self._core.svc_handler      = self._svc_dispatch
 
     # ── peripheral callbacks ──────────────────────────────────────────────────
+    # The C++ core calls these for every address at or above 0x10000.  An
+    # address no simulated peripheral claims is a bus fault, as on the Pico
+    # (where it is a HardFault) — never a silent read of 0.
+
+    def _block(self, addr, write):
+        block = self.memory.peripheral(addr)
+        if block is None:
+            c = self._core
+            raise SimulatorError(unmapped_message(addr, write, c.insn_addr, c.access))
+        return block
 
     def _periph_read(self, addr, nbytes):
-        if nbytes == 4: return self.memory.read32(addr)
-        if nbytes == 2: return self.memory.read16(addr)
-        return self.memory.read8(addr)
+        b = self._block(addr, False)
+        if nbytes == 4: return b.read32(addr)
+        if nbytes == 2: return b.read16(addr)
+        return b.read8(addr)
 
     def _periph_write(self, addr, val, nbytes):
-        if nbytes == 4: self.memory.write32(addr, val)
-        elif nbytes == 2: self.memory.write16(addr, val)
-        else: self.memory.write8(addr, val)
+        b = self._block(addr, True)
+        if nbytes == 4: b.write32(addr, val)
+        elif nbytes == 2: b.write16(addr, val)
+        else: b.write8(addr, val)
 
     # ── register accessors ────────────────────────────────────────────────────
 
@@ -152,12 +198,12 @@ class CPU:
 
     def _svc_dispatch(self, num):
         if num == 0:
-            # write(fd, buf_addr, len)
+            # write(fd, buf_addr, len) — to the terminal only (fd 1 or 2)
             fd  = self._core.get_reg(0)
-            buf = self._core.get_reg(1) & 0xFFFF
-            n   = self._core.get_reg(2)
-            data = self._core.get_mem_slice(buf, n)
-            os.write(fd, data)
+            if fd not in (1, 2):
+                raise SimulatorError(f"SVC #0 (write): file descriptor {fd} is not 1 (stdout) or 2 (stderr)")
+            sys.stdout.flush()
+            os.write(fd, svc_write_data(self._core))
         elif num == 1:
             # exit(code)
             raise SystemExit(self._core.get_reg(0))

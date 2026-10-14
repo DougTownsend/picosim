@@ -46,7 +46,7 @@ def build_os_elf(verbose=False):
     )
     if need_build:
         if verbose:
-            print("Compiling OS...")
+            print("Compiling OS...", flush=True)
         ok, msg = assemble(os_s, os_elf, os_ld)
         if not ok:
             raise LoadError(f"OS build failed:\n{msg}")
@@ -55,7 +55,8 @@ def build_os_elf(verbose=False):
 
 def load_program(path, trace=False, verbose=False):
     """Assemble (if needed), load and link `path` with the OS; return a Program."""
-    from .sim import assemble, load_elf
+    from elftools.common.exceptions import ELFError
+    from .sim import assemble, load_elf, elf_symbol
     from .memory import FlatRAM, Memory
     from .gpio import GPIO
 
@@ -71,7 +72,7 @@ def load_program(path, trace=False, verbose=False):
         # --just-symbols lets the linker resolve putchar/getchar from the OS
         just_syms = f'-Wl,--just-symbols={os_elf_path}'
         if verbose:
-            print(f"Assembling '{input_file}'...")
+            print(f"Assembling '{input_file}'...", flush=True)
         ok, msg = assemble(input_file, elf_out, ld_file,
                            extra_s_files=[peripherals], extra_ld_flags=[just_syms])
         if not ok:
@@ -84,8 +85,18 @@ def load_program(path, trace=False, verbose=False):
         raise LoadError(f"loading OS ELF: {e}")
     try:
         user_memory, user_entry, user_asm, user_syms = load_elf(input_file)
-    except (SimulatorError, FileNotFoundError) as e:
+        # The program starts at main: (asm_main: also works, as in the Pico
+        # build).  Without either the linker would quietly start at the first
+        # instruction, and the Pico build would fail, so say so here.
+        start = elf_symbol(input_file, ('main', 'asm_main'))
+    except (SimulatorError, OSError) as e:
         raise LoadError(f"loading '{input_file}': {e}")
+    except ELFError as e:
+        raise LoadError(f"'{input_file}' is not an ELF program file ({e})")
+    if start is None:
+        raise LoadError("The program has no main: label. Put main: (or asm_main:) on the line "
+                        "before its first instruction; that is where the program starts.")
+    user_entry = start
 
     # Merge memories: OS owns 0x0000-0x2FFF, user owns 0x3000-0xFFFF
     memory = bytearray(MEM_SIZE)

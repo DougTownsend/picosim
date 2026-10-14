@@ -102,13 +102,20 @@ def describe(path):
     return [dict(s, value=ch.get(s['name'], s['default'])) for s in declared(path)]
 
 
+_NUMBER = re.compile(r'^(-?)(0[xX][0-9a-fA-F]+|0[bB][01]+|[0-9]+)$')
+
+
 def _number(text):
-    text = str(text).strip()
-    try:
-        int(text, 0)
-    except ValueError:
+    """The value as the assembler should see it, or None if it is not a whole
+    number.  Decimal (15, -3), hex (0x0F) and binary (0b1111) are accepted;
+    leading zeros are dropped, because the assembler reads 015 as octal 13."""
+    m = _NUMBER.match(str(text).strip())
+    if not m:
         return None
-    return text
+    sign, digits = m.groups()
+    if digits[:2].lower() in ('0x', '0b'):
+        return sign + digits
+    return sign + str(int(digits))
 
 
 def set_values(path, values):

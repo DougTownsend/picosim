@@ -197,6 +197,8 @@ func update_state(st: Dictionary) -> void:
 		title.text = "USB Serial — Simulator"
 		if st.get("waiting_input", false):
 			status.text = "⌨ program is waiting for input (getchar)"
+		elif st.get("fault") != null:
+			status.text = "CPU fault — program stopped"
 		elif st.get("halted", false):
 			status.text = "program halted"
 		else:

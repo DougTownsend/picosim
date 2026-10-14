@@ -4,7 +4,8 @@ extends Node
 ##
 ## Self-contained: main.gd only creates it if this file exists, so deleting
 ## guide.gd removes the Guide button and nothing else.  The "CPU diagram
-## components" topic is built from component_info.gd when that file exists.
+## components" topic is built from component_info.gd when that file exists,
+## and "FSM states" from state_info.gd.
 ##
 ## Topics are grouped under section headings in the list (see _section).
 ## The "Pipeline components" topic is built the same way from PIPE_INFO, and
@@ -25,6 +26,7 @@ extends Node
 ## link, so nothing a lower-level page mentions is ever a dead end.
 
 const INFO_PATH := "res://scripts/component_info.gd"
+const STATES_PATH := "res://scripts/state_info.gd"
 const DIAGRAM_PATH := "res://scripts/diagram_view.gd"
 const PIPELINE_PATH := "res://scripts/pipeline_view.gd"
 const TEXT_SCALE_MAX := 3.0
@@ -121,6 +123,9 @@ func _ready() -> void:
 	var i := args.find("--guide")
 	if i >= 0:
 		open.call_deferred(args[i + 1] if i + 1 < args.size() else "")
+	var k := args.find("--guide-scroll")    # screenshots: scroll the page to line N
+	if k >= 0 and k + 1 < args.size():
+		get_tree().create_timer(1.0).timeout.connect(func(): body.scroll_to_line(int(args[k + 1])))
 
 
 ## Show the guide, optionally at a topic id.
@@ -211,6 +216,20 @@ func _apply_palette() -> void:
 	bsb.content_margin_left = 16
 	bsb.content_margin_right = 16
 	body.add_theme_stylebox_override("normal", bsb)
+	# the topic list: the same rounded panel as the page and the main
+	# window's panels, no grid lines, rounded highlights
+	topics.add_theme_stylebox_override("panel", Palette.panel_box("panel", 6, 8))
+	topics.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	for s in ["selected", "selected_focus", "hovered_selected", "hovered_selected_focus"]:
+		topics.add_theme_stylebox_override(s, Palette.panel_box("box_active", 4, 4))
+	topics.add_theme_stylebox_override("hovered", Palette.panel_box("panel_alt", 4, 4))
+	for s in ["cursor", "cursor_unfocused"]:
+		topics.add_theme_stylebox_override(s, StyleBoxEmpty.new())
+	topics.add_theme_color_override("guide_color", Color.TRANSPARENT)
+	topics.add_theme_color_override("font_color", Palette.c("text"))
+	topics.add_theme_color_override("font_selected_color", Palette.c("text"))
+	topics.add_theme_color_override("font_hovered_color", Palette.c("text"))
+	topics.add_theme_constant_override("v_separation", 5)
 	_rebuild()
 
 
@@ -285,7 +304,7 @@ func _select(id: String) -> void:
 
 ## Add a topic; it is listed only if its level (or its section's) is reached.
 func _topic(id: String, name: String, bb: String, lvl := 0) -> void:
-	_text[id] = bb
+	_text[id] = _lists(bb)
 	if maxi(lvl, _sec_level) > Level.current:
 		return
 	_ids.append(id)
@@ -298,11 +317,45 @@ func _section(name: String, lvl := 1) -> void:
 	_sec_level = lvl
 	if lvl > Level.current:
 		return
+	if topics.item_count > 0:     # a gap between sections
+		_ids.append("")
+		var gap := topics.add_item(" ")
+		topics.set_item_selectable(gap, false)
+		topics.set_item_tooltip_enabled(gap, false)
 	_ids.append("")
 	var i := topics.add_item(name.to_upper())
 	topics.set_item_selectable(i, false)
 	topics.set_item_custom_fg_color(i, Palette.c("accent"))
 	topics.set_item_tooltip_enabled(i, false)
+
+
+## Lines starting with "• " or "1. ", "2. " … become [ul] / [ol] lists, so a
+## wrapped line lines up under its text instead of under the bullet.
+static func _lists(bb: String) -> String:
+	var out := PackedStringArray()
+	var kind := ""
+	var items := PackedStringArray()
+	var num := RegEx.create_from_string("^\\d+\\. ")
+	for line in (bb + "\n").split("\n"):
+		var k := ""
+		var body := line
+		if line.begins_with("• "):
+			k = "ul"
+			body = line.substr(2)
+		else:
+			var m := num.search(line)
+			if m:
+				k = "ol"
+				body = line.substr(m.get_end())
+		if k != kind and not items.is_empty():
+			out.append(("[ul]" if kind == "ul" else "[ol type=1]") + "\n".join(items) + ("[/ul]" if kind == "ul" else "[/ol]"))
+			items.clear()
+		kind = k
+		if k == "":
+			out.append(line)
+		else:
+			items.append(body)
+	return "\n".join(out).trim_suffix("\n")
 
 
 func _h(s: String) -> String:
@@ -362,7 +415,9 @@ func _add_topics() -> void:
 		_sub("Memory map") +
 		"• [code]0x0000–0x2FFF[/code] — the built-in OS\n" +
 		"• [code]0x3000–0xFFFF[/code] — your code and data; the stack starts at the top of RAM ([code]SP = 0x00010000[/code]) and grows down\n" +
-		"• [code]0x10000[/code] and up — memory-mapped I/O. The GPIO registers of the RP2040 are here: SIO at [code]0xD0000000[/code], IO_BANK0 at [code]0x40014000[/code], PADS_BANK0 at [code]0x4001C000[/code]. Writing them changes the " + _link("pico", "Pico board") + "'s pins.\n")
+		"• [code]0x10000[/code] and up — memory-mapped I/O. The GPIO registers of the RP2040 are here: SIO at [code]0xD0000000[/code], IO_BANK0 at [code]0x40014000[/code], PADS_BANK0 at [code]0x4001C000[/code] (and RESETS at [code]0x4000C000[/code]). Writing them changes the " + _link("pico", "Pico board") + "'s pins. A pin follows the SIO registers only after its IO_BANK0 CTRL register is set to function 5 (SIO), as on the real chip. Any other address stops the program with a bus fault.\n" +
+		_sub("Like the real chip") +
+		"picosim runs only Cortex-M0+ (ARMv6-M) instructions and stops with an explanation wherever the Pico would crash (a HardFault): a word or halfword access to an address that is not a multiple of its size, a jump through a register to an address with bit 0 clear (mark such labels with [code].thumb_func[/code]), or an instruction the M0+ does not have. See " + _link("trouble", "Troubleshooting") + ".\n")
 
 	_section("The main window")
 
@@ -373,7 +428,7 @@ func _add_topics() -> void:
 		_sub("Datapath registers") +
 		"The line below the flags shows the datapath's internal registers: MAR (memory address), MDR (memory data), IR and IR2 (the instruction being executed). They are explained in " + _link("components", "Datapath components") + ".\n" +
 		_sub("Status line") +
-		"[b]Next state[/b] is the FSM state the next clock cycle will run, and whether the CPU is between instructions or partway through one. Below it are the total instructions and clock cycles executed.\n" +
+		"[b]Next state[/b] is the FSM state the next clock cycle will run (see " + _link("states", "FSM states") + "), and whether the CPU is between instructions or partway through one. Below it are the total instructions and clock cycles executed.\n" +
 		_sub("Bigger text") +
 		"Drag the bars below and beside the panel to make it larger — the text and fields scale up to fill the space.")
 
@@ -452,7 +507,9 @@ func _add_topics() -> void:
 		"• [b]Control signals asserted[/b] — what the FSM turns on. [code]GateX[/code] puts X on the bus, [code]LD.X[/code] makes X load at the clock edge, [code]XMUX=…[/code] picks a multiplexer input, [code]ALUK=…[/code] picks the ALU operation.\n" +
 		"• [b]What changes at the clock edge[/b] — every register, flag, memory byte or I/O register the cycle loads at the edge that ends it, old → new. On the diagram these are the yellow captions.\n" +
 		_sub("How many cycles?") +
-		"Every instruction starts with the same 3 fetch cycles (FETCH_ADDR → FETCH_MEMORY → FETCH_IR). Typical totals: B = 5, ADDS/MOVS/CMP = 6, LDR/STR = 7, BL = 9, PUSH/POP of 2 registers = 10. The full table is in [code]docs/cycles.md[/code].")
+		"Every instruction starts with the same 3 fetch cycles (FETCH_ADDR → FETCH_MEMORY → FETCH_IR). Typical totals: B = 5, ADDS/MOVS/CMP = 6, LDR/STR = 7, BL = 9, PUSH/POP of 2 registers = 10. " + _link("states", "FSM states") + " explains every state and lists each instruction's sequence; the full table is also in [code]docs/cycles.md[/code].")
+
+	_add_states()
 
 	_add_components()
 
@@ -520,7 +577,7 @@ func _add_topics() -> void:
 
 	_topic("performance", "Performance window", _h("Performance window") +
 		"Click " + _k("Performance") + " in the toolbar (" + _k("F2") + "). The window counts every instruction your program has completed since it was loaded and updates while it runs. The same run is timed on three machines; they execute the same instructions with the same results, so only the number of clock cycles differs.\n" +
-		"• [b]Multi-cycle[/b] — the teaching datapath on the CPU diagram: one instruction at a time, 5–10 cycles each.\n" +
+		"• [b]Multi-cycle[/b] — the teaching datapath on the CPU diagram: one instruction at a time, 4 or more cycles each (most take 5–7).\n" +
 		"• [b]2-stage pipeline (RP2040)[/b] — the Raspberry Pi Pico's Cortex-M0+: the next instruction is fetched while the current one decodes and executes. To watch it run, see " + _link("pipeline", "Pipeline diagram") + ".\n" +
 		"• [b]3-stage pipeline[/b] — a teaching design with separate fetch, decode and execute stages.\n" +
 		_sub("Metrics") +
@@ -542,7 +599,7 @@ func _add_topics() -> void:
 		_sub("Steps") +
 		"1. Choose [b]Pico (USB serial)[/b] in the toolbar's mode menu.\n" +
 		"2. Click " + _k("Flash") + ". picosim builds a [code].uf2[/code] with the Pico SDK (downloaded on first use, so the first build is slow) and uploads it. It uses [code]picotool[/code] if installed, otherwise copies to a mounted [code]RPI-RP2[/code] drive — hold BOOTSEL while plugging the Pico in to get that drive.\n" +
-		"3. After flashing, pick the Pico's port (marked [i](Pico)[/i]; " + _k("⟳") + " refreshes the list) and click " + _k("Connect") + ". The console now talks to the board.\n\n" +
+		"3. When the upload finishes, picosim connects to the board by itself and the console talks to it. The board waits up to 5 seconds for this connection before your program starts, so nothing it prints is lost. If it does not connect, pick the Pico's port (marked [i](Pico)[/i]; " + _k("⟳") + " refreshes the list) and click " + _k("Connect") + ".\n\n" +
 		"Stepping, the diagram and the registers only work in [b]Simulator[/b] mode — switch back to it to debug.")
 
 	_section("Help")
@@ -576,7 +633,16 @@ func _add_topics() -> void:
 		_sub("\"Simulator backend disconnected\"") +
 		"The Python backend stopped. Close picosim and start it again with [code]picosim --gui[/code].\n" +
 		_sub("A pin will not respond to clicks") +
-		"Only input pins can be driven. If your program configured the pin as an output (via [code]GPIO_OE[/code]), it controls the pin.")
+		"Only input pins can be driven. If your program configured the pin as an output (via [code]GPIO_OE[/code]), it controls the pin.\n" +
+		_sub("My program sets GPIO_OE and GPIO_OUT but the pin stays blank") +
+		"The pin is not connected to the SIO yet: write 5 (function SIO) to its IO_BANK0 CTRL register at [code]0x40014004 + 8 × pin[/code] first. The real RP2040 needs this too. Hover the pin for a reminder.\n" +
+		_sub("\"CPU fault: …\" in the console") +
+		"Your program did something that would crash a real Pico, and the message says what and where. The most common ones:\n" +
+		"• [b]Unaligned access[/b] — LDR/STR need an address that is a multiple of 4, LDRH/STRH a multiple of 2. Use LDRB/STRB for single bytes, and put [code].align 2[/code] before word data.\n" +
+		"• [b]… with bit 0 clear[/b] — BX, BLX or POP {PC} jumped to an even address. Put [code].thumb_func[/code] on the line before a label whose address you load with [code]ldr r0, =label[/code].\n" +
+		"• [b]Bus fault[/b] — the address is not RAM (0x0000–0xFFFF) or a simulated I/O register. Often a pointer went wrong, or the stack grew past the bottom of RAM (too many PUSHes without POPs).\n" +
+		"• [b]Undefined instruction[/b] — not a Cortex-M0+ instruction (for example code written for a Cortex-M4), or the program ran into data.\n" +
+		"Press " + _k("Reload") + " to start again.")
 
 	if Level.current < Level.MAX:
 		_ids.append("")
@@ -660,7 +726,7 @@ func _show_walkthrough() -> void:
 
 ## Heading shown above a step that starts at a label; `n_pass` > 1 says the
 ## code under it is running again (a loop going round).
-func _wt_heading(step: Dictionary, n_pass := 1) -> String:
+func _wt_heading(step: Dictionary, n_pass := 1, called := true) -> String:
 	var lab := str(step["label"])
 	if lab == "":
 		return ""
@@ -669,7 +735,7 @@ func _wt_heading(step: Dictionary, n_pass := 1) -> String:
 	if a < 0x3000:
 		note = {"_start": "the built-in OS starts here and calls your main",
 			"putchar": "built-in OS: print a character", "getchar": "built-in OS: read a key"}.get(lab, "built-in OS")
-	elif not lab.begins_with("."):
+	elif called and not lab.begins_with("."):
 		note = "a function in your program"
 	else:
 		note = "a label in your program"
@@ -706,13 +772,18 @@ func _wt_overview() -> String:
 ## says which pass this is.
 func _walk_table(pre: String, steps: Array, notes: Array) -> String:
 	var passes := {}
+	# a label is a function's name if the program got there with BL or BLX
+	var called := {}
+	for i in range(1, steps.size()):
+		if str(steps[i - 1]["text"]).strip_edges().get_slice(" ", 0).to_lower() in ["bl", "blx"]:
+			called[int(steps[i]["addr"])] = true
 	var t := "\n[table=4]"
 	for i in steps.size():
 		var s: Dictionary = steps[i]
 		var lab := str(s["label"])
 		if lab != "":
 			passes[lab] = passes.get(lab, 0) + 1
-			var hd := _wt_heading(s, passes[lab]).strip_edges()
+			var hd := _wt_heading(s, passes[lab], called.has(int(s["addr"]))).strip_edges()
 			var top := 18 if i > 0 else 4
 			t += "[cell][/cell][cell padding=4,%d,8,4]%s[/cell][cell padding=4,%d,8,4]%s[/cell][cell][/cell]" % [
 				top, hd.get_slice("   ", 0), top, hd.get_slice("   ", 1)]
@@ -923,6 +994,40 @@ static func _row(k: String, what: String) -> String:
 	return "[cell][color=%s][code]%s[/code][/color]    [/cell][cell]%s[/cell]" % [_c("yellow"), k, what]
 
 
+## "FSM states": every state of the control unit, from state_info.gd.
+func _add_states() -> void:
+	if not ResourceLoader.exists(STATES_PATH):
+		return
+	var info = load(STATES_PATH)
+	var dim := _c("dim")
+	var t := _h("FSM states")
+	t += "The control unit of the multi-cycle datapath is a finite-state machine (FSM). In every clock cycle it is in exactly one [b]state[/b], and the state decides which control signals are on: which tri-state buffer drives the bus, which registers load at the clock edge, what the muxes select and what the ALU does. Stepping one clock cycle runs one state.\n\n"
+	t += "You see the state in the FSM box on the " + _link("diagram", "datapath diagram") + ", in the list of the " + _link("cycles", "cycle-by-cycle inspector") + " (hover a row for a summary) and as [b]Next state[/b] in the Registers panel.\n"
+	t += _sub("The six phases")
+	t += "Each state belongs to one phase of the instruction cycle. The inspector's chips light up for the phase of the cycle shown.\n"
+	t += "[table=3]"
+	for p in info.PHASES:
+		t += "[cell padding=0,3,14,3][color=%s][b]%s[/b][/color][/cell][cell padding=0,3,14,3][b]%s[/b][/cell][cell padding=0,3,0,3]%s [color=%s]%s[/color][/cell]" % [
+			_c("yellow"), p[1], str(p[0]).capitalize(), p[2], dim, ", ".join(p[3])]
+	t += "[/table]\n"
+	t += _sub("Which states each instruction uses")
+	t += "Every instruction starts with the same fetch, [code]FETCH_ADDR → FETCH_MEMORY → FETCH_IR[/code] (3 cycles). After that:\n"
+	t += "[table=3][cell padding=0,3,14,3][b]Instruction[/b][/cell][cell padding=0,3,14,3][b]States after the fetch[/b][/cell][cell padding=0,3,0,3][b]Cycles[/b][/cell]"
+	for q in info.SEQUENCES:
+		t += "[cell padding=0,3,14,3]%s[/cell][cell padding=0,3,14,3][color=%s][code]%s[/code][/color][/cell][cell padding=0,3,0,3]%s[/cell]" % [
+			q[0], _c("cyan"), q[1], str(q[2])]
+	t += "[/table]\n"
+	t += "Some states appear in several kinds of instruction and do a different job in each (FETCH_OPERANDS reads memory for a load but feeds the ALU for an ADDS); each state below lists what it does for which instructions.\n"
+	t += _sub("Other words you may see")
+	t += "• [b]HALTED[/b] — shown as Next state after BKPT (or a CPU fault): the CPU is stopped. " + _k("Reload") + " starts again.\n"
+	t += "• [b](next)[/b] — the inspector's row for the cycle that has not run yet; between instructions it is always FETCH_ADDR.\n"
+	t += "• [b]IOSEL=IO[/b] — a memory access to an address of 0x10000 or above goes to the Pico's I/O registers instead of RAM.\n"
+	for st in info.ORDER:
+		t += "\n[hr color=%s height=1]\n" % _c("edge")
+		t += info.entry_bbcode(st, roundi(17 * text_scale)) + "\n"
+	_topic("states", "FSM states", t)
+
+
 func _add_components() -> void:
 	if not ResourceLoader.exists(INFO_PATH):
 		return
@@ -932,7 +1037,7 @@ func _add_components() -> void:
 		names[id] = str(info.INFO[id]["title"]).get_slice(" — ", 0)
 	var t := _h("Datapath components") + "Every block on the multi-cycle " + _link("diagram", "datapath diagram") + ", in the order data usually flows. Click a block on the diagram to see the same text next to it.\n"
 	for id in info.ORDER:
-		t += "\n[color=%s]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/color]\n\n" % _c("dim")
+		t += "\n[hr color=%s height=1]\n" % _c("edge")
 		t += info.bbcode(id, names, roundi(17 * text_scale)) + "\n"
 	_topic("components", "Datapath components", t)
 
@@ -946,7 +1051,7 @@ func _add_pipe_components() -> void:
 		names[id] = str(info.PIPE_INFO[id]["title"]).get_slice(" — ", 0)
 	var t := _h("Pipeline components") + "Every block on the " + _link("pipeline", "pipeline diagram") + ", Fetch stage first, in the order an instruction meets them. Click a block on the diagram to see the same text next to it.\n"
 	for id in info.PIPE_ORDER:
-		t += "\n[color=%s]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/color]\n\n" % _c("dim")
+		t += "\n[hr color=%s height=1]\n" % _c("edge")
 		t += info.entry_bbcode(info.PIPE_INFO[id], names, roundi(17 * text_scale)) + "\n"
 	_topic("pipecomponents", "Pipeline components", t)
 

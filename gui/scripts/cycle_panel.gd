@@ -6,6 +6,7 @@ extends PanelContainer
 signal cycle_selected(info: Dictionary)
 
 const PHASES := ["FETCH", "DECODE", "EVALUATE ADDRESS", "FETCH OPERANDS", "EXECUTE", "STORE RESULT"]
+const StateInfo := preload("res://scripts/state_info.gd")
 ## Palette key for each phase's colour.
 const PHASE_KEYS := {
 	"FETCH": "accent", "DECODE": "purple", "EVALUATE ADDRESS": "yellow",
@@ -186,7 +187,8 @@ func update_state(st: Dictionary) -> void:
 	list.clear()
 	for i in history.size():
 		var h: Dictionary = history[i]
-		list.add_item("%2d  %-16s %s" % [i, h["state"], h["phase"]])
+		var row := list.add_item("%2d  %-16s %s" % [i, h["state"], h["phase"]])
+		list.set_item_tooltip(row, StateInfo.tooltip(str(h["state"])))
 		list.set_item_custom_fg_color(i, _phase_col(h["phase"]))
 	if st["in_insn"] and total > history.size():
 		for i in range(history.size(), total):
@@ -206,9 +208,13 @@ func update_state(st: Dictionary) -> void:
 		insn_label.text = "%04X:  %s" % [a, _asm_at(a)]
 		progress_label.text = ("cycle %d of %s" % [selected + 1, str(total) if total > 0 else "?"]) if st["in_insn"] \
 			else "done in %d cycles — next insn at %04X" % [history.size(), int(st["pc"])]
+		if st.get("fault") != null and not st["in_insn"]:
+			progress_label.text = "CPU fault in cycle %d — see the console" % (history.size() + 1)
 	else:
 		insn_label.text = "%04X:  %s" % [int(st["pc"]), _asm_at(int(st["pc"]))]
 		progress_label.text = "not started — press Step cycle (F11)"
+		if st.get("fault") != null:
+			progress_label.text = "CPU fault — see the console"
 	_show_selected()
 
 

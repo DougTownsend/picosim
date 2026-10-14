@@ -34,6 +34,7 @@ _RANGES = (
 
 _PIN_MASK = (1 << NUM_PINS) - 1
 _CTRL_MASK = 0x3033331F   # IRQOVER, INOVER, OEOVER, OUTOVER, FUNCSEL
+FUNC_SIO = 5              # FUNCSEL value that connects a pin to the SIO GPIO registers
 
 # Pad-register bit positions (PADS_BANK0_GPIOx)
 _PADS_PDE = 1 << 2   # pull-down enable
@@ -57,9 +58,12 @@ class GPIO(MemoryBlock):
         self._pue = 0                       # pull-up enable bitmask
         self._pde = 0                       # pull-down enable bitmask
         self._ctrl = [0x1F] * NUM_PINS      # IO_BANK0 CTRL (FUNCSEL + overrides)
-        # RESETS: all peripherals start in reset; bits 5=IO_BANK0, 8=PADS_BANK0
-        self._resets = 0x01FFFFFF
-        self._resets_done = 0
+        # RESETS: as the Pico SDK leaves them before main() runs, IO_BANK0
+        # (bit 5) and PADS_BANK0 (bit 8) are already out of reset, so a
+        # program that waits for RESET_DONE works in both places.
+        out = (1 << 5) | (1 << 8)
+        self._resets = 0x01FFFFFF & ~out
+        self._resets_done = out
 
     # ── address routing ────────────────────────────────────────────────────────
 
@@ -109,13 +113,21 @@ class GPIO(MemoryBlock):
     def _override(mode, value):
         return (value, not value, False, True)[mode & 3]
 
+    # FUNCSEL picks which peripheral drives the pin.  Only SIO (5) is
+    # simulated; any other function (including the reset value 0x1F, "null")
+    # drives nothing, so SIO_OE / SIO_OUT have no effect until a program
+    # writes 5 to the pin's CTRL register — exactly as on the RP2040.
+
+    def _sio(self, i):
+        return (self._ctrl[i] & 0x1F) == FUNC_SIO
+
     def _pin_oe(self, i):
-        """Effective output enable of pin i (SIO OE with CTRL.OEOVER applied)."""
-        return self._override(self._ctrl[i] >> 12, bool(self._oe & (1 << i)))
+        """Effective output enable of pin i (the selected function's OE with CTRL.OEOVER applied)."""
+        return self._override(self._ctrl[i] >> 12, self._sio(i) and bool(self._oe & (1 << i)))
 
     def _pin_out(self, i):
-        """Effective output level of pin i (SIO OUT with CTRL.OUTOVER applied)."""
-        return self._override(self._ctrl[i] >> 8, bool(self._out & (1 << i)))
+        """Effective output level of pin i (the selected function's output with CTRL.OUTOVER applied)."""
+        return self._override(self._ctrl[i] >> 8, self._sio(i) and bool(self._out & (1 << i)))
 
     def pin_level(self, i):
         """Logic level on pin i: True/False, or None when floating (Z)."""
@@ -248,6 +260,8 @@ class GPIO(MemoryBlock):
                 'pull': 'up' if self._pue & bit else 'down' if self._pde & bit else None,
                 'driven': self._ext[i] is not None,
                 'func': self._ctrl[i] & 0x1F,
+                # SIO is told to drive the pin, but the pin is not connected to SIO
+                'sio_unrouted': bool(self._oe & bit) and not self._sio(i),
             })
         return pins
 

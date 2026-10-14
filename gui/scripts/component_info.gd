@@ -132,7 +132,7 @@ const INFO := {
 	"ir2": {
 		"title": "IR2 — second instruction halfword",
 		"kind": "Register (16 bits)",
-		"what": "Holds the second halfword of a 32-bit Thumb-2 encoding such as BL.",
+		"what": "Holds the second halfword of a 32-bit encoding: BL, or the rarer MRS, MSR, DMB, DSB and ISB.",
 		"how": "When DECODE finds a 32-bit prefix in IR, the FSM runs a second fetch (FETCH2_ADDR → FETCH2_MEMORY → FETCH2_IR) that loads IR2. Its bits complete the branch offset in IMM / OFFSET.",
 		"links": [
 			["in", "bus", "LD.IR2", ""],

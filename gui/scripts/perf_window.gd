@@ -210,6 +210,7 @@ func _build_metrics() -> void:
 	mix_bars = BarList.new()
 	v.add_child(mix_bars)
 	set_meta("metrics_tail", _rich(v))
+	set_meta("metrics_headings", [h1, h2])   # hidden until something has run
 
 
 func _build_compare() -> void:
@@ -338,7 +339,11 @@ func _fill_metrics() -> void:
 		phase_bars.set_rows([])
 		mix_bars.set_rows([])
 		get_meta("metrics_tail").text = ""
+		for hd in get_meta("metrics_headings"):
+			hd.visible = false
 		return
+	for hd in get_meta("metrics_headings"):
+		hd.visible = true
 	t += "[table=4]" + _hcell("Machine") + _hcell("Cycles") + _hcell("CPI") + _hcell("Time at %d MHz" % int(mhz))
 	for m in ["multicycle", "pico2", "pipe3"]:
 		var e: Dictionary = s["machines"][m]

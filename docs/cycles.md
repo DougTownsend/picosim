@@ -47,5 +47,9 @@ cover.
 | `LDMIA R0!, {R1, R2}` | 10 | new | DECODE → EVALUATE_ADDRESS → FETCH_OPERANDS → STORE_RESULT → FETCH_OPERANDS → STORE_RESULT → WRITEBACK |
 | `SVC #n` | 5 | new | DECODE → SVC_CALL |
 | `BKPT` | 5 | new | DECODE → HALT |
+| `NOP / WFI / CPSID i ...` | 4 | new | DECODE |
+| `DMB / DSB / ISB` | 7 | new | DECODE |
+| `MRS R0, APSR` | 8 | new | DECODE → EXECUTE_COMMIT |
+| `MSR APSR, R0` | 8 | new | DECODE → EXECUTE_COMMIT |
 
 Multi-register transfers (PUSH, POP, LDM, STM) take fetch (3) + DECODE + EVALUATE_ADDRESS + 2 per register + 1 WRITEBACK when the base register is updated.

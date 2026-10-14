@@ -7,3 +7,4 @@ test_files/*
 picosim/__pycache__
 *.uf2
 *.so
+__pycache__/

@@ -1,6 +1,6 @@
 # Installation
 
-The simulator requires Python 3, the ARM cross-compiler toolchain, and a couple of Python packages (installed automatically).
+The simulator requires Python 3, a C++ compiler (to build its core), the ARM cross-compiler toolchain, and a few Python packages (installed automatically). The graphical simulator also needs Godot 4. [DEPENDENCIES.md](DEPENDENCIES.md) says what each one is for.
 
 ---
 
@@ -31,28 +31,47 @@ During installation, check **"Add Python to PATH"**.
 
 ---
 
-## 2. Install the simulator
+## 2. A C++ compiler
 
-From the root of the repository:
+`pip install` compiles the simulator's core (C++17).
 
+**Linux (Debian / Ubuntu)**
 ```bash
-pip install .
+sudo apt install build-essential python3-dev
 ```
 
-This installs the `picosim` command and automatically pulls in the required Python packages (`pyelftools` and `capstone`).
+**Linux (Fedora / RHEL)**
+```bash
+sudo dnf install gcc-c++ python3-devel
+```
 
-On Linux you may need `pip3` instead of `pip`.  
-For an editable/development install where source changes take effect immediately:
+**macOS**
+```bash
+xcode-select --install
+```
+
+**Windows**
+Install the [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the "Desktop development with C++" workload.
+
+---
+
+## 3. Install the simulator
+
+From the root of the repository:
 
 ```bash
 pip install -e .
 ```
 
+This builds the C++ core, installs the `picosim` command and pulls in the required Python packages (`pyelftools`, `capstone`, `pyserial`, `cmake`, `ninja`). The `-e` (editable install) matters: the graphical simulator and the example programs are read from this folder, so keep it where it is.
+
+On Linux you may need `pip3` instead of `pip`. If you change `picosim/picosim_core.cpp`, run the command again to rebuild the core.
+
 ---
 
-## 3. Git
+## 4. Git
 
-Git is required only when using `--uf2` (to clone the pico-sdk on first use).
+Git is required only when using `--uf2` or `--flash` (to clone the pico-sdk on first use).
 
 **Linux**
 ```bash
@@ -84,9 +103,9 @@ Alternatively download the installer from [git-scm.com](https://git-scm.com/down
 
 ---
 
-## 4. arm-none-eabi-gcc
+## 5. arm-none-eabi-gcc
 
-This is the ARM cross-compiler that assembles and links your `.s` files.
+This is the ARM cross-compiler that assembles and links your `.s` files. For `--uf2` / `--flash` it must include the C library (newlib), which the Pico SDK links against; the packages below do, except Homebrew's plain `arm-none-eabi-gcc` formula — on macOS use the cask shown.
 
 **Linux (Debian / Ubuntu)**
 ```bash
@@ -122,6 +141,20 @@ Homebrew itself can be installed from [brew.sh](https://brew.sh).
 
 ---
 
+## 6. Godot 4 (for the graphical simulator)
+
+`picosim --gui` runs the GUI in [Godot 4](https://godotengine.org/download) (4.7 is tested).
+
+**macOS**
+```bash
+brew install --cask godot
+```
+
+**Linux / Windows**
+Download Godot from [godotengine.org](https://godotengine.org/download) and put the `godot` executable on your PATH, or set the `PICOSIM_GODOT` environment variable to its full path.
+
+---
+
 ## Quick check
 
 After installing everything, run these commands to confirm:
@@ -132,8 +165,12 @@ picosim --help                 # simulator installed and on PATH
 arm-none-eabi-gcc --version    # cross-compiler found
 ```
 
-To use the `--flash` option, install `picotool` as well:
+To use the `--flash` option (and the GUI's Flash button) without holding BOOTSEL, install `picotool` as well:
 
 ```bash
-brew install picotool
+brew install picotool          # macOS
 ```
+
+On Linux and Windows, see the [picotool README](https://github.com/raspberrypi/picotool). Without picotool, picosim copies the `.uf2` to the Pico's `RPI-RP2` drive (hold BOOTSEL while plugging it in).
+
+Run the test suite with `python3 -m unittest discover tests`.

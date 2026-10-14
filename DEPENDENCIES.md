@@ -1,99 +1,35 @@
 # Dependencies
 
-The simulator needs three things: Python 3, two Python packages, and the ARM cross-compiler toolchain.
+Everything picosim needs, and what each part is for. Step-by-step install
+commands for Linux, macOS and Windows are in [installation.md](installation.md).
 
----
+## To run the simulator
 
-## 1. Python 3 (3.8 or newer)
+| Dependency | Used for | How it is installed |
+|------------|----------|---------------------|
+| Python 3.8 or newer | the simulator, its command line and the GUI backend | python.org, or your package manager |
+| A C++17 compiler | building the simulator's C++ core (`picosim/picosim_core.cpp`) during `pip install` | Xcode Command Line Tools (macOS), `build-essential` (Debian/Ubuntu), Visual Studio Build Tools (Windows) |
+| `pybind11`, `setuptools` | building the C++ core | fetched automatically by `pip install` |
+| `pyelftools` | loading the compiled ELF program | installed automatically by `pip install` |
+| `capstone` | disassembling instructions for the listings and traces | installed automatically |
+| `pyserial` | talking to a real Pico over USB serial (GUI) | installed automatically |
+| `cmake`, `ninja` | building `.uf2` firmware with the Pico SDK (`--uf2`, `--flash`, the GUI's Flash) | installed automatically |
+| `arm-none-eabi-gcc` | assembling and linking your `.s` files | see installation.md |
 
-**Linux**
-Most distributions include Python 3. If not:
-```bash
-# Debian / Ubuntu
-sudo apt install python3
+## Optional
 
-# Fedora / RHEL
-sudo dnf install python3
-
-# Arch
-sudo pacman -S python
-```
-
-**macOS**
-```bash
-brew install python3
-```
-Or download the installer from [python.org](https://www.python.org/downloads/).
-
-**Windows**
-Download the installer from [python.org](https://www.python.org/downloads/).
-During installation, check **"Add Python to PATH"**.
-
----
-
-## 2. Python packages
-
-Install with pip after Python is set up:
-
-```bash
-pip install pyelftools capstone
-```
-
-On Linux you may need `pip3` instead of `pip`. On Windows, use the same command in Command Prompt or PowerShell.
-
-| Package | Used for |
-|---------|----------|
-| `pyelftools` | Loading compiled ELF binaries |
-| `capstone` | Disassembling instructions for the trace and debugger |
-
----
-
-## 3. arm-none-eabi-gcc
-
-This is the ARM cross-compiler that assembles and links your `.s` files.
-
-**Linux (Debian / Ubuntu)**
-```bash
-sudo apt install gcc-arm-none-eabi
-```
-
-**Linux (Fedora / RHEL)**
-```bash
-sudo dnf install arm-none-eabi-gcc arm-none-eabi-binutils
-```
-
-**Linux (Arch)**
-```bash
-sudo pacman -S arm-none-eabi-gcc
-```
-
-**macOS**
-```bash
-brew install --cask gcc-arm-embedded
-```
-This installs ARM's official binary distribution via Homebrew Cask.
-Homebrew itself can be installed from [brew.sh](https://brew.sh).
-
-**Windows**
-1. Download the installer from [ARM's toolchain page](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads).
-   Choose the **arm-none-eabi** variant for your machine (usually the `x86_64-mingw-w64` package).
-2. Run the installer.
-3. On the final screen, check **"Add path to environment variable"** so the tools are on your PATH.
-4. Open a new Command Prompt and verify:
-   ```
-   arm-none-eabi-gcc --version
-   ```
-
----
+| Dependency | Needed for |
+|------------|------------|
+| Godot 4 (4.7 tested) | the graphical simulator, `picosim --gui`; put `godot` on your PATH or set `PICOSIM_GODOT` |
+| git | `--uf2` / `--flash`: the Pico SDK is cloned to `~/pico-sdk` on first use (or set `PICO_SDK_PATH`) |
+| An ARM toolchain **with newlib** | `--uf2` / `--flash`: the Pico SDK links against the C library. The Arm GNU Toolchain has it (`brew install --cask gcc-arm-embedded` on macOS); Homebrew's plain `arm-none-eabi-gcc` formula does not, but it is fine for the simulator itself |
+| `picotool` | `--flash` and the GUI's Flash: uploads without holding BOOTSEL. Without it, picosim copies the `.uf2` to a mounted `RPI-RP2` drive instead |
 
 ## Quick check
 
-After installing everything, run these commands to confirm:
-
 ```bash
-python3 --version          # Python 3.8 or newer
-python3 -c "import elftools, capstone; print('packages OK')"
+python3 --version                                   # 3.8 or newer
+python3 -c "import picosim._picosim_core, elftools, capstone, serial; print('packages OK')"
 arm-none-eabi-gcc --version
+godot --version                                     # only for --gui
 ```
-
-All three should print version information without errors.

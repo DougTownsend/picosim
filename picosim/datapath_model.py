@@ -24,9 +24,10 @@ REG['PC'] = 15
 
 
 class Datapath:
-    def __init__(self, regs, flags, dp, read, held=None):
+    def __init__(self, regs, flags, dp, read, held=None, sysregs=None):
         """regs: R0-R15; flags: {N,Z,C,V}; dp: {MAR, MDR, IR, IR2, ALU_A, ALU_B};
-        read(addr, nbytes): memory; held: selects latched by DECODE."""
+        read(addr, nbytes): memory; held: selects latched by DECODE;
+        sysregs: {PRIMASK, CONTROL, PSP}, the system registers MRS/MSR move."""
         self.pc = Register('PC', regs[15])
         self.rf = RegisterFile(regs)
         self.flags = Flags(**flags)
@@ -38,13 +39,15 @@ class Datapath:
         self.alu_b = Register('ALU_B', dp['ALU_B'])
         self.mem = Memory(read)
         self.held = dict(held or {})
+        self.sys = SystemRegisters(sysregs or {})
 
     @classmethod
     def from_core(cls, core, held=None):
         """The datapath as the C++ core holds it right now."""
         rd = {1: core.read8, 2: core.read16, 4: core.read32}
         return cls(list(core.regs), {'n': core.N, 'z': core.Z, 'c': core.C, 'v': core.V},
-                   core.datapath, lambda a, n: rd[n](a), held)
+                   core.datapath, lambda a, n: rd[n](a), held,
+                   {'PRIMASK': core.PRIMASK, 'CONTROL': core.CONTROL, 'PSP': core.PSP})
 
     @staticmethod
     def _sel(signals, prefix):
@@ -103,11 +106,13 @@ class Datapath:
         # the bus: exactly one tri-state buffer may drive it
         lx = sel('LOAD EXT=')
         mdr_out = load_ext(self.mdr.value, lx[1:], lx[0] == 'S') if lx else self.mdr.value
+        sysreg = sel('SYSREG=')
         b = bus(tri_state('GatePC' in sig, self.pc.value),
                 tri_state('GateADDR' in sig, addr_sum),
                 tri_state('GateALU' in sig, alu_out),
                 tri_state('GateMDR' in sig, mdr_out),
-                tri_state('GateVEC' in sig, VECTOR_SVCALL))
+                tri_state('GateVEC' in sig, VECTOR_SVCALL),
+                tri_state('GateSYS' in sig, self.sys.read(sysreg, f, self.rf.r[13]) if sysreg else None))
 
         # COND EVAL for B<cond>
         taken = cond_eval(ir >> 8, f) if (ir >> 12) == 0b1101 and state == 'EXECUTE_PC' else None
@@ -132,6 +137,11 @@ class Datapath:
             reg_writes[13] = b
         if 'LD.LR' in sig:
             reg_writes[14] = set_thumb(b) if 'SET THUMB BIT' in sig else b
+        new_flags = alu_flags
+        if 'LD.SYS' in sig:                     # MSR: the bus value goes to a system register
+            if sysreg in ('MSP',):
+                reg_writes[13] = b & ~3 & MASK
+            new_flags = self.sys.write(sysreg, b)
         sr2mux = mux('IMM' if 'SR2MUX=IMM' in sig else 'REG',
                      {'IMM': ImmExtract.alu_immediate(ir) if 'SR2MUX=IMM' in sig else None,
                       'REG': port(sr2) if sr2 else None})
@@ -147,7 +157,7 @@ class Datapath:
         self.alu_b.clock('LD.ALUB' in sig, sr2mux if sr2mux is not None else 0)
         for n, v in reg_writes.items():
             self.rf.clock(True, n, v)
-        self.flags.clock('LD.CC' in sig, alu_flags)
+        self.flags.clock('LD.CC' in sig or 'LD.SYS' in sig, new_flags)
         after = self._snapshot()
         changes = [(k, before[k], after[k]) for k in before if before[k] != after[k]]
         return {'bus': b, 'changes': changes, 'writes': writes, 'taken': taken, 'held': self.held}
@@ -159,3 +169,32 @@ class Datapath:
         for r in (self.mar, self.mdr, self.ir, self.ir2, self.alu_a, self.alu_b):
             s[r.name] = r.value
         return s
+
+
+class SystemRegisters:
+    """APSR, MSP, PSP, PRIMASK and CONTROL as MRS / MSR see them.  They are
+    not drawn on the teaching datapath: MRS drives the bus through GateSYS,
+    MSR loads one from the bus (LD.SYS).  picosim runs in Thread mode, so
+    IPSR reads 0, and the EPSR T bit reads as 0 (ARMv6-M MRS)."""
+
+    APSR = ('APSR', 'IAPSR', 'EAPSR', 'XPSR')
+
+    def __init__(self, values):
+        self.v = {'PRIMASK': 0, 'CONTROL': 0, 'PSP': 0, **values}
+
+    def read(self, name, flags, sp):
+        if name in self.APSR:
+            return flags['N'] << 31 | flags['Z'] << 30 | flags['C'] << 29 | flags['V'] << 28
+        if name == 'MSP':
+            return sp
+        return {'PRIMASK': self.v['PRIMASK'] & 1, 'CONTROL': self.v['CONTROL'] & 3,
+                'PSP': self.v['PSP']}.get(name, 0)
+
+    def write(self, name, value):
+        """Store `value`; returns the flags it sets (APSR) or {}."""
+        if name in self.APSR:
+            return {'N': value >> 31 & 1, 'Z': value >> 30 & 1, 'C': value >> 29 & 1,
+                    'V': value >> 28 & 1}
+        if name in ('PRIMASK', 'CONTROL', 'PSP'):
+            self.v[name] = value & {'PRIMASK': 1, 'CONTROL': 3, 'PSP': ~3 & MASK}[name]
+        return {}

@@ -32,7 +32,7 @@ from collections import deque
 
 from .loader import load_program, LoadError
 from . import settings as prog_settings
-from .cpu import SimulatorError
+from .cpu import SimulatorError, svc_write_data
 from .pipeline import Pipeline
 
 REG_NAMES = ['R0', 'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7',
@@ -70,6 +70,7 @@ class Server:
         self.mem_changed = set()   # byte addresses written by the last action
         self.hexview = HEX_DEFAULT
         self.exit_code = None
+        self.fault = None          # why the CPU stopped, if it faulted
         self.gpio_before = []      # pin states at the start of the last action
         self.dirty = False         # a state update is pending
 
@@ -124,12 +125,17 @@ class Server:
                     line, self.rxbuf = self.rxbuf.split(b'\n', 1)
                     if line.strip():
                         self.dispatch(line)
-            self.poll_serial()
-            self.poll_flash()
-            if busy:
-                self.run_slice()
-            if self.dirty:
-                self._send_state_now()
+            try:
+                self.poll_serial()
+                self.poll_flash()
+                if busy:
+                    self.run_slice()
+                if self.dirty:
+                    self._send_state_now()
+            except Exception as e:     # keep the server alive for the GUI
+                self.running = False
+                self.error(f"internal error: {e!r}")
+                self.dirty = True
         self.close_serial()
 
     def dispatch(self, line):
@@ -137,7 +143,9 @@ class Server:
             msg = json.loads(line)
         except ValueError:
             return self.error(f"bad JSON: {line[:80]!r}")
-        cmd = msg.get('cmd', '')
+        if not isinstance(msg, dict):
+            return self.error(f"bad command: {line[:80]!r}")
+        cmd = str(msg.get('cmd', ''))
         handler = getattr(self, 'cmd_' + cmd, None)
         if handler is None:
             return self.error(f"unknown command '{cmd}'")
@@ -184,7 +192,7 @@ class Server:
             'type': 'state', 'loaded': True, 'path': self.prog.path,
             'regs': list(c.regs), 'flags': {'N': c.N, 'Z': c.Z, 'C': c.C, 'V': c.V},
             'datapath': c.datapath,
-            'pc': pc, 'halted': c.halted, 'exit_code': self.exit_code,
+            'pc': pc, 'halted': c.halted, 'exit_code': self.exit_code, 'fault': self.fault,
             'steps': c.steps, 'cycles': c.cycles,
             'in_insn': c.in_insn, 'next_state': c.next_state(),
             'cycle_index': c.cycle_index, 'insn_total': c.insn_total,
@@ -210,11 +218,21 @@ class Server:
         p = self.prog
         c = self.core
         listing = []
-        for addr in sorted(p.asm_map):
-            hw = c.read16(addr)
-            wide = c.is_32bit_thumb(hw)
-            raw = f"{hw:04X}" + (f" {c.read16(addr + 2):04X}" if wide else '')
-            listing.append({'addr': addr, 'raw': raw, 'text': p.asm_map[addr],
+        addrs = sorted(p.asm_map)
+        for i, addr in enumerate(addrs):
+            text = p.asm_map[addr]
+            if text.startswith('.'):               # data: .word / .hword / .byte / .ascii
+                size = {'.word': 4, '.hword': 2, '.byte': 1}.get(text.split()[0])
+                if size:
+                    raw = f"{int.from_bytes(c.get_mem_slice(addr, size), 'little'):0{2 * size}X}"
+                else:
+                    n = (addrs[i + 1] if i + 1 < len(addrs) else addr + 16) - addr
+                    raw = c.get_mem_slice(addr, min(n, 4)).hex(' ').upper() + ('…' if n > 4 else '')
+            else:
+                hw = c.read16(addr)
+                wide = c.is_32bit_thumb(hw)
+                raw = f"{hw:04X}" + (f" {c.read16(addr + 2):04X}" if wide else '')
+            listing.append({'addr': addr, 'raw': raw, 'text': text,
                             'label': p.sym_map.get(addr, '')})
         self.send({'type': 'program', 'path': p.path, 'main': p.main_addr,
                    'listing': listing, 'settings': prog_settings.describe(p.path),
@@ -225,8 +243,7 @@ class Server:
     def _svc(self, num):
         c = self.core
         if num == 0:
-            data = c.get_mem_slice(c.get_reg(1) & 0xFFFF, c.get_reg(2))
-            self.console(data.decode('latin-1'))
+            self.console(svc_write_data(c).decode('latin-1'))
         elif num == 1:
             self.exit_code = c.get_reg(0)
             c.halted = True
@@ -246,6 +263,8 @@ class Server:
         c = self.core
         if c.in_insn:
             return c.next_state() == 'SVC_CALL' and (c.datapath['IR'] & 0xFF) == 3
+        if c.pc >= 0x10000:
+            return False           # not RAM: the fetch itself will fault
         return c.read16(c.pc) == 0xDF03
 
     # ── execution primitives ─────────────────────────────────────────────────
@@ -281,6 +300,7 @@ class Server:
     def _fault(self, e):
         self.core.halted = True
         self.running = False
+        self.fault = str(e)
         self.error(f"CPU fault: {e}")
 
     def one_cycle(self):
@@ -314,7 +334,7 @@ class Server:
             self.waiting_input = False
             try:
                 c.step()
-            except RuntimeError as e:
+            except (RuntimeError, SimulatorError) as e:
                 self._fault(e)
                 return False
             c.check_halt()
@@ -417,6 +437,7 @@ class Server:
         self.waiting_input = False
         self.history = []
         self.exit_code = None
+        self.fault = None
         self.pipe = Pipeline(self.core, prog.asm_map)
         self._begin_action()
         self.breakpoints &= set(prog.asm_map)

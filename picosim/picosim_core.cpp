@@ -86,6 +86,10 @@ static std::string hex32(uint32_t v) {
 static std::string hex16(uint32_t v) {
     char b[16]; std::snprintf(b, sizeof b, "0x%04X", v & 0xFFFF); return b;
 }
+// Short hex for messages: 0x3004, 0x40014000.
+static std::string hexs(uint32_t v) {
+    char b[16]; std::snprintf(b, sizeof b, "0x%X", v); return b;
+}
 static const char* REGN[16] = {"R0","R1","R2","R3","R4","R5","R6","R7",
                                "R8","R9","R10","R11","R12","SP","LR","PC"};
 
@@ -112,6 +116,12 @@ public:
     uint64_t steps;
     bool     trace;
     uint32_t _insn_addr;     // address of executing instruction (for PC reads)
+    // strict: fault like the real Cortex-M0+ on unaligned data accesses and
+    // on BX/BLX/POP to an address with bit 0 clear (both are HardFaults on
+    // the Pico).  Scratch cores that only measure cycles turn it off.
+    bool     strict = true;
+    // System registers that live outside the datapath (MRS / MSR / CPS).
+    uint32_t PRIMASK = 0, CONTROL = 0, PSP = 0;
 
     // Python callbacks
     // peripheral_read(addr, nbytes) -> int
@@ -139,6 +149,7 @@ public:
     // profiling (see InsnRec / AddrProf)
     static const size_t RECENT = 512;
     bool     count_data = false;      // data accesses are being counted
+    bool     fetching = false;        // an instruction fetch is reading memory
     InsnRec  cur_rec{};               // the instruction in progress
     std::vector<InsnRec> recent = std::vector<InsnRec>(RECENT);
     uint64_t recent_n = 0;            // records written so far
@@ -206,6 +217,30 @@ public:
 
     bool is_peripheral(uint32_t addr) const { return addr >= 0x10000u; }
 
+    // Flat RAM, little-endian.  An access that runs past 0xFFFF wraps to 0
+    // (only possible through the Python API: instructions must be aligned).
+    uint32_t ram_get(uint32_t addr, int width) const {
+        uint32_t v = 0;
+        for (int i = 0; i < width; ++i) v |= (uint32_t)mem[(addr + i) & 0xFFFF] << (8 * i);
+        return v;
+    }
+    void ram_put(uint32_t addr, int width, uint32_t v) {
+        for (int i = 0; i < width; ++i) mem[(addr + i) & 0xFFFF] = (uint8_t)(v >> (8 * i));
+    }
+
+    // ARMv6-M has no unaligned accesses: an instruction's halfword or word
+    // access to an address that is not a multiple of its size is a HardFault.
+    void check_align(uint32_t addr, int width, bool write) const {
+        if (!strict || !count_data || !(addr & (uint32_t)(width - 1))) return;
+        const char* what = width == 4 ? "word (4 bytes)" : "halfword (2 bytes)";
+        throw std::runtime_error(
+            "Unaligned access by the instruction at " + hexs(_insn_addr) + ": it " +
+            (write ? "stores a " : "loads a ") + what + (write ? " to " : " from ") + hexs(addr) +
+            ", which is not a multiple of " + std::to_string(width) + ". The Cortex-M0+ only does "
+            "aligned accesses, so the Pico would stop with a HardFault here. Use LDRB/STRB for "
+            "single bytes, or keep word data on a 4-byte boundary (.align 2).");
+    }
+
     uint8_t  read8 (uint32_t addr) {
         note_access(addr, false);
         if (is_peripheral(addr)) {
@@ -216,34 +251,31 @@ public:
     }
 
     uint16_t read16(uint32_t addr) {
+        check_align(addr, 2, false);
         note_access(addr, false);
         if (is_peripheral(addr)) {
             if (peripheral_read) return (uint16_t)peripheral_read(addr, 2);
             return 0;
         }
-        uint16_t v;
-        std::memcpy(&v, &mem[addr & 0xFFFF], 2);
-        return v;
+        return (uint16_t)ram_get(addr, 2);
     }
 
     uint32_t read32(uint32_t addr) {
+        check_align(addr, 4, false);
         note_access(addr, false);
         if (is_peripheral(addr)) {
             if (peripheral_read) return peripheral_read(addr, 4);
             return 0;
         }
-        uint32_t v;
-        std::memcpy(&v, &mem[addr & 0xFFFF], 4);
-        return v;
+        return ram_get(addr, 4);
     }
 
     void log_write(uint32_t addr, int width, uint32_t val) {
+        if (width > 1) check_align(addr, width, true);
         note_access(addr, true);
         if (!mem_log) return;
         if (is_peripheral(addr)) { mem_log->push_back({addr, width, 0, true, val}); return; }
-        uint32_t old = 0;
-        std::memcpy(&old, &mem[addr & 0xFFFF], width);
-        mem_log->push_back({addr & 0xFFFF, width, old, false, val});
+        mem_log->push_back({addr & 0xFFFF, width, ram_get(addr, width), false, val});
     }
 
     void write8 (uint32_t addr, uint32_t val) {
@@ -261,8 +293,7 @@ public:
             if (peripheral_write) peripheral_write(addr, val & 0xFFFF, 2);
             return;
         }
-        uint16_t v = (uint16_t)(val & 0xFFFF);
-        std::memcpy(&mem[addr & 0xFFFF], &v, 2);
+        ram_put(addr, 2, val & 0xFFFF);
     }
 
     void write32(uint32_t addr, uint32_t val) {
@@ -271,7 +302,27 @@ public:
             if (peripheral_write) peripheral_write(addr, val, 4);
             return;
         }
-        std::memcpy(&mem[addr & 0xFFFF], &val, 4);
+        ram_put(addr, 4, val);
+    }
+
+    // BXWritePC: a BX, BLX or POP {PC} target must have bit 0 set (Thumb).
+    // Bit 0 clear asks for ARM state, which the Cortex-M0+ does not have.
+    void bx_write_pc(uint32_t target, const char* how) {
+        if (strict && !(target & 1))
+            throw std::runtime_error(
+                std::string(how) + " at " + hexs(_insn_addr) + " jumps to " + hexs(target) +
+                " with bit 0 clear. The Cortex-M0+ only runs Thumb code, so the Pico would stop "
+                "with a HardFault here. A code address you jump to through a register needs "
+                "bit 0 set: put .thumb_func (or .type name, %function) before the label, so "
+                "that ldr Rn, =name gives name + 1.");
+        regs[15] = target & 0xFFFFFFFEu;
+    }
+
+    std::string undefined_msg(uint32_t enc, bool wide) const {
+        char b[16]; std::snprintf(b, sizeof b, wide ? "0x%08X" : "0x%04X", enc);
+        return std::string("Undefined instruction ") + b + " at " + hexs(_insn_addr) +
+               ": this is not a Cortex-M0+ (ARMv6-M) instruction, so the Pico would stop with a "
+               "HardFault. If it is data, keep it out of the path the program runs through.";
     }
 
     // ── flags ────────────────────────────────────────────────────────────────
@@ -376,7 +427,10 @@ public:
     // ── fetch ────────────────────────────────────────────────────────────────
 
     uint16_t fetch16() {
-        uint16_t hw = read16(regs[15]);
+        fetching = true;
+        uint16_t hw;
+        try { hw = read16(regs[15]); } catch (...) { fetching = false; throw; }
+        fetching = false;
         regs[15] += 2;
         return hw;
     }
@@ -402,16 +456,17 @@ public:
         if (is_32bit_thumb(hw1)) {
             uint16_t hw2 = fetch16();
             IR2 = hw2;
-            cycles += insn_cycle_count(hw1, hw2);
             uint32_t word = ((uint32_t)hw1 << 16) | hw2;
+            if (strict && !is_v6m32(hw1, hw2)) { regs[15] = _insn_addr; throw std::runtime_error(undefined_msg(word, true)); }
+            cycles += insn_cycle_count(hw1, hw2);
             count_data = true;
-            try { exec32(_insn_addr, word); } catch (...) { count_data = false; throw; }
+            try { exec32(_insn_addr, word); } catch (...) { count_data = false; regs[15] = _insn_addr; throw; }
             count_data = false;
             finish_rec(hw1, hw2, true);
         } else {
             cycles += insn_cycle_count(hw1, 0);
             count_data = true;
-            try { exec16(_insn_addr, hw1); } catch (...) { count_data = false; throw; }
+            try { exec16(_insn_addr, hw1); } catch (...) { count_data = false; regs[15] = _insn_addr; throw; }
             count_data = false;
             finish_rec(hw1, 0, false);
         }
@@ -577,9 +632,10 @@ public:
             } else if (op == 2) { // MOV high reg
                 reg_write(rdn, reg_read(rm));
             } else {              // BX / BLX
-                uint32_t target = reg_read(rm) & 0xFFFFFFFEu;
-                if (dn) set_lr(regs[15] | 1);  // BLX: pc already advanced
-                set_pc(target);
+                uint32_t target = reg_read(rm);
+                uint32_t ret = regs[15] | 1;   // BLX: pc already advanced
+                bx_write_pc(target, dn ? "BLX" : "BX");
+                if (dn) set_lr(ret);
             }
             return;
         }
@@ -665,7 +721,7 @@ public:
         }
 
         // ── Miscellaneous ──────────────────────────────────────────────────
-        if (top8 == 0b10110000 || top8 == 0b10111000) {  // ADD/SUB SP, #imm7
+        if (top8 == 0b10110000) {  // ADD/SUB SP, #imm7
             int sign = (hw >> 7) & 1;
             uint32_t imm = (uint32_t)(hw & 0x7F) << 2;
             if (sign) regs[13] -= imm;
@@ -701,6 +757,8 @@ public:
             } else if (op == 3) { // REVSH
                 uint32_t r = (((v >> 8) & 0xFF) | ((v & 0xFF) << 8));
                 reg_write(rd, u32((int32_t)(int16_t)(r & 0xFFFF)));
+            } else {
+                throw std::runtime_error(undefined_msg(hw, false));
             }
             return;
         }
@@ -725,9 +783,9 @@ public:
                 if (rlist & (1 << i)) { reg_write(i, read32(regs[13])); regs[13] += 4; }
             }
             if (pc_bit) {
-                uint32_t target = read32(regs[13]) & 0xFFFFFFFEu;
+                uint32_t target = read32(regs[13]);
+                bx_write_pc(target, "POP {PC}");
                 regs[13] += 4;
-                set_pc(target);
             }
             return;
         }
@@ -744,6 +802,14 @@ public:
             halted = true;
             return;
         }
+
+        // ── Hints: NOP, YIELD, WFE, WFI, SEV ───────────────────────────────
+        // picosim has no interrupts or events, so WFI and WFE simply go on.
+        // BFxy with y != 0 is IT, which ARMv6-M does not have.
+        if (top8 == 0b10111111 && !(hw & 0xF)) return;
+
+        // ── CPSIE i / CPSID i: PRIMASK (no interrupts are simulated) ───────
+        if ((hw & 0xFFEF) == 0xB662) { PRIMASK = (hw >> 4) & 1; return; }
 
         // ── STM / LDM ─────────────────────────────────────────────────────
         if (top5 == 0b11000) {   // STMIA
@@ -771,10 +837,7 @@ public:
         if (top4 == 0b1101) {
             int cond = (hw >> 8) & 0xF;
             if (cond == 0xF) { exec_svc(hw & 0xFF); return; }
-            if (cond == 0xE) {
-                throw std::runtime_error(
-                    "UDF at 0x" + std::to_string(addr));
-            }
+            if (cond == 0xE) throw std::runtime_error(undefined_msg(hw, false));
             int32_t offset = sign_extend(hw & 0xFF, 8) * 2;
             if (check_cond(cond)) {
                 cur_rec.cond_taken = true;
@@ -790,9 +853,8 @@ public:
             return;
         }
 
-        throw std::runtime_error(
-            "Unimplemented 16-bit opcode 0x" +
-            std::to_string(hw) + " at 0x" + std::to_string(addr));
+        (void)addr;
+        throw std::runtime_error(undefined_msg(hw, false));
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -802,6 +864,21 @@ public:
     void exec32(uint32_t addr, uint32_t word) {
         uint16_t hw1 = (word >> 16) & 0xFFFF;
         uint16_t hw2 =  word        & 0xFFFF;
+
+        // ── DSB / DMB / ISB: picosim has no caches or buffers to wait for ──
+        if (is_barrier(hw1, hw2)) return;
+        if (is_mrs(hw1, hw2)) {
+            int rd = (hw2 >> 8) & 0xF;
+            if (rd == 13 || rd == 15) throw std::runtime_error(undefined_msg(word, true));
+            reg_write(rd, sysreg_read(hw2 & 0xFF));
+            return;
+        }
+        if (is_msr(hw1, hw2)) {
+            int rn = hw1 & 0xF;
+            if (rn == 13 || rn == 15) throw std::runtime_error(undefined_msg(word, true));
+            sysreg_write(hw2 & 0xFF, regs[rn]);
+            return;
+        }
 
         // ── BL (T1) ──────────────────────────────────────────────────────
         if ((hw1 & 0xF800) == 0xF000 && (hw2 & 0xD000) == 0xD000) {
@@ -984,9 +1061,44 @@ public:
             return;
         }
 
-        throw std::runtime_error(
-            "Unimplemented 32-bit opcode 0x" +
-            std::to_string(word) + " at 0x" + std::to_string(addr));
+        (void)addr;
+        throw std::runtime_error(undefined_msg(word, true));
+    }
+
+    // ── system instructions (ARMv6-M's other 32-bit encodings) ─────────────
+    static bool is_barrier(uint16_t hw1, uint16_t hw2) {     // DSB, DMB, ISB
+        int op = (hw2 >> 4) & 0xF;
+        return hw1 == 0xF3BF && (hw2 & 0xFF00) == 0x8F00 && op >= 4 && op <= 6;
+    }
+    static bool is_mrs(uint16_t hw1, uint16_t hw2) { return hw1 == 0xF3EF && (hw2 & 0xF000) == 0x8000; }
+    static bool is_msr(uint16_t hw1, uint16_t hw2) { return (hw1 & 0xFFF0) == 0xF380 && (hw2 & 0xFF00) == 0x8800; }
+
+    static const char* sysreg_name(int sysm) {
+        switch (sysm) {
+        case 0: return "APSR"; case 1: return "IAPSR"; case 2: return "EAPSR"; case 3: return "XPSR";
+        case 5: return "IPSR"; case 6: return "EPSR"; case 7: return "IEPSR";
+        case 8: return "MSP"; case 9: return "PSP"; case 16: return "PRIMASK"; case 20: return "CONTROL";
+        default: return "?";
+        }
+    }
+
+    // MRS: picosim runs in Thread mode (IPSR = 0); the EPSR T bit reads as 0.
+    uint32_t sysreg_read(int sysm) const {
+        if (sysm < 8) return (sysm & 4) ? 0u : ((uint32_t)N << 31 | (uint32_t)Z << 30 | (uint32_t)C << 29 | (uint32_t)V << 28);
+        if (sysm == 8) return regs[13];
+        if (sysm == 9) return PSP;
+        if (sysm == 16) return PRIMASK & 1;
+        if (sysm == 20) return CONTROL & 3;
+        return 0;
+    }
+
+    void sysreg_write(int sysm, uint32_t v) {
+        if (sysm < 8) {
+            if (!(sysm & 4)) { N = v >> 31 & 1; Z = v >> 30 & 1; C = v >> 29 & 1; V = v >> 28 & 1; }
+        } else if (sysm == 8) regs[13] = v & ~3u;
+        else if (sysm == 9) PSP = v & ~3u;
+        else if (sysm == 16) PRIMASK = v & 1;
+        else if (sysm == 20) CONTROL = v & 3;
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -999,7 +1111,16 @@ public:
     // ═════════════════════════════════════════════════════════════════════════
 
     enum Kind { K_ALU, K_ADR, K_LOAD, K_STORE, K_B, K_BCOND, K_BX, K_BLX,
-                K_BL, K_PUSH, K_POP, K_LDM, K_STM, K_SVC, K_BKPT, K_UDF, K_UNDEF };
+                K_BL, K_PUSH, K_POP, K_LDM, K_STM, K_SVC, K_BKPT, K_UDF, K_UNDEF,
+                K_NOP, K_MRS, K_MSR };
+
+    // The 32-bit encodings ARMv6-M has: BL, DSB/DMB/ISB, MRS, MSR.  (The
+    // core can also execute some Thumb-2, e.g. code assembled with
+    // .cpu cortex-m4, but the Pico cannot, so strict mode rejects it.)
+    static bool is_v6m32(uint16_t hw1, uint16_t hw2) {
+        return ((hw1 & 0xF800) == 0xF000 && (hw2 & 0xD000) == 0xD000) ||
+               is_barrier(hw1, hw2) || is_mrs(hw1, hw2) || is_msr(hw1, hw2);
+    }
 
     struct Plan {
         Kind kind = K_UNDEF;
@@ -1032,8 +1153,10 @@ public:
             p.kind = ((hw >> 11) & 1) ? K_LOAD : K_STORE; return p;
         }
         if (top5 == 0b10100)                                 { p.kind = K_ADR; return p; }
-        if (top5 == 0b10101 || top8 == 0b10110000 || top8 == 0b10111000 ||
+        if (top8 == 0b10111010 && ((hw >> 6) & 3) == 2)      { return p; }   // undefined
+        if (top5 == 0b10101 || top8 == 0b10110000 ||
             top8 == 0b10110010 || top8 == 0b10111010)        { p.kind = K_ALU; return p; }
+        if ((top8 == 0b10111111 && !(hw & 0xF)) || (hw & 0xFFEF) == 0xB662) { p.kind = K_NOP; return p; }
         if (top7 == 0b1011010) {
             p.kind = K_PUSH; p.nregs = popcount(hw & 0x1FF); p.writeback = true; return p;
         }
@@ -1063,6 +1186,9 @@ public:
         if ((hw1 & 0xF800) == 0xF000 && ((hw2 & 0xD000) == 0xD000 || (hw2 & 0xD000) == 0xC000)) {
             p.kind = K_BL; return p;
         }
+        if (is_barrier(hw1, hw2)) { p.kind = K_NOP; return p; }
+        if (is_mrs(hw1, hw2))     { p.kind = K_MRS; return p; }
+        if (is_msr(hw1, hw2))     { p.kind = K_MSR; return p; }
         if ((hw1 & 0xFE50) == 0xE810) {
             int l = (hw1 >> 4) & 1, w = (hw1 >> 5) & 1, rn = hw1 & 0xF;
             p.kind = l ? K_LDM : K_STM; p.nregs = popcount(hw2);
@@ -1081,7 +1207,8 @@ public:
         switch (p.kind) {
         case K_ALU: case K_ADR: case K_BX: case K_BL:  return 3;
         case K_LOAD: case K_STORE: case K_BLX:         return 4;
-        case K_B: case K_BCOND: case K_SVC: case K_BKPT: return 2;
+        case K_B: case K_BCOND: case K_SVC: case K_BKPT: case K_MRS: case K_MSR: return 2;
+        case K_NOP: return 1;
         case K_PUSH: case K_POP: case K_LDM: case K_STM:
             return 2 + 2 * p.nregs + (p.writeback ? 1 : 0);
         default: return 1;
@@ -1253,7 +1380,9 @@ public:
             ci.desc = "MAR <- PC (" + hex32(MAR) + "); PC <- PC + 2 = " + hex32(regs[15]);
         });
         add("FETCH_MEMORY", "FETCH", [this](CycleInfo& ci) {
+            fetching = true;
             MDR = read16(MAR);
+            fetching = false;
             ci.signals = {"MEM.EN", "R/W=READ", "LD.MDR"};
             ci.desc = "MDR <- M[MAR] = " + hex16(MDR) + " (instruction halfword)";
         });
@@ -1281,7 +1410,9 @@ public:
             ci.desc = "MAR <- PC (" + hex32(MAR) + "); PC <- PC + 2 = " + hex32(regs[15]);
         });
         add("FETCH2_MEMORY", "FETCH", [this](CycleInfo& ci) {
+            fetching = true;
             MDR = read16(MAR);
+            fetching = false;
             ci.signals = {"MEM.EN", "R/W=READ", "LD.MDR"};
             ci.desc = "MDR <- M[MAR] = " + hex16(MDR) + " (second halfword)";
         });
@@ -1300,8 +1431,13 @@ public:
     void decode(CycleInfo& ci) {
         bool wide = is_32bit_thumb((uint16_t)IR);
         uint32_t word = (IR << 16) | IR2;
+        if (wide && strict && !is_v6m32((uint16_t)IR, (uint16_t)IR2))
+            throw std::runtime_error(undefined_msg(word, true));
         Plan p = wide ? classify32(word) : classify16((uint16_t)IR);
         switch (p.kind) {
+        case K_NOP:   build_nop(ci, wide, word); break;
+        case K_MRS:
+        case K_MSR:   build_sys(ci, p.kind == K_MRS, word); break;
         case K_ALU:   build_alu(ci, wide, word); break;
         case K_ADR:   build_adr(ci); break;
         case K_LOAD:
@@ -1334,16 +1470,58 @@ public:
             });
             break;
         case K_UDF:
-            throw std::runtime_error("UDF at 0x" + std::to_string(_insn_addr));
         default:
-            if (wide)
-                throw std::runtime_error("Unimplemented 32-bit opcode 0x" +
-                    std::to_string(word) + " at 0x" + std::to_string(_insn_addr));
-            throw std::runtime_error("Unimplemented 16-bit opcode 0x" +
-                std::to_string(IR) + " at 0x" + std::to_string(_insn_addr));
+            throw std::runtime_error(undefined_msg(wide ? word : IR, wide));
         }
         if ((int)uops.size() != insn_total)
-            throw std::logic_error("cycle plan mismatch at 0x" + std::to_string(_insn_addr));
+            throw std::logic_error("cycle plan mismatch at " + hexs(_insn_addr));
+    }
+
+    // Hints, barriers and CPS finish in DECODE: nothing in the datapath changes.
+    void build_nop(CycleInfo& ci, bool wide, uint32_t word) {
+        if (wide) {
+            static const char* bn[] = {"DSB", "DMB", "ISB"};
+            ci.desc = std::string("Decode: ") + bn[((IR2 >> 4) & 0xF) - 4] +
+                      " (barrier); picosim has no buffers or caches to wait for, so nothing else happens";
+            exec32(_insn_addr, word);
+        } else if ((IR & 0xFFEF) == 0xB662) {
+            exec16(_insn_addr, (uint16_t)IR);
+            ci.desc = std::string("Decode: ") + (PRIMASK ? "CPSID i: PRIMASK <- 1 (interrupts off)" :
+                      "CPSIE i: PRIMASK <- 0 (interrupts on)") + "; picosim simulates no interrupts";
+        } else {
+            static const char* hn[] = {"NOP", "YIELD", "WFE", "WFI", "SEV"};
+            int op = (IR >> 4) & 0xF;
+            ci.desc = std::string("Decode: ") + (op < 5 ? hn[op] : "hint") + "; nothing to do" +
+                      (op == 2 || op == 3 ? " (picosim has no interrupts or events to wait for)" : "");
+        }
+    }
+
+    // MRS / MSR move a system register (outside the teaching datapath).
+    void build_sys(CycleInfo& ci, bool mrs, uint32_t word) {
+        uint16_t hw1 = (word >> 16) & 0xFFFF, hw2 = word & 0xFFFF;
+        std::string nm = sysreg_name(hw2 & 0xFF);
+        if (mrs) {
+            int rd = (hw2 >> 8) & 0xF;
+            ci.signals = {std::string("DR=") + REGN[rd], "SYSREG=" + nm};
+            ci.desc = "Decode: MRS " + std::string(REGN[rd]) + ", " + nm + "; read a system register";
+            add("EXECUTE_COMMIT", "EXECUTE", [this, rd, nm, word](CycleInfo& c) {
+                exec32(_insn_addr, word);
+                c.signals = {"SYSREG=" + nm, "GateSYS", std::string("DR=") + REGN[rd], "LD.REG"};
+                c.has_bus = true; c.bus = regs[rd];
+                c.desc = std::string(REGN[rd]) + " <- " + nm + " = " + hex32(regs[rd]);
+            });
+        } else {
+            int rn = hw1 & 0xF;
+            ci.signals = {std::string("SR1=") + REGN[rn], "SYSREG=" + nm};
+            ci.desc = "Decode: MSR " + nm + ", " + std::string(REGN[rn]) + "; write a system register";
+            add("EXECUTE_COMMIT", "EXECUTE", [this, rn, nm, word](CycleInfo& c) {
+                uint32_t v = regs[rn];
+                exec32(_insn_addr, word);
+                c.signals = {std::string("SR1=") + REGN[rn], "ALUK=PASS", "GateALU", "SYSREG=" + nm, "LD.SYS"};
+                c.has_bus = true; c.bus = v;
+                c.desc = nm + " <- " + src_desc(rn);
+            });
+        }
     }
 
     std::string src_desc(int r) const {
@@ -1534,8 +1712,8 @@ public:
                 c.desc = "LR <- return address " + hex32(regs[15]) + " | 1 = " + hex32(regs[14]);
             });
         }
-        add("EXECUTE_PC", "EXECUTE", [this](CycleInfo& c) {
-            set_pc(TMP & 0xFFFFFFFEu);
+        add("EXECUTE_PC", "EXECUTE", [this, link](CycleInfo& c) {
+            bx_write_pc(TMP, link ? "BLX" : "BX");
             c.signals = {"ALUK=PASS", "GateALU", "CLR THUMB BIT", "PCMUX=BUS", "LD.PC"};
             c.has_bus = true; c.bus = TMP;
             c.branch = 1;
@@ -1600,7 +1778,7 @@ public:
                 });
                 if (i == 15) {
                     add("EXECUTE_PC", "EXECUTE", [this](CycleInfo& c) {
-                        set_pc(MDR & 0xFFFFFFFEu);
+                        bx_write_pc(MDR, "POP {PC}");
                         MAR += 4;
                         c.signals = {"GateMDR", "CLR THUMB BIT", "PCMUX=BUS", "LD.PC", "MAR+4"};
                         c.has_bus = true; c.bus = MDR; c.branch = 1;
@@ -1666,7 +1844,10 @@ public:
         try {
             fn(ci);
         } catch (...) {
-            mem_log = nullptr; count_data = false; in_insn = false; uops.clear();
+            // a fault: the PC points back at the instruction that caused it
+            // (as the address a real HardFault reports)
+            mem_log = nullptr; count_data = false; fetching = false; in_insn = false; uops.clear();
+            regs[15] = _insn_addr;
             throw;
         }
         count_data = false;
@@ -1731,7 +1912,7 @@ PYBIND11_MODULE(_picosim_core, m) {
         // ── raw memory access (for ELF loading from Python) ───────────────
         .def("load_memory", [](CPUCore& self, py::bytes data, uint32_t offset) {
             auto buf = data.cast<std::string_view>();
-            if (offset + buf.size() > 0x10000)
+            if ((uint64_t)offset + buf.size() > 0x10000)
                 throw std::runtime_error("load_memory: data overflows 64 KB");
             std::memcpy(self.mem + offset, buf.data(), buf.size());
         })
@@ -1739,7 +1920,7 @@ PYBIND11_MODULE(_picosim_core, m) {
             return py::bytes(reinterpret_cast<const char*>(self.mem), 0x10000);
         })
         .def("get_mem_slice", [](CPUCore& self, uint32_t offset, uint32_t length) {
-            if (offset + length > 0x10000)
+            if ((uint64_t)offset + length > 0x10000)
                 throw std::runtime_error("get_mem_slice: out of bounds");
             return py::bytes(reinterpret_cast<const char*>(self.mem + offset), length);
         })
@@ -1783,6 +1964,14 @@ PYBIND11_MODULE(_picosim_core, m) {
         .def_readwrite("halted", &CPUCore::halted)
         .def_readwrite("steps",  &CPUCore::steps)
         .def_readwrite("trace",  &CPUCore::trace)
+        .def_readwrite("strict", &CPUCore::strict,
+             "Fault on unaligned accesses and non-Thumb branch targets, as the Pico does")
+        .def_property_readonly("access", [](const CPUCore& s) {
+            return s.fetching ? "fetch" : s.count_data ? "data" : "debug";
+        }, "What is reading memory right now: an instruction 'fetch', an instruction's 'data' access, or 'debug' (the API)")
+        .def_readwrite("PRIMASK", &CPUCore::PRIMASK)
+        .def_readwrite("CONTROL", &CPUCore::CONTROL)
+        .def_readwrite("PSP", &CPUCore::PSP)
 
         // ── callbacks ─────────────────────────────────────────────────────
         .def_readwrite("peripheral_read",  &CPUCore::peripheral_read)

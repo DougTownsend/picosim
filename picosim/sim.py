@@ -26,8 +26,9 @@ def load_elf(path):
       - dict mapping address -> symbol name
     """
     memory = bytearray(MEM_SIZE)
-    asm_map = {}      # addr -> "mnemonic  op_str"
+    asm_map = {}      # addr -> "mnemonic  op_str" (or ".word 0x…" for data)
     sym_map = {}      # addr -> name
+    marks = {}        # section index -> [(addr, 't' code | 'd' data), ...]
 
     with open(path, 'rb') as f:
         elf = ELFFile(f)
@@ -45,12 +46,18 @@ def load_elf(path):
                     # numeric values that collide with code addresses.
                     if sym['st_shndx'] == 'SHN_ABS':
                         continue
-                    # Skip ARM mapping symbols ($t/$d/$a): GAS emits these at
-                    # the same addresses as user labels and would overwrite them.
+                    # ARM mapping symbols ($t code, $d data, $a ARM code) say
+                    # where code and data are; GAS emits them at the same
+                    # addresses as user labels, so they are not label names.
                     if sym.name.startswith('$'):
+                        kind = sym.name[1:2]
+                        if kind in ('t', 'd') and isinstance(sym['st_shndx'], int):
+                            marks.setdefault(sym['st_shndx'], []).append((sym['st_value'], kind))
                         continue
                     if sym.name and sym['st_value']:
-                        addr = sym['st_value'] & 0xFFFFFFFE
+                        addr = sym['st_value']
+                        if sym['st_info']['type'] == 'STT_FUNC':
+                            addr &= 0xFFFFFFFE      # a Thumb function's address has bit 0 set
                         sym_map[addr] = sym.name
 
         # ── load LOAD segments into flat memory ──────────────────────────────
@@ -71,21 +78,93 @@ def load_elf(path):
             # bss (memsz > filesz) is already zero from bytearray
 
         # ── disassemble all executable sections ──────────────────────────────
-        cs = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
+        cs = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB | capstone.CS_MODE_MCLASS)
         cs.detail = False
 
-        for section in elf.iter_sections():
+        for idx, section in enumerate(elf.iter_sections()):
             if not (section['sh_flags'] & 0x4):   # SHF_EXECINSTR
                 continue
             sh_addr = section['sh_addr']
             sh_size = section['sh_size']
-            if sh_size == 0:
+            if sh_size == 0 or sh_addr + sh_size > MEM_SIZE:
                 continue
-            code = bytes(memory[sh_addr:sh_addr + sh_size])
-            for insn in cs.disasm(code, sh_addr):
-                asm_map[insn.address] = f"{insn.mnemonic:<8} {insn.op_str}"
+            # code and data regions, from the mapping symbols (all code if none)
+            m = sorted(set(marks.get(idx, [])))
+            if not m or m[0][0] > sh_addr:
+                m.insert(0, (sh_addr, 't'))
+            for i, (start, kind) in enumerate(m):
+                end = m[i + 1][0] if i + 1 < len(m) else sh_addr + sh_size
+                if kind == 't':
+                    _disassemble(cs, memory, start, end, asm_map)
+                else:
+                    _data_rows(memory, start, end, asm_map, sym_map)
 
     return memory, entry, asm_map, sym_map
+
+
+def _disassemble(cs, memory, start, end, asm_map):
+    """Thumb code in [start, end); a halfword capstone cannot decode becomes
+    a .hword row and disassembly carries on after it."""
+    a = start & ~1
+    while a < end:
+        n = 0
+        for insn in cs.disasm(bytes(memory[a:end]), a):
+            asm_map[insn.address] = f"{insn.mnemonic:<8} {insn.op_str}"
+            n = insn.address + insn.size - a
+        a += n
+        if a + 2 <= end:
+            asm_map[a] = f".hword   0x{memory[a] | memory[a + 1] << 8:04X}"
+            a += 2
+        else:
+            break
+
+
+def _data_rows(memory, start, end, asm_map, labels):
+    """Data in a code section (literal pools, strings), split at labels and
+    after each string's terminating 0: text becomes .ascii rows of up to 16
+    characters, anything else one row per aligned word, halfword or byte."""
+    cuts = sorted({start, end} | {a for a in labels if start < a < end})
+    for lo, hi in zip(cuts, cuts[1:]):
+        a = lo
+        while a < hi:
+            nul = memory.find(0, a, hi)
+            piece_end = hi if nul < 0 else nul + 1
+            if _is_text(memory[a:piece_end], 2 if a in labels else 3):
+                for r in range(a, piece_end, 16):
+                    asm_map[r] = '.ascii   "' + _escape(memory[r:min(r + 16, piece_end)]) + '"'
+                a = piece_end
+                continue
+            n = 4 if a % 4 == 0 and a + 4 <= hi else 2 if a % 2 == 0 and a + 2 <= hi else 1
+            v = int.from_bytes(memory[a:a + n], 'little')
+            asm_map[a] = {4: f".word    0x{v:08X}", 2: f".hword   0x{v:04X}", 1: f".byte    0x{v:02X}"}[n]
+            a += n
+
+
+def _is_text(b, least):
+    """Printable characters (and \\n \\r \\t), at least `least`, ending with at most one 0."""
+    body = bytes(b[:-1]) if b and b[-1] == 0 else bytes(b)
+    return len(body) >= least and all(32 <= c < 127 or c in (9, 10, 13) for c in body)
+
+
+def _escape(b):
+    esc = {10: '\\n', 13: '\\r', 9: '\\t', 0: '\\0', 34: '\\"', 92: '\\\\'}
+    return ''.join(esc.get(c, chr(c)) for c in b)
+
+
+def elf_symbol(path, names):
+    """Address of the first of `names` defined in the ELF at `path`, or None."""
+    with open(path, 'rb') as f:
+        elf = ELFFile(f)
+        found = {}
+        for section in elf.iter_sections():
+            if isinstance(section, SymbolTableSection):
+                for sym in section.iter_symbols():
+                    if sym.name in names and sym['st_shndx'] != 'SHN_UNDEF':
+                        found[sym.name] = sym['st_value'] & 0xFFFFFFFE
+    for n in names:
+        if n in found:
+            return found[n]
+    return None
 
 
 # ── Display ────────────────────────────────────────────────────────────────────
@@ -115,6 +194,9 @@ def print_state(cpu, asm_map, sym_map):
 
 # ── Interactive shell ──────────────────────────────────────────────────────────
 
+_BREAKPOINTS = set()
+
+
 def run_interactive(cpu, asm_map, sym_map, label_map):
     print("ARMv6-M Simulator  (type 'h' for help)")
     print_state(cpu, asm_map, sym_map)
@@ -134,162 +216,170 @@ def run_interactive(cpu, asm_map, sym_map, label_map):
         if not parts:
             continue
         op = parts[0].lower()
-
         if op in ('q', 'quit', 'exit'):
             break
+        try:
+            _command(cpu, asm_map, sym_map, label_map, op, parts)
+        except ValueError as e:
+            print(f"  Bad argument ({e}).  Type 'h' for help.")
+        except (SimulatorError, RuntimeError) as e:
+            print(f"  ERROR: {e}")
 
-        elif op in ('h', 'help', '?'):
-            print(
-                "  s / step [n]      step n instructions (default 1)\n"
-                "  r / run           run until halt or breakpoint\n"
-                "  p / print         print registers\n"
-                "  x <addr> [n]      examine memory: n words at hex addr\n"
-                "  b <addr>          set breakpoint at hex addr\n"
-                "  db <addr>         delete breakpoint\n"
-                "  lb                list breakpoints\n"
-                "  d [addr] [n]      disassemble n instructions at addr\n"
-                "  reg <rN> <val>    set register (e.g.  reg r0 42)\n"
-                "  gpio <pin> 0|1|z  drive an input pin high/low/floating\n"
-                "  q / quit          quit\n"
-                "  <enter>           repeat last command"
-            )
 
-        elif op in ('s', 'step'):
-            n = int(parts[1]) if len(parts) > 1 else 1
-            for _ in range(n):
-                if cpu.halted: break
-                try:
-                    cpu.step()
-                except SimulatorError as e:
-                    print(f"  ERROR: {e}")
-                    cpu.halted = True
-                    break
-                except SystemExit as e:
-                    print(f"  Program exited with code {e.code}")
-                    cpu.halted = True
-                    break
-                cpu.check_halt()
-                if cpu.halted: print("  Program halted.")
-            print_state(cpu, asm_map, sym_map)
+def _parse_addr(text, label_map):
+    """A hex address (0x3000 or 3000) or a label name."""
+    try:
+        return int(text, 16)
+    except ValueError:
+        if text in label_map:
+            return label_map[text]
+        raise ValueError(f"'{text}' is not a hex address or a label")
 
-        elif op in ('r', 'run'):
-            if cpu.halted:
-                print("  Program is halted.  Use 'q' to quit.")
-            else:
-                breakpoints = getattr(run_interactive, '_bp', set())
-                try:
-                    while not cpu.halted:
-                        cpu.step()
-                        cpu.check_halt()
-                        if cpu.pc in breakpoints:
-                            print(f"  Breakpoint hit at 0x{cpu.pc:04X}")
-                            break
-                except SimulatorError as e:
-                    print(f"  ERROR: {e}")
-                    cpu.halted = True
-                except SystemExit as e:
-                    print(f"  Program exited with code {e.code}")
-                    cpu.halted = True
-                print_state(cpu, asm_map, sym_map)
 
-        elif op in ('p', 'print'):
-            print_state(cpu, asm_map, sym_map)
+def _command(cpu, asm_map, sym_map, label_map, op, parts):
+    if op in ('h', 'help', '?'):
+        print(
+            "  s / step [n]      step n instructions (default 1)\n"
+            "  r / run           run until halt or breakpoint\n"
+            "  p / print         print registers\n"
+            "  x <addr> [n]      examine memory: n words at hex addr (or label)\n"
+            "  b <addr|label>    set breakpoint at hex addr or label\n"
+            "  db <addr|label>   delete breakpoint\n"
+            "  lb                list breakpoints\n"
+            "  d [addr] [n]      disassemble n instructions at addr\n"
+            "  reg <rN> <val>    set register (e.g.  reg r0 42)\n"
+            "  gpio <pin> 0|1|z  drive an input pin high/low/floating\n"
+            "  q / quit          quit\n"
+            "  <enter>           repeat last command"
+        )
 
-        elif op in ('x', 'mem'):
-            if len(parts) < 2:
-                print("  Usage: x <addr_hex> [count]"); continue
-            base = int(parts[1], 16)
-            count = int(parts[2]) if len(parts) > 2 else 8
-            for i in range(count):
-                a = (base + i * 4) & 0xFFFF
-                v = cpu.mem_read32(a)
-                sym = sym_map.get(a, "")
-                sym_str = f" <{sym}>" if sym else ""
-                print(f"  0x{a:04X}{sym_str}: 0x{v:08X}  ({v})")
-
-        elif op == 'b':
-            if len(parts) < 2:
-                print("  Usage: b <addr_hex|label>"); continue
-            if not hasattr(run_interactive, '_bp'):
-                run_interactive._bp = set()
-            arg = parts[1]
+    elif op in ('s', 'step'):
+        n = int(parts[1]) if len(parts) > 1 else 1
+        for _ in range(n):
+            if cpu.halted: break
             try:
-                addr_b = int(arg, 16)
-            except ValueError:
-                if arg in label_map:
-                    addr_b = label_map[arg]
-                else:
-                    print(f"  Unknown label '{arg}'"); continue
-            run_interactive._bp.add(addr_b)
-            lbl = sym_map.get(addr_b, "")
-            lbl_str = f" <{lbl}>" if lbl else ""
-            print(f"  Breakpoint set at 0x{addr_b:04X}{lbl_str}")
+                cpu.step()
+            except SimulatorError as e:
+                print(f"  ERROR: {e}")
+                cpu.halted = True
+                break
+            except SystemExit as e:
+                print(f"  Program exited with code {e.code}")
+                cpu.halted = True
+                break
+            cpu.check_halt()
+            if cpu.halted: print("  Program halted.")
+        print_state(cpu, asm_map, sym_map)
 
-        elif op == 'db':
-            bp = getattr(run_interactive, '_bp', set())
-            if len(parts) < 2:
-                print("  Usage: db <addr_hex>"); continue
-            addr_b = int(parts[1], 16)
-            bp.discard(addr_b)
-            print(f"  Breakpoint removed at 0x{addr_b:04X}")
-
-        elif op == 'lb':
-            bp = getattr(run_interactive, '_bp', set())
-            if not bp: print("  No breakpoints.")
-            for a in sorted(bp): print(f"  0x{a:04X}")
-
-        elif op in ('d', 'dis', 'disasm'):
-            base = int(parts[1], 16) if len(parts) > 1 else cpu.pc
-            count = int(parts[2]) if len(parts) > 2 else 10
-            shown = 0
-            a = base
-            while shown < count and a < MEM_SIZE:
-                sym = sym_map.get(a, "")
-                if sym: print(f"  <{sym}>:")
-                asm = asm_map.get(a)
-                if asm:
-                    marker = "=>" if a == cpu.pc else "  "
-                    print(f"  {marker} 0x{a:04X}: {asm}")
-                    shown += 1
-                    # advance: peek at instruction size
-                    hw = cpu.mem_read16(a)
-                    a += 4 if cpu.is_32bit_thumb(hw) else 2
-                else:
-                    a += 2
-
-        elif op == 'reg':
-            if len(parts) < 3:
-                print("  Usage: reg <rN> <value>"); continue
-            rname = parts[1].lower()
-            val   = int(parts[2], 0)
-            if rname in REG_NAMES:
-                cpu.set_reg(REG_NAMES.index(rname), val)
-                print(f"  {rname} = 0x{val:08X}")
-            else:
-                print(f"  Unknown register: {rname}")
-
-        elif op == 'gpio':
-            if cpu.gpio is None:
-                print("  GPIO not enabled."); continue
-            if len(parts) < 3:
-                print("  Usage: gpio <pin> 0|1|z"); continue
-            try:
-                pin = int(parts[1])
-                arg = parts[2].lower()
-                if arg == 'z':
-                    value = None
-                elif arg in ('0', '1'):
-                    value = int(arg)
-                else:
-                    print("  Value must be 0, 1, or z"); continue
-                cpu.gpio.set_external(pin, value)
-                state = 'Z' if value is None else str(value)
-                print(f"  GP{pin} = {state}")
-            except ValueError as e:
-                print(f"  {e}")
-
+    elif op in ('r', 'run'):
+        if cpu.halted:
+            print("  Program is halted.  Use 'q' to quit.")
         else:
-            print(f"  Unknown command '{op}'.  Type 'h' for help.")
+            breakpoints = _BREAKPOINTS
+            try:
+                while not cpu.halted:
+                    cpu.step()
+                    cpu.check_halt()
+                    if cpu.pc in breakpoints:
+                        print(f"  Breakpoint hit at 0x{cpu.pc:04X}")
+                        break
+            except SimulatorError as e:
+                print(f"  ERROR: {e}")
+                cpu.halted = True
+            except SystemExit as e:
+                print(f"  Program exited with code {e.code}")
+                cpu.halted = True
+            print_state(cpu, asm_map, sym_map)
+
+    elif op in ('p', 'print'):
+        print_state(cpu, asm_map, sym_map)
+
+    elif op in ('x', 'mem'):
+        if len(parts) < 2:
+            print("  Usage: x <addr_hex|label> [count]"); return
+        base = _parse_addr(parts[1], label_map)
+        count = int(parts[2]) if len(parts) > 2 else 8
+        for i in range(count):
+            a = (base + i * 4) & 0xFFFFFFFF
+            v = cpu.mem_read32(a)    # RAM, or a simulated I/O register
+            sym = sym_map.get(a, "")
+            sym_str = f" <{sym}>" if sym else ""
+            print(f"  0x{a:04X}{sym_str}: 0x{v:08X}  ({v})")
+
+    elif op == 'b':
+        if len(parts) < 2:
+            print("  Usage: b <addr_hex|label>"); return
+        addr_b = _parse_addr(parts[1], label_map)
+        _BREAKPOINTS.add(addr_b)
+        lbl = sym_map.get(addr_b, "")
+        lbl_str = f" <{lbl}>" if lbl else ""
+        print(f"  Breakpoint set at 0x{addr_b:04X}{lbl_str}")
+
+    elif op == 'db':
+        bp = _BREAKPOINTS
+        if len(parts) < 2:
+            print("  Usage: db <addr_hex>"); return
+        addr_b = _parse_addr(parts[1], label_map)
+        bp.discard(addr_b)
+        print(f"  Breakpoint removed at 0x{addr_b:04X}")
+
+    elif op == 'lb':
+        bp = _BREAKPOINTS
+        if not bp: print("  No breakpoints.")
+        for a in sorted(bp): print(f"  0x{a:04X}")
+
+    elif op in ('d', 'dis', 'disasm'):
+        base = _parse_addr(parts[1], label_map) if len(parts) > 1 else cpu.pc
+        count = int(parts[2]) if len(parts) > 2 else 10
+        shown = 0
+        a = base
+        while shown < count and a < MEM_SIZE:
+            sym = sym_map.get(a, "")
+            if sym: print(f"  <{sym}>:")
+            asm = asm_map.get(a)
+            if asm:
+                marker = "=>" if a == cpu.pc else "  "
+                print(f"  {marker} 0x{a:04X}: {asm}")
+                shown += 1
+                # advance: peek at instruction size
+                hw = cpu.mem_read16(a)
+                a += 4 if cpu.is_32bit_thumb(hw) else 2
+            else:
+                a += 2
+
+    elif op == 'reg':
+        if len(parts) < 3:
+            print("  Usage: reg <rN> <value>"); return
+        rname = parts[1].lower()
+        val   = int(parts[2], 0)
+        if rname in REG_NAMES:
+            cpu.set_reg(REG_NAMES.index(rname), val)
+            print(f"  {rname} = 0x{val:08X}")
+        else:
+            print(f"  Unknown register: {rname}")
+
+    elif op == 'gpio':
+        if cpu.gpio is None:
+            print("  GPIO not enabled."); return
+        if len(parts) < 3:
+            print("  Usage: gpio <pin> 0|1|z"); return
+        try:
+            pin = int(parts[1])
+            arg = parts[2].lower()
+            if arg == 'z':
+                value = None
+            elif arg in ('0', '1'):
+                value = int(arg)
+            else:
+                print("  Value must be 0, 1, or z"); return
+            cpu.gpio.set_external(pin, value)
+            state = 'Z' if value is None else str(value)
+            print(f"  GP{pin} = {state}")
+        except ValueError as e:
+            print(f"  {e}")
+
+    else:
+        print(f"  Unknown command '{op}'.  Type 'h' for help.")
 
 
 # ── Assembler / linker helpers ─────────────────────────────────────────────────
@@ -435,7 +525,7 @@ def main():
         t_start = time.perf_counter()
         try:
             insn_count = cpu._core.run()
-        except RuntimeError as e:
+        except (RuntimeError, SimulatorError) as e:
             print(f"ERROR: {e}", file=sys.stderr); sys.exit(1)
         except SystemExit as e:
             sys.exit(e.code)
@@ -445,7 +535,7 @@ def main():
     elif args.run:
         try:
             cpu._core.run()
-        except RuntimeError as e:
+        except (RuntimeError, SimulatorError) as e:
             print(f"ERROR: {e}", file=sys.stderr); sys.exit(1)
         except SystemExit as e:
             sys.exit(e.code)

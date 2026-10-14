@@ -776,11 +776,14 @@ func _on_state(st: Dictionary) -> void:
 			s = "instruction %d" % int(st["steps"])   # clock cycles come in at level 3
 		if p is Dictionary:
 			s = "insn %d · pipeline cycle %d" % [int(p["insns"]), int(p["cycle"])]
-		if st.get("halted", false):
+		var fault: bool = st.get("fault") != null
+		if fault:
+			s += "   — stopped by a CPU fault (see the console)"
+		elif st.get("halted", false):
 			s += "   — halted"
 		elif st.get("waiting_input", false):
 			s += "   — waiting for input"
-		_set_status(s, false)
+		_set_status(s, fault)
 
 
 func _on_program(prog: Dictionary) -> void:

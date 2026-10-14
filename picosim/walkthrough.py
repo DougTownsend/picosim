@@ -11,7 +11,7 @@ during that cycle.
 import re
 
 from .loader import load_program, LoadError
-from .cpu import SimulatorError
+from .cpu import SimulatorError, svc_write_data
 
 REG_NAMES = ['R0', 'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8', 'R9', 'R10',
              'R11', 'R12', 'SP', 'LR', 'PC']
@@ -146,7 +146,7 @@ class Walkthrough:
         if num == 2:
             self.output += chr(c.get_reg(0) & 0xFF)
         elif num == 0:
-            self.output += c.get_mem_slice(c.get_reg(1) & 0xFFFF, c.get_reg(2)).decode('latin-1')
+            self.output += svc_write_data(c).decode('latin-1')
         elif num == 1:
             c.halted = True
         elif num == 3:
@@ -176,7 +176,7 @@ class Walkthrough:
                            "the program itself keeps going when you run it.")
                 break
             pc = c.pc
-            if c.read16(pc) == 0xDF03:
+            if pc < 0x10000 and c.read16(pc) == 0xDF03:
                 stopped = ("Next the program calls getchar (SVC #3), which waits for you to type a key in the "
                            "serial console. The walkthrough stops here because what happens next depends on "
                            "that key; run the program to continue.")
@@ -226,7 +226,7 @@ class Walkthrough:
                            "the program itself keeps going when you run it.")
                 break
             pc = c.pc
-            if c.read16(pc) == 0xDF03:
+            if pc < 0x10000 and c.read16(pc) == 0xDF03:
                 stopped = ("Next the program calls getchar (SVC #3), which waits for you to type a key in the "
                            "serial console. The walkthrough stops here because what happens next depends on "
                            "that key; run the program to continue.")
@@ -319,8 +319,8 @@ class Walkthrough:
             s = (f"Calls the function at {self.where(pc1)}: saves the return address "
                  f"{h32(regs1[14])} (bit 0 = Thumb) in LR, then jumps there.")
         elif base == 'blx':
-            s = (f"Calls the function whose address is in {_reg(ops[0]) if ops else 'a register'} "
-                 f"({self.where(pc1)}), saving the return address {h32(regs1[14])} in LR.")
+            s = (f"Calls the function whose address is in {_reg(ops[0]) if ops else 'a register'}, "
+                 f"{self.where(pc1)}, saving the return address {h32(regs1[14])} in LR.")
         elif base == 'bx':
             r = _reg(ops[0]) if ops else 'LR'
             s = (f"Returns from the function: jumps to the address in LR, {self.where(pc1)}." if r == 'LR'

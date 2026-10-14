@@ -512,6 +512,8 @@ func _get_tooltip(at_position: Vector2) -> String:
 	if g.get("driven", false):
 		extra += ", driven externally"
 	var hint := "" if dir == "output" else "\nClick to drive it: Z → 1 → 0 → Z"
+	if g.get("sio_unrouted", false):
+		hint += "\nSIO_OE makes it an output, but its function is not SIO: write 5 to its IO_BANK0 CTRL register first"
 	if _board():
 		hint = "\nLive from your board (an input with nothing connected reads 0)"
 	return "Pin %d: GP%d — %s, %s%s%s" % [num, info, dir, level, extra, hint]

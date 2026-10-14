@@ -47,7 +47,7 @@ static void report_pins(void) {
 }
 
 int main(void) {
-    stdio_init_all();   /* initialise USB serial */
+    stdio_init_all();   /* USB serial; waits up to 5 s for a terminal (CMakeLists.txt) */
     multicore_launch_core1(report_pins);
     asm_main();
     stdio_flush();

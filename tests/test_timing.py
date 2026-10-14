@@ -24,6 +24,7 @@ from picosim.loader import LoadError
 def run_one(hw1, hw2=0, regs=None, flags=None):
     """Execute one instruction at 0x100 on a scratch core; return its record."""
     c = CPUCore()
+    c.strict = False
     c.write16(0x100, hw1)
     c.write16(0x102, hw2)
     for r in range(8):
@@ -105,6 +106,18 @@ TABLE81 = [
     ('REV', 0xBA01, 0, None, None, 1),
     ('REV16', 0xBA41, 0, None, None, 1),
     ('REVSH', 0xBAC1, 0, None, None, 1),
+    ('NOP', 0xBF00, 0, None, None, 1),
+    ('YIELD', 0xBF10, 0, None, None, 1),
+    ('SEV', 0xBF40, 0, None, None, 1),
+    ('WFE', 0xBF20, 0, None, None, 2),
+    ('WFI', 0xBF30, 0, None, None, 2),
+    ('CPSID i', 0xB672, 0, None, None, 1),
+    ('CPSIE i', 0xB662, 0, None, None, 1),
+    ('DMB', 0xF3BF, 0x8F5F, None, None, 3),
+    ('DSB', 0xF3BF, 0x8F4F, None, None, 3),
+    ('ISB', 0xF3BF, 0x8F6F, None, None, 3),
+    ('MRS R0, APSR', 0xF3EF, 0x8000, None, None, 3),
+    ('MSR APSR, R0', 0xF380, 0x8800, None, None, 3),
 ]
 
 

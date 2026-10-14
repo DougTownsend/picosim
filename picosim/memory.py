@@ -76,11 +76,15 @@ class Memory:
         """Register a peripheral memory block."""
         self._peripherals.append(block)
 
-    def _find(self, addr) -> MemoryBlock:
+    def peripheral(self, addr):
+        """The peripheral block at `addr`, or None if no peripheral claims it."""
         for block in self._peripherals:
             if block.handles(addr):
                 return block
-        return self._ram
+        return None
+
+    def _find(self, addr) -> MemoryBlock:
+        return self.peripheral(addr) or self._ram
 
     def read8(self, addr):            return self._find(addr).read8(addr)
     def read16(self, addr):           return self._find(addr).read16(addr)

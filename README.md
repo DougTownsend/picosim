@@ -6,42 +6,69 @@ An ARMv6-M (Cortex-M0+) simulator for learning ARM assembly.
 
 ## Installation
 
-Install Python 3 and `arm-none-eabi-gcc`, then run:
+Install Python 3, a C++ compiler and `arm-none-eabi-gcc`, then run from the
+repository folder:
 
 ```bash
-pip install .
+pip install -e .
 ```
 
-See [installation.md](installation.md) for platform-specific instructions.
+Use `-e` (editable): the graphical simulator and the examples are read from
+this folder. See [installation.md](installation.md) for platform-specific
+instructions and [DEPENDENCIES.md](DEPENDENCIES.md) for the full list.
 
 ---
 
 ## Usage
 
 ```bash
-picosim <file.s>           # run interactively
+picosim <file.s>           # step through it at an interactive prompt
 picosim --run <file.s>     # run to completion
-picosim --trace <file.s>   # run with instruction trace
+picosim --trace --run <file.s>   # run, printing each instruction
+picosim -n 100 <file.s>    # run 100 instructions, then print the registers
+picosim --time <file.s>    # run to completion and report instructions/second
 picosim --uf2 <file.s>     # build a .uf2 for the Raspberry Pi Pico
 picosim --flash <file.s>   # build and upload a .uf2 to the Pico
 picosim --gui [file.s]     # open the graphical simulator (Godot 4)
 picosim --cycle-table      # print per-instruction cycle counts
 ```
 
-The simulator assembles and links your `.s` file automatically, then starts
-execution.  When the program finishes it drops into an interactive prompt where
-you can inspect registers and memory.
+The simulator assembles and links your `.s` file automatically. Without
+`--run`, `-n` or `--time` it stops before the first instruction and gives you
+a prompt where you can step, run to a breakpoint and inspect registers and
+memory; the prompt stays open after the program halts.
 
 ### Interactive commands
 
 | Command | Description |
 |---------|-------------|
-| `s` | Step one instruction |
-| `r` | Print registers and flags |
-| `m <addr> [n]` | Dump memory at address (default 64 bytes) |
-| `c` | Continue running until halt |
+| `s [n]` | Step one instruction (or n) |
+| `r` | Run until the program halts or reaches a breakpoint |
+| `p` | Print registers, flags and the current instruction |
+| `x <addr> [n]` | Show n words of memory (default 8) at a hex address or label; I/O registers work too |
+| `d [addr] [n]` | Disassemble n instructions (default 10) from addr (default: the PC) |
+| `b <addr>` / `db <addr>` | Set / delete a breakpoint at a hex address or label |
+| `lb` | List breakpoints |
+| `reg <rN> <value>` | Set a register, e.g. `reg r0 42` or `reg pc 0x3000` |
+| `gpio <pin> 0\|1\|z` | Drive an input pin high, low or floating |
 | `q` | Quit |
 | `h` | Show help |
+| Enter | Repeat the last command |
+
+### Like the real chip
+
+picosim runs only Cortex-M0+ (ARMv6-M) instructions, and stops with an
+explanation wherever a real Pico would crash with a HardFault:
+
+- a word or halfword load/store to an address that is not a multiple of its size;
+- `bx`, `blx` or `pop {pc}` to an address with bit 0 clear (put `.thumb_func`
+  before a label whose address you load with `ldr r0, =label`);
+- an instruction the M0+ does not have (e.g. code assembled for a Cortex-M4);
+- an address that is neither RAM (0x0000–0xFFFF) nor a simulated I/O register
+  (SIO, IO_BANK0, PADS_BANK0, RESETS).
+
+As on the RP2040, a GPIO pin follows the SIO output registers only after its
+IO_BANK0 CTRL register selects function 5 (SIO).
 
 ### I/O
 
@@ -68,6 +95,11 @@ picosim --flash echo_test.s   # builds and uploads it to a connected Pico
 Pico into bootloader mode. Alternatively, it copies the UF2 to a mounted
 `RPI-RP2` drive. Install `picotool` with `brew install picotool` if needed.
 
+USB serial output is lost until a terminal opens the port, so the firmware
+waits up to 5 seconds at start-up for one (picosim's console connects by
+itself after Flash). A board with no computer attached starts its program
+after those 5 seconds.
+
 See [test_asm_files/echo_test.s](test_asm_files/echo_test.s) for a working example.
 
 The build wraps your assembly in a small C stub that calls `stdio_init_all()`
@@ -80,7 +112,7 @@ final link step are redone.
 
 > **Note:** if `main:` is your entry-point label the build renames it to
 > `asm_main` automatically.  Alternatively, name it `asm_main:` in your source
-> to make the intent explicit (as shown in the I/O example above).
+> to make the intent explicit (the files in `test_asm_files/` do this).
 
 ### Example
 
@@ -113,8 +145,9 @@ picosim hello.s
 picosim --gui test_asm_files/insn_coverage_test.s
 ```
 
-This needs Godot 4 (`godot` on your PATH, or set `PICOSIM_GODOT` to the
-binary). The Godot project lives in [gui/](gui/) and talks to a Python backend
+This needs Godot 4 (4.7 is tested; `godot` on your PATH, or set
+`PICOSIM_GODOT` to the binary) and an editable install (`pip install -e .`),
+because the Godot project is read from this folder. The Godot project lives in [gui/](gui/) and talks to a Python backend
 ([picosim/server.py](picosim/server.py)) over a local TCP socket.
 
 ### For beginners: levels and examples

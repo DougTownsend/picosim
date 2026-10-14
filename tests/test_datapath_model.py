@@ -72,6 +72,7 @@ class DatapathModelTest(unittest.TestCase):
         for hw1, hw2 in encodings:
             for trial in range(40):
                 c = CPUCore()
+                c.strict = False                        # random BX targets, unaligned bases
                 addr = rnd.choice([0x1000, 0x1002])
                 c.write16(addr, hw1)
                 c.write16(addr + 2, hw2)

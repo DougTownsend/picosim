@@ -22,7 +22,8 @@ Not modelled, and reported instead of guessed:
     configuration (Table 81 note e); picosim also runs SVC calls directly.
   * APB peripheral accesses (IO_BANK0, PADS_BANK0 …) have extra bus cycles on
     the real chip (datasheet §2.1.3); Table 81 counts exclude them.
-  * Encodings that are not ARMv6-M (picosim also accepts some Thumb-2).
+  * Encodings that are not ARMv6-M (the simulator refuses to run them, so
+    they only appear here if a scratch core was used).
 """
 
 from functools import lru_cache
@@ -63,6 +64,12 @@ def pico_row(hw1, hw2=0):
     if is_wide(hw1):
         if (hw1 & 0xF800) == 0xF000 and (hw2 & 0xD000) == 0xD000:
             return ('call/return', 'BL <label>', 'fixed', 3, True)
+        if hw1 == 0xF3BF and (hw2 & 0xFF00) == 0x8F00 and 4 <= (hw2 >> 4) & 0xF <= 6:
+            return ('system', ('DSB', 'DMB', 'ISB')[((hw2 >> 4) & 0xF) - 4], 'fixed', 3, False)
+        if hw1 == 0xF3EF and (hw2 & 0xF000) == 0x8000:
+            return ('system', 'MRS Rd, <specreg>', 'fixed', 3, False)
+        if (hw1 & 0xFFF0) == 0xF380 and (hw2 & 0xFF00) == 0x8800:
+            return ('system', 'MSR <specreg>, Rn', 'fixed', 3, False)
         return ('not ARMv6-M', 'not a Cortex-M0+ instruction', None, 0, False)
     top5, top4 = hw1 >> 11, hw1 >> 12
     top6, top7, top8 = hw1 >> 10, hw1 >> 9, hw1 >> 8
@@ -126,6 +133,13 @@ def pico_row(hw1, hw2=0):
         return ('call/return', 'POP {<loreglist>, PC}', 'fixed', 3 + _popcount(hw1 & 0x1FF), True)
     if top8 == 0b10111110:
         return ('OS / debug', 'BKPT #<imm>', None, 0, False)
+    if top8 == 0b10111111 and not hw1 & 0xF:
+        op = (hw1 >> 4) & 0xF
+        # WFE / WFI: 2 cycles "excluding time spent waiting" (nothing waits here)
+        return ('system', ('NOP', 'YIELD', 'WFE', 'WFI', 'SEV')[op] if op < 5 else 'NOP (hint)',
+                'fixed', 2 if op in (2, 3) else 1, False)
+    if (hw1 & 0xFFEF) == 0xB662:
+        return ('system', 'CPSID i' if hw1 & 0x10 else 'CPSIE i', 'fixed', 1, False)
     if top5 == 0b11000:
         return ('push/pop', 'STM Rn!, {<loreglist>}', 'fixed', 1 + _popcount(hw1 & 0xFF), False)
     if top5 == 0b11001:
@@ -154,6 +168,7 @@ def multicycle_profile(hw1, hw2=0):
     Every count here is a function of the encoding alone.
     """
     c = CPUCore()
+    c.strict = False          # the states depend on the encoding alone, not on these values
     c.write16(0x100, hw1)
     c.write16(0x102, hw2)
     for r in range(8):
@@ -235,7 +250,7 @@ def refills(hw1, hw2, e):
 
 
 GROUPS = ('ALU', 'multiply', 'load', 'store', 'push/pop', 'branch', 'call/return',
-          'OS / debug', 'not ARMv6-M')
+          'system', 'OS / debug', 'not ARMv6-M')
 
 
 def summarize(profile, mul_cycles=1, wait=0, asm=None):

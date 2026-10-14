@@ -25,5 +25,11 @@ target_link_libraries(firmware
 pico_enable_stdio_usb(firmware 1)
 pico_enable_stdio_uart(firmware 0)
 
+# USB output is thrown away until a terminal opens the port, and a short
+# program would finish before picosim's console connects after Flash.  So
+# stdio_init_all() waits up to 5 s for the connection before asm_main runs
+# (a board with no computer attached starts after the 5 s).
+target_compile_definitions(firmware PRIVATE PICO_STDIO_USB_CONNECT_WAIT_TIMEOUT_MS=5000)
+
 # Generate .uf2, .bin, .hex, .map alongside the ELF
 pico_add_extra_outputs(firmware)
