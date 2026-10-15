@@ -15,6 +15,7 @@ const PicoView := preload("res://scripts/pico_view.gd")
 const PipelineView := preload("res://scripts/pipeline_view.gd")
 const Welcome := preload("res://scripts/welcome.gd")
 const SettingsDialog := preload("res://scripts/settings_dialog.gd")
+const Spotlight := preload("res://scripts/spotlight.gd")
 const MACHINES := ["multicycle", "pico2"]
 
 ## Clock-speed presets (cycles per second); 0 = as fast as possible.
@@ -52,6 +53,9 @@ var pico_home: Control
 var panels: Control              # everything under the toolbar except the welcome page
 var welcome: Control
 var tip_bar: PanelContainer
+var level_bar: PanelContainer     # "New at Level N" strip, after raising the level
+var spotlight: Control            # outlines new controls for a few seconds
+var _shown_level := 1             # the level the window is laid out for
 var guide: Node
 
 var btn_open: Button
@@ -89,6 +93,7 @@ var _demo_component := ""
 var _demo_click_gate := ""        # --demo-click-gate ID: click that buffer with a real mouse event
 var _demo_machine := ""          # --machine=pico2: start on that machine
 var _demo_settings := false      # --settings: open the program's settings form
+var _demo_level := 0             # --demo-level-up N: raise the level to N (not saved)
 var _text_panels: Array = []     # [{panel, fonts, growth, size, scale}] — see _setup_text_scaling
 var _drag_frame := -100          # process frame of the last splitter drag
 
@@ -107,7 +112,8 @@ func _ready() -> void:
 	Backend.disconnected.connect(func(): _set_status("Simulator backend disconnected", true))
 	_set_status("Connecting to simulator…", false)
 	Palette.changed.connect(_on_palette)
-	Level.changed.connect(_apply_level)
+	Level.changed.connect(_on_level_changed)
+	_shown_level = Level.current
 	_apply_level()
 	_update_controls()
 	var args := OS.get_cmdline_user_args()
@@ -132,6 +138,8 @@ func _ready() -> void:
 			_demo_settings = true
 		if args[i] == "--shot-frames" and i + 1 < args.size():
 			_screenshot_wait = int(args[i + 1])
+		if args[i] == "--demo-level-up" and i + 1 < args.size():
+			_demo_level = int(args[i + 1])
 
 
 func _process(_delta: float) -> void:
@@ -140,6 +148,10 @@ func _process(_delta: float) -> void:
 		machine_select.select(maxi(0, MACHINES.find(_demo_machine)))
 		_on_machine(machine_select.selected)
 		_demo_machine = ""
+	if _demo_level > 0 and Backend.state.get("loaded", false):
+		Level.current = _demo_level   # as if picked in the menu, but not saved
+		Level.changed.emit()
+		_demo_level = 0
 	if _demo_cycles > 0 and Backend.state.get("loaded", false):
 		for i in _demo_cycles:
 			Backend.send("step_cycle")
@@ -188,6 +200,7 @@ func _build_ui() -> void:
 
 	root.add_child(_build_toolbar())
 	root.add_child(_build_tip_bar())
+	root.add_child(_build_level_bar())
 
 	var hsplit := HSplitContainer.new()
 	hsplit.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -274,6 +287,10 @@ func _build_ui() -> void:
 	pico_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	pico_overlay.visible = false
 	add_child(pico_overlay)
+
+	# on top of everything: outlines for controls that are new at this level
+	spotlight = Spotlight.new()
+	add_child(spotlight)
 
 	file_dialog = FileDialog.new()
 	file_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
@@ -463,6 +480,85 @@ func _dismiss_tips() -> void:
 	cfg.save(SETTINGS)
 
 
+## "New at Level N" strip under the toolbar: after the student raises the
+## level it says what appeared, with a button into the guide's lesson.
+func _build_level_bar() -> Control:
+	level_bar = PanelContainer.new()
+	level_bar.visible = false
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 12)
+	level_bar.add_child(h)
+	var l := RichTextLabel.new()
+	l.name = "Text"
+	l.bbcode_enabled = true
+	l.fit_content = true
+	l.scroll_active = false
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(l)
+	var learn := _button("Learn about it", "Open the guide's lesson on what is new", func():
+		if guide: guide.open(str(level_bar.get_meta("topic", "start"))))
+	learn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(learn)
+	var ok := _button("Got it ✕", "Hide this", func(): level_bar.visible = false)
+	ok.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(ok)
+	_style_level_bar()
+	return level_bar
+
+
+func _style_level_bar() -> void:
+	var sb := Palette.panel_box("box_active", 6, 8)
+	sb.border_color = Palette.c("changed")
+	sb.set_border_width_all(2)
+	level_bar.add_theme_stylebox_override("panel", sb)
+
+
+## What each level adds, for the strip: [title, what is new, guide topic].
+const LEVEL_NEWS := {
+	2: ["Level 2 · Memory & I/O", "the [b]Memory[/b] tab (the bytes in memory and the stack), the [b]Raspberry Pi Pico[/b] board under it (the chip's pins) and the [b]Simulator[/b] menu (run your program on a real Pico).", "memmap"],
+	3: ["Level 3 · Inside the CPU", "the [b]CPU diagram[/b] on the right with the cycle inspector under it, [b]Step cycle[/b] (F11) to run one clock cycle at a time, and the datapath registers in the Registers panel.", "cpuintro"],
+	4: ["Level 4 · Pipeline & performance", "the diagram now shows the Pico's own [b]2-stage pipeline[/b] (the menu next to the diagram button switches back to Multi-cycle), and the [b]Performance[/b] window (F2) measures your program.", "pipeintro"],
+}
+
+
+func _on_level_changed() -> void:
+	var old := _shown_level
+	_shown_level = Level.current
+	_apply_level()
+	if Level.current > old:
+		_level_up(old, Level.current)
+	else:
+		level_bar.visible = false
+
+
+## Raising the level gives a fresh view: what the new level adds is switched
+## on and shown (the Memory tab, the CPU diagram, the pipeline), the strip
+## says what is new, and the new controls are outlined for a few seconds.
+func _level_up(old: int, now: int) -> void:
+	var fresh := []
+	if old < 2 and now >= 2:
+		fresh += [mode_select, mem_panel, pico_view]
+	if old < 3 and now >= 3:
+		btn_diagram.button_pressed = true          # the diagram and the cycle inspector
+		fresh += [btn_cycle, btn_diagram, diagram_area, cycle_area, regs_panel.dp_row]
+	if old < 4 and now >= 4:
+		machine_select.select(1)                    # the 2-stage pipeline
+		_on_machine(1)
+		fresh += [machine_select, btn_perf]
+		if old >= 3:
+			fresh.append(diagram_area)
+	if now == 2:
+		mem_panel.tabs.current_tab = 1              # Level 2's new view: the Memory tab
+	var t := ""
+	for n in range(old + 1, now + 1):
+		var e: Array = LEVEL_NEWS[n]
+		t += ("\n" if t != "" else "") + "[b]%s[/b]   [color=%s]New:[/color] %s" % [e[0], Palette.hex("changed"), e[1]]
+	level_bar.get_child(0).get_node("Text").text = t
+	level_bar.set_meta("topic", LEVEL_NEWS[now][2])
+	level_bar.visible = true
+	spotlight.show_new(fresh)
+
+
 func _open_dialog() -> void:
 	file_dialog.popup_centered_ratio(0.6)
 
@@ -511,6 +607,8 @@ func _apply_level() -> void:
 	mode_sep.visible = lv >= 2
 	pico_view.visible = lv >= 2
 	_update_controls()
+	if Backend.state.get("loaded", false):
+		_on_state(Backend.state)   # the status text's wording depends on the level
 
 
 # ── text scaling ────────────────────────────────────────────────────────────
@@ -832,6 +930,7 @@ func _on_flash_done(ok: bool) -> void:
 func _on_palette() -> void:
 	bg.color = Palette.c("bg")
 	_style_tip_bar()
+	_style_level_bar()
 	caption_panel.add_theme_stylebox_override("panel", Palette.panel_box("panel", 6, 10))
 	if Backend.state.get("pipe") is Dictionary:
 		pipe_caption.text = PipelineView.caption(Backend.state["pipe"])

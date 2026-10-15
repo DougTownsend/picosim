@@ -203,6 +203,12 @@ students who start from nothing: each level has a reading path on its
 a glossary that grows with the level. Click a section heading in its topic
 list to fold that section away; the choice is remembered.
 
+Raising the Level switches on what the new level adds (the Memory tab at 2,
+the CPU diagram at 3, the 2-stage pipeline at 4), shows a "New at Level N"
+strip with a link to the matching lesson, and outlines the new controls with
+a NEW tag for a few seconds (`gui/scripts/spotlight.gd`). Pass
+`--demo-level-up N` to see it without saving the level.
+
 - **Registers** (top left): R0–R12, SP, LR, PC, the NZCV flags and the
   datapath registers MAR, MDR, IR and IR2. Anything changed by the last step
   is shown in yellow. Type a value and press Enter to change a register, or

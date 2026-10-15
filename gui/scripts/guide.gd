@@ -487,7 +487,7 @@ func _add_topics() -> void:
 		_reading_paths() +
 		_sub("Levels: see more when you are ready") +
 		"The " + _k("Level") + " menu (top right) decides how much of picosim is shown. Each level adds to the one before:\n" + levels +
-		"Your teacher will tell you when to change level. Changing it never changes your program.\n" +
+		"Your teacher will tell you when to change level. Changing it never changes your program. When you raise it, picosim switches on what is new (the Memory tab, the CPU diagram, the pipeline), says what appeared in a strip under the toolbar, and outlines each new button and panel with a [color=" + _c("changed") + "][b]NEW[/b][/color] tag for a few seconds.\n" +
 		_note("Tip", "The list on the left gets longer at each level. Click a section's heading (such as [b]▾ GETTING STARTED[/b]) to fold its topics away, and click it again to bring them back. picosim remembers which sections you folded."))
 
 	_topic("tour", "The screen at a glance", _tour())
