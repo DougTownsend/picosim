@@ -236,7 +236,9 @@ class Server:
                             'label': p.sym_map.get(addr, '')})
         self.send({'type': 'program', 'path': p.path, 'main': p.main_addr,
                    'listing': listing, 'settings': prog_settings.describe(p.path),
-                   'labels': {k: v for k, v in p.label_map.items()}})
+                   # every label, data ones too, for the Memory tab's Go to box
+                   'labels': {**{name: addr for addr, name in p.sym_map.items()},
+                              **p.label_map}})
 
     # ── SVC handling for the GUI console ─────────────────────────────────────
 

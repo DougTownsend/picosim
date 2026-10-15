@@ -197,7 +197,11 @@ from the console text (another serial monitor would show them).
 
 The guide (F1) lists only the topics for the current level. Pass
 `--level=N` after Godot's `--` to override the level for one run, e.g. for
-classroom demos or screenshots.
+classroom demos or screenshots. It is written as the course's reference for
+students who start from nothing: each level has a reading path on its
+*Start here* page, lessons with values taken from the bundled examples, and
+a glossary that grows with the level. Click a section heading in its topic
+list to fold that section away; the choice is remembered.
 
 - **Registers** (top left): R0–R12, SP, LR, PC, the NZCV flags and the
   datapath registers MAR, MDR, IR and IR2. Anything changed by the last step
