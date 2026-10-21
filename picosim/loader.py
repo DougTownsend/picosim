@@ -24,6 +24,28 @@ class Program:
     sym_map: dict
     label_map: dict = field(default_factory=dict)
     main_addr: int = 0
+    # address -> (line number, source line) for the student's file and the OS
+    source: dict = field(default_factory=dict)
+    image: bytes = b''         # memory as loaded, for clone()
+    os_entry: int = 0
+
+    def clone(self):
+        """A fresh copy of this program, exactly as it was just after loading
+        (no assembling: Step back rebuilds the machine from this)."""
+        cpu = _build_cpu(bytearray(self.image), self.os_entry, self.asm_map, self.sym_map)
+        return Program(self.path, cpu, self.asm_map, self.sym_map, self.label_map,
+                       self.main_addr, self.source, self.image, self.os_entry)
+
+    def run_to_main(self, limit=64):
+        """Run the built-in OS's start-up (_start up to the call of main), so
+        the program shows main as its first instruction.  The instructions
+        really run: steps, cycles and the profile count them."""
+        c = self.cpu._core
+        for _ in range(limit):
+            if c.halted or c.pc == self.main_addr:
+                break
+            c.step()
+            c.check_halt()
 
 
 def _script_dir():
@@ -41,6 +63,7 @@ def build_os_elf(verbose=False):
         raise LoadError(f"OS source '{os_s}' not found.")
     need_build = (
         not os.path.exists(os_elf) or
+        not _has_lines(os_elf) or       # built before line info was added
         os.path.getmtime(os_s) > os.path.getmtime(os_elf) or
         (os.path.exists(os_ld) and os.path.getmtime(os_ld) > os.path.getmtime(os_elf))
     )
@@ -53,6 +76,26 @@ def build_os_elf(verbose=False):
     return os_elf
 
 
+def _has_lines(elf_path):
+    from .sim import source_lines
+    try:
+        return bool(source_lines(elf_path, 'os.s'))
+    except Exception:
+        return False
+
+
+def _source_map(elf_path, s_path):
+    """address -> (line number, the line's text) for the code from `s_path`."""
+    from .sim import source_lines
+    try:
+        with open(s_path, encoding='utf-8', errors='replace') as f:
+            text = f.read().split('\n')
+        lines = source_lines(elf_path, s_path)
+    except Exception:          # no line info: the listing just has no Source column
+        return {}
+    return {a: (n, text[n - 1].strip()) for a, n in lines.items() if 0 < n <= len(text)}
+
+
 def load_program(path, trace=False, verbose=False):
     """Assemble (if needed), load and link `path` with the OS; return a Program."""
     from elftools.common.exceptions import ELFError
@@ -63,6 +106,7 @@ def load_program(path, trace=False, verbose=False):
     os_elf_path = build_os_elf(verbose)
 
     input_file = path
+    s_source = path if path.endswith('.s') else None
     if input_file.endswith('.s'):
         if not os.path.exists(input_file):
             raise LoadError(f"File not found: {input_file}")
@@ -113,12 +157,25 @@ def load_program(path, trace=False, verbose=False):
         print(f"Loaded '{input_file}'  main=0x{user_entry:04X}  "
               f"{len(asm_map)} instructions disassembled")
 
-    cpu = CPU(Memory(FlatRAM(memory)), os_entry, asm_map, sym_map, trace=trace)
-    gpio = GPIO()
-    cpu.add_peripheral(gpio)
-    cpu.gpio = gpio
+    image = bytes(memory)
+    cpu = _build_cpu(memory, os_entry, asm_map, sym_map, trace)
 
     # label_map: name → addr, restricted to addresses that have disassembly.
     label_map = {name: addr for addr, name in sym_map.items() if addr in asm_map}
 
-    return Program(path, cpu, asm_map, sym_map, label_map, user_entry)
+    source = _source_map(os_elf_path, os.path.join(_script_dir(), 'os.s'))
+    if s_source:
+        source.update(_source_map(input_file, s_source))
+
+    return Program(path, cpu, asm_map, sym_map, label_map, user_entry, source, image, os_entry)
+
+
+def _build_cpu(memory, os_entry, asm_map, sym_map, trace=False):
+    """A CPU on `memory` with the simulated RP2040 peripherals attached."""
+    from .memory import FlatRAM, Memory
+    from .gpio import GPIO
+    cpu = CPU(Memory(FlatRAM(memory)), os_entry, asm_map, sym_map, trace=trace)
+    gpio = GPIO()
+    cpu.add_peripheral(gpio)
+    cpu.gpio = gpio
+    return cpu

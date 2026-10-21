@@ -65,6 +65,7 @@ func _ready() -> void:
 	row.add_child(line_edit)
 
 	Backend.console_output.connect(_on_output)
+	Backend.console_reset.connect(_on_reset)
 	_apply_palette()
 	Palette.changed.connect(_apply_palette)
 
@@ -100,6 +101,15 @@ func append_system(text: String) -> void:
 
 func _on_output(text: String, source: String) -> void:
 	_append(text, SOURCE_KEYS.get(source, "text"))
+
+
+## Step back rewound the program: show only what it had printed by then.
+func _on_reset(note: String, text: String) -> void:
+	_segs.clear()
+	_last_cr = false
+	out.clear()
+	_append(note, "dim")
+	_append(text, "text")
 
 
 func _append(text: String, key: String) -> void:

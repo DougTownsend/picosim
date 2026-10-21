@@ -10,13 +10,18 @@ signal disconnected
 signal state_changed(state: Dictionary)
 signal program_loaded(program: Dictionary)
 signal console_output(text: String, source: String)
+## Step back: the console's whole transcript up to the new point.
+signal console_reset(note: String, text: String)
 signal error_received(message: String)
-signal load_failed(path: String, message: String)
+signal load_failed(path: String, message: String, errors: Array)
 signal serial_ports_listed(ports: Array)
 signal flash_finished(ok: bool)
 signal pipe_walkthrough_received(data: Dictionary)
 signal walkthrough_received(data: Dictionary)
 signal perf_received(data: Dictionary)
+signal heat_received(data: Dictionary)          # heat map data (picosim/heat.py)
+signal heat_exported(data: Dictionary)
+signal heat_baseline_changed(exists: bool)
 signal sources_received(sources: Dictionary)
 signal settings_error(message: String)
 
@@ -106,10 +111,12 @@ func _handle(msg: Variant) -> void:
 			program_loaded.emit(msg)
 		"console":
 			console_output.emit(msg["text"], msg["source"])
+		"console_reset":
+			console_reset.emit(msg.get("note", ""), msg.get("text", ""))
 		"error":
 			error_received.emit(msg["message"])
 		"load_error":
-			load_failed.emit(msg["path"], msg["message"])
+			load_failed.emit(msg["path"], msg["message"], msg.get("errors", []))
 		"serial_ports":
 			serial_ports_listed.emit(msg["ports"])
 		"flash_done":
@@ -120,6 +127,12 @@ func _handle(msg: Variant) -> void:
 			pipe_walkthrough_received.emit(msg)
 		"perf":
 			perf_received.emit(msg)
+		"heat":
+			heat_received.emit(msg)
+		"heat_exported":
+			heat_exported.emit(msg)
+		"heat_baseline":
+			heat_baseline_changed.emit(bool(msg.get("exists", false)))
 		"sources":
 			sources_received.emit(msg["sources"])
 		"settings_error":

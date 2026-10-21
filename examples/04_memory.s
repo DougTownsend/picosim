@@ -7,6 +7,10 @@
 @   (4 bytes) from memory into a register; STR copies one back.
 @   Open the Memory tab and Go to "numbers" to see them; at the end the total
 @   (10 + 20 + 30 + 40 = 100 = 0x64) appears in "total", just after them.
+@
+@ Your turn (picosim checks it when the program finishes)
+@ Challenge: Add a fifth number, 50, to the list, so the total is 150.
+@ Expect: R2 = 150
 
         .syntax unified
         .cpu cortex-m0plus

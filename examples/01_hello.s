@@ -7,6 +7,10 @@
 @   R0 holds a letter's ASCII code: 0x48 is 'H', 0x69 is 'i', 0x21 is '!'.
 @   Each code turns yellow when it changes.
 @   Press Run (F5) to let it go by itself. Press Reload to start again.
+@
+@ Your turn (picosim checks it when the program finishes)
+@ Challenge: Make it print Hey! instead of Hi! (one more letter, so one more movs and bl).
+@ Expect: output "Hey!\n"
 
         .syntax unified
         .cpu cortex-m0plus

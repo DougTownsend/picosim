@@ -7,6 +7,11 @@
 @   registers. Step through and watch R0, R1, R2 and R3 change.
 @   Hover over a register to see its value in decimal.
 @   Try it: change 3 and 4 below (keep the sum under 10), save, press Reload.
+@
+@ Your turn (picosim checks it when the program finishes)
+@ Challenge: Change the two numbers so it prints 9, and R3 (their difference) is still 1.
+@ Expect: output "9\n"
+@ Expect: R3 = 1
 
         .syntax unified
         .cpu cortex-m0plus

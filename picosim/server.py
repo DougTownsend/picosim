@@ -32,6 +32,8 @@ from collections import deque
 
 from .loader import load_program, LoadError
 from . import settings as prog_settings
+from . import challenge as challenges
+from . import heat
 from .cpu import SimulatorError, svc_write_data
 from .pipeline import Pipeline
 
@@ -41,8 +43,43 @@ MAX_SPEED = 0            # cps value meaning "as fast as possible"
 FRAME = 1 / 30           # state broadcast interval while running
 HEX_DEFAULT = (0x3000, 256)
 PICO_VID = 0x2E8A
-MACHINES = ('multicycle', 'pico2')
+MACHINES = ('multicycle', 'm0plus')
 PIPE_SYNC = 256          # lay out the pipeline at least this often at max speed
+
+_BRANCH = re.compile(r'^(b|bl|b(?:eq|ne|hs|cs|lo|cc|mi|pl|vs|vc|hi|ls|ge|lt|gt|le|al))(\s+)#(0x[0-9a-f]+|\d+)$')
+
+
+def _mtime(path):
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return None
+
+
+def symbolic(text, sym_map):
+    """`text` as the student wrote it where the disassembler cannot know: a
+    branch or call to a labelled address shows the label (bl #0x10 → bl putchar)."""
+    m = _BRANCH.match(text.strip())
+    if m:
+        name = sym_map.get(int(m.group(3), 0))
+        if name:
+            return f"{m.group(1):<8} {name}"
+    return text
+
+
+def tidy_source(src):
+    """A source line with its runs of spaces squeezed, so more of it fits:
+    'movs    r0, #'H'        @ R0 = …' → "movs r0, #'H'   @ R0 = …"."""
+    for mark in ('@', '/*'):
+        i = src.find(mark)
+        if i > 0:
+            return ' '.join(src[:i].split()) + '   ' + src[i:].strip()
+    return ' '.join(src.split())
+
+
+def heat_model_name(model):
+    from .timing import MACHINE_NAMES
+    return MACHINE_NAMES['m0plus' if model == 'm0plus' else 'multicycle']
 
 
 class Server:
@@ -67,6 +104,8 @@ class Server:
         self.waiting_input = False
         self.history = []          # cycles of the current / last instruction
         self.changed = set()       # names changed by the last user action
+        self.writer = {}           # name -> address of the instruction that changed it
+        self.action = 'step'       # what the last user action was (see _begin_action)
         self.mem_changed = set()   # byte addresses written by the last action
         self.hexview = HEX_DEFAULT
         self.exit_code = None
@@ -83,6 +122,21 @@ class Server:
         self.board_changed = []      # pins that changed in the board's last report
         self.flash_thread = None
         self.flash_result = None
+        self.watch_mtime = None      # the loaded file's modification time (auto-reload)
+        # Level 1 hides the built-in OS: start at main and step over calls into the OS
+        self.skip_boot = False
+        self.step_over_os = False
+        self.stop_at = None          # (return address, SP) while a Step over runs
+        self.boot_steps = 0          # OS start-up instructions already run (skip_boot)
+        # Step back rebuilds the machine by running a fresh copy up to the
+        # wanted point; these make that replay identical to what happened.
+        self.keys_used = []          # characters getchar consumed, in order
+        self.journal = []            # [(position, kind, data)]: pin clicks and edits
+        self.out_text = ''           # what the program printed since it was loaded
+        self.challenge = None        # the program's @ Expect checks (picosim/challenge.py)
+        self.check_results = None    # their results once the program has halted
+        self.heat_overview = heat.Overview()   # coarse heat-map samples past the trace's end
+        self.watch_next = 0.0
 
     # ── transport ────────────────────────────────────────────────────────────
 
@@ -128,6 +182,7 @@ class Server:
             try:
                 self.poll_serial()
                 self.poll_flash()
+                self.poll_file()
                 if busy:
                     self.run_slice()
                 if self.dirty:
@@ -174,7 +229,7 @@ class Server:
         self.dirty = False
         c = self.core
         if c is None:
-            return self.send({'type': 'state', 'loaded': False, 'mode': self.mode,
+            return self.send({'type': 'state', 'loaded': False, 'mode': self.mode, 'path': self.path or '',
                               'serial': self.serial.port if self.serial else None})
         pc = c.pc
         sp = c.sp
@@ -193,7 +248,8 @@ class Server:
             'regs': list(c.regs), 'flags': {'N': c.N, 'Z': c.Z, 'C': c.C, 'V': c.V},
             'datapath': c.datapath,
             'pc': pc, 'halted': c.halted, 'exit_code': self.exit_code, 'fault': self.fault,
-            'steps': c.steps, 'cycles': c.cycles,
+            'steps': c.steps, 'cycles': c.cycles, 'boot_steps': self.boot_steps,
+            'can_back': self.mode == 'sim' and (c.in_insn or c.steps > (self.boot_steps if self.skip_boot else 0)),
             'in_insn': c.in_insn, 'next_state': c.next_state(),
             'cycle_index': c.cycle_index, 'insn_total': c.insn_total,
             'insn_addr': cur, 'insn_text': self.prog.asm_map.get(cur, '???'),
@@ -202,6 +258,9 @@ class Server:
             'breakpoints': sorted(self.breakpoints),
             'history': self.history,
             'changed': sorted(self.changed),
+            'checks': self._checks(),
+            'changed_by': {n: a for n, a in self.writer.items() if n in self.changed},
+            'action': self.action,
             'mem_changed': sorted(self.mem_changed),
             'hexview': {'addr': hx_addr, 'data': self.mem_hex(hx_addr, hx_len)},
             'stack': {'addr': stack_lo, 'data': self.mem_hex(stack_lo, 64)},
@@ -211,8 +270,18 @@ class Server:
             'mode': self.mode,
             'serial': self.serial.port if self.serial else None,
             'machine': self.machine,
-            'pipe': self.pipe.view() if self.machine == 'pico2' else None,
+            'pipe': self.pipe.view() if self.machine == 'm0plus' else None,
         })
+
+    def _checks(self):
+        """The challenge's results once the program has finished (not after a
+        fault), else None.  Worked out once per halt; Step back clears them."""
+        c = self.core
+        if not (self.challenge and c.halted and self.fault is None and self.mode == 'sim'):
+            self.check_results = None
+        elif self.check_results is None:
+            self.check_results = challenges.run(self.challenge, c.regs, self.out_text)
+        return self.check_results
 
     def send_program(self):
         p = self.prog
@@ -232,10 +301,16 @@ class Server:
                 hw = c.read16(addr)
                 wide = c.is_32bit_thumb(hw)
                 raw = f"{hw:04X}" + (f" {c.read16(addr + 2):04X}" if wide else '')
+            line, src = p.source.get(addr, (0, ''))
+            if text.startswith('.') and not src.startswith('.'):
+                line, src = 0, ''          # a literal pool: not the ldr line that made it
             listing.append({'addr': addr, 'raw': raw, 'text': text,
-                            'label': p.sym_map.get(addr, '')})
+                            'shown': symbolic(text, p.sym_map),
+                            'label': p.sym_map.get(addr, ''), 'line': line, 'source': tidy_source(src)})
         self.send({'type': 'program', 'path': p.path, 'main': p.main_addr,
                    'listing': listing, 'settings': prog_settings.describe(p.path),
+                   'challenge': self.challenge and {'task': self.challenge['task'],
+                                                    'checks': [t for t, _ in self.challenge['checks']]},
                    # every label, data ones too, for the Memory tab's Go to box
                    'labels': {**{name: addr for addr, name in p.sym_map.items()},
                               **p.label_map}})
@@ -245,15 +320,20 @@ class Server:
     def _svc(self, num):
         c = self.core
         if num == 0:
-            self.console(svc_write_data(c).decode('latin-1'))
+            text = svc_write_data(c).decode('latin-1')
+            self.out_text += text
+            self.console(text)
         elif num == 1:
             self.exit_code = c.get_reg(0)
             c.halted = True
             self.console(f"\n[program exited with code {self.exit_code}]\n", 'system')
         elif num == 2:
+            self.out_text += chr(c.get_reg(0) & 0xFF)
             self.console(chr(c.get_reg(0) & 0xFF))
         elif num == 3:
             ch = self.inp.popleft() if self.inp else 0xFFFFFFFF
+            if ch != 0xFFFFFFFF:
+                self.keys_used.append(ch)
             c.set_reg(0, ch)
         else:
             raise SimulatorError(f"Unknown SVC #{num}")
@@ -280,6 +360,7 @@ class Server:
                 self.mem_changed.update(range(ch['addr'], ch['addr'] + ch['width']))
             else:
                 self.changed.add(ch['name'])
+                self.writer[ch['name']] = info['insn_addr']
 
     def board_live(self):
         """True when the Pico board drawing should show a real board's pins."""
@@ -294,7 +375,12 @@ class Server:
         g = self.prog.cpu.gpio if self.prog else None
         return g.pin_states() if g else []
 
-    def _begin_action(self):
+    def _begin_action(self, action='step'):
+        """Start a user action: 'step', 'call' (Step over), 'run', 'back' (Step back) or 'edit'
+        (a value typed into a register, flag, memory or pin).  Changes that
+        no single instruction made are put down to it."""
+        self.action = action
+        self.writer = {}
         self.changed = set()
         self.mem_changed = set()
         self.gpio_before = self.gpio_pins()
@@ -348,7 +434,7 @@ class Server:
             if not c.in_insn:
                 return True
 
-    # ── 2-stage pipeline (machine 'pico2', see picosim/pipeline.py) ────────
+    # ── 2-stage pipeline (machine 'm0plus', see picosim/pipeline.py) ────────
 
     def _run_insn(self):
         return self.one_insn(record=True)
@@ -360,7 +446,7 @@ class Server:
         return self.pipe.step_insn(self._run_insn)
 
     def _pipe_draining(self):
-        return self.machine == 'pico2' and self.pipe is not None and self.pipe.draining()
+        return self.machine == 'm0plus' and self.pipe is not None and self.pipe.draining()
 
     # ── run loop ─────────────────────────────────────────────────────────────
 
@@ -368,19 +454,19 @@ class Server:
         c = self.core
         now = time.monotonic()
         start = now
-        pipe = self.machine == 'pico2'
+        pipe = self.machine == 'm0plus'
         if c is None or (c.halted and not self._pipe_draining()):
             self.running = False
             self.send_state()
             return
         hit = False
-        if self.cps == MAX_SPEED:
+        if self.cps == MAX_SPEED or self.stop_at is not None:   # a Step over runs flat out
             before = list(c.regs)
             while time.monotonic() - start < 0.01:
                 for _ in range(PIPE_SYNC if pipe else 2000):
                     if not self.one_insn(record=False):
                         break
-                    if c.pc in self.breakpoints:
+                    if c.pc in self.breakpoints or self._returned():
                         hit = True
                         break
                 else:
@@ -390,6 +476,8 @@ class Server:
                 break
             if pipe:
                 self.pipe.follow()
+            if c.itrace_dropped:
+                self.heat_overview.maybe(c)   # the trace is full: keep coarse samples
             after = c.regs
             self.changed |= {REG_NAMES[i] for i in range(16) if before[i] != after[i]}
         else:
@@ -406,33 +494,56 @@ class Server:
                     continue
                 if not self.one_cycle():
                     break
-                if not c.in_insn and c.pc in self.breakpoints:
+                if not c.in_insn and (c.pc in self.breakpoints or self._returned()):
                     hit = True
                     break
         self.last_tick = now
         if hit or (c.halted and not self._pipe_draining()):
             self.running = False
+            self.stop_at = None
         if not self.running or now - self.last_frame >= FRAME or self.waiting_input:
             self.last_frame = now
             self.send_state()
 
     # ── commands ─────────────────────────────────────────────────────────────
 
+    def poll_file(self):
+        """Reload the program when its file is saved (checked twice a second),
+        also after a failed load, so fixing a mistake and saving is enough."""
+        now = time.monotonic()
+        if not self.path or now < self.watch_next:
+            return
+        self.watch_next = now + 0.5
+        m = _mtime(self.path)
+        if m is not None and self.watch_mtime is not None and m != self.watch_mtime \
+                and not (self.flash_thread and self.flash_thread.is_alive()):
+            self.console(f"[{os.path.basename(self.path)} changed on disk: reloading]\n", 'system')
+            self.cmd_load({'path': self.path})
+
     def cmd_load(self, msg):
         path = msg.get('path') or self.path
         if not path:
             return self.error("no program to load")
         path = os.path.abspath(os.path.expanduser(path))
+        self.path = path                  # kept after a failed load: Reload and auto-reload retry it
+        self.watch_mtime = _mtime(path)
         try:
             # assemble with the student's program settings filled in (if any)
-            prog = load_program(prog_settings.effective_source(path))
+            src = prog_settings.effective_source(path)
+            prog = load_program(src)
         except LoadError as e:
-            self.send({'type': 'load_error', 'path': path, 'message': str(e)})
+            from . import errors
+            raw = str(e)
+            self.send({'type': 'load_error', 'path': path, 'message': errors.clean(raw) or raw,
+                       'errors': errors.explain(raw, src if src.endswith('.s') else path)})
+            self.send_state()             # so the GUI's Reload can retry
             return
         except OSError as e:
             self.send({'type': 'load_error', 'path': path, 'message': str(e)})
             return
         prog.path = path
+        prog.cpu._core.itrace_enable(heat.TRACE_CAP)   # the heat map's timeline
+        self.heat_overview = heat.Overview()
         self.prog, self.path = prog, path
         self.core.svc_handler = self._svc
         self.running = False
@@ -440,6 +551,21 @@ class Server:
         self.history = []
         self.exit_code = None
         self.fault = None
+        self.stop_at = None
+        self.boot_steps = 0
+        self.keys_used, self.journal, self.out_text = [], [], ''
+        self.challenge, self.check_results = None, None
+        challenge_error = None
+        try:
+            with open(path, encoding='utf-8', errors='replace') as f:
+                self.challenge = challenges.parse(f.read())
+        except challenges.ChallengeError as e:
+            challenge_error = str(e)
+        except OSError:
+            pass
+        if self.skip_boot:
+            prog.run_to_main()
+            self.boot_steps = self.core.steps   # level 1 counts from main
         self.pipe = Pipeline(self.core, prog.asm_map)
         self._begin_action()
         self.breakpoints &= set(prog.asm_map)
@@ -448,7 +574,10 @@ class Server:
         note = ''
         if prog_settings.declared(path):
             note = " — this program has settings: click Settings in the toolbar"
-        self.console(f"[loaded {os.path.basename(path)}{note}]\n", 'system')
+        if not msg.get('quiet'):
+            self.console(f"[loaded {os.path.basename(path)}{note}]\n", 'system')
+        if challenge_error:
+            self.console(f"[the challenge in this file cannot be checked: {challenge_error}]\n", 'system')
         self.send_state()
 
     def cmd_reload(self, msg):
@@ -472,12 +601,22 @@ class Server:
 
     cmd_reset = cmd_reload
 
+    def _settle(self):
+        """Finish a Step over that is still running when the next step key
+        arrives (holding S at level 1), so every press is one whole step.
+        A call that takes longer than a moment is left running instead."""
+        for _ in range(20):
+            if self.stop_at is None or not self.running or self.waiting_input:
+                return
+            self.run_slice()
+
     def cmd_step_cycle(self, msg):
         if not self.core:
             return
+        self._settle()
         self.running = False
         self._begin_action()
-        if self.machine == 'pico2':
+        if self.machine == 'm0plus':
             self.pipe_step()
         else:
             self.one_cycle()
@@ -486,25 +625,44 @@ class Server:
     def cmd_step_insn(self, msg):
         if not self.core:
             return
+        self._settle()
+        if self.step_over_os and self.machine != 'm0plus':
+            call = self.call_at_pc()
+            if call and call[1] < 0x3000:      # bl putchar / bl getchar: one step
+                return self.cmd_step_over(msg)
         self.running = False
         self._begin_action()
-        if self.machine == 'pico2':
+        if self.machine == 'm0plus':
             self.pipe_step_insn()
         else:
             self.one_insn(record=True)
+            self._finish_in_os()
         self.send_state()
+
+    def _finish_in_os(self):
+        """With the OS hidden, a main that has returned runs the OS's last
+        instructions (bkpt) at once, so the program simply halts."""
+        c = self.core
+        if not self.step_over_os:
+            return
+        for _ in range(16):
+            if c.halted or c.in_insn or c.pc >= 0x3000 or self.waiting_input:
+                break
+            if not self.one_insn(record=True):
+                break
 
     def cmd_run(self, msg):
         c = self.core
         if not c or (c.halted and not self._pipe_draining()):
             return self.send_state()
         self.cps = max(0, int(msg.get('cps', self.cps)))
-        self._begin_action()
+        self._begin_action('run')
+        self.stop_at = None
         self.running = True
         self.last_tick = time.monotonic()
         self.cycle_credit = 1.0
         # step off a breakpoint we are sitting on
-        if self.machine == 'pico2':
+        if self.machine == 'm0plus':
             if self.pipe.at_breakpoint(self.breakpoints):
                 if self.cps == MAX_SPEED:
                     self.one_insn(record=False)
@@ -518,6 +676,217 @@ class Server:
                 self.one_cycle()
         self.send_state()
 
+    # ── step back ───────────────────────────────────────────────────────────
+    # The machine cannot be wound backwards, so Step back builds a fresh copy
+    # of the program and runs it to the wanted point, with the same keys, pin
+    # clicks and edits at the same moments.  A position is (instructions
+    # completed, cycles into the next one).
+
+    def _pos(self, c=None):
+        c = c or self.core
+        if c.in_insn:
+            return (c.steps - 1, c.cycle_index)
+        return (c.steps, 0)
+
+    def _back_target(self):
+        """Where one Step back goes, or None at the very start."""
+        c = self.core
+        done, k = self._pos()
+        if k > 1:
+            return (done, k - 1)                 # one cycle back, same instruction
+        if k == 1:
+            return (done, 0)                     # back to its start
+        first = self.boot_steps if self.skip_boot else 0
+        t = done - 1
+        if self.step_over_os:
+            # with the OS hidden, go back to the last line of the program itself:
+            # the next instruction at state T is record seq T + 1
+            addr = {r['seq']: r['addr'] for r in c.recent(512)}
+            while t > first and addr.get(t + 1, 0x3000) < 0x3000:
+                t -= 1
+        return (t, 0) if t >= first else None
+
+    def _replay(self, target):
+        """A fresh copy of the program run to `target`; returns (program,
+        printed text, keys consumed)."""
+        new = self.prog.clone()
+        nc = new.cpu._core
+        nc.itrace_enable(heat.TRACE_CAP)
+        keys = iter(self.keys_used)
+        used = []
+        out = []
+
+        def svc(num):
+            if num == 0:
+                out.append(svc_write_data(nc).decode('latin-1'))
+            elif num == 1:
+                nc.halted = True
+            elif num == 2:
+                out.append(chr(nc.get_reg(0) & 0xFF))
+            elif num == 3:
+                ch = next(keys, 0xFFFFFFFF)
+                if ch != 0xFFFFFFFF:
+                    used.append(ch)
+                nc.set_reg(0, ch)
+        nc.svc_handler = svc
+        if self.skip_boot:
+            new.run_to_main()
+
+        def advance(pos):
+            done, k = pos
+            if nc.in_insn:                       # finish a partial instruction first
+                while nc.in_insn:
+                    nc.step_cycle()
+                nc.check_halt()
+            n = done - nc.steps
+            if n > 0:
+                nc.run(n)
+            for _ in range(k):
+                info = nc.step_cycle()
+                if info['last']:
+                    nc.check_halt()
+
+        for pos, kind, data in self.journal:
+            if pos > target:
+                break
+            if pos != self._pos(nc):
+                advance(pos)
+            if kind == 'gpio':
+                new.cpu.gpio.set_external(data[0], None if data[1] is None else bool(data[1]))
+            elif kind == 'reg':
+                nc.set_reg(*data)
+            elif kind == 'flag':
+                setattr(nc, data[0], data[1])
+            elif kind == 'mem':
+                for i, b in enumerate(data[1]):
+                    nc.set_mem_byte(data[0] + i, b)
+        if self._pos(nc) != target:
+            advance(target)
+        return new, ''.join(out), used
+
+    def cmd_step_back(self, msg):
+        """Undo one instruction (or one clock cycle, partway through one)."""
+        c = self.core
+        if c is None or self.mode != 'sim':
+            return
+        self.running = False
+        self.stop_at = None
+        target = self._back_target()
+        if target is None:
+            return self.error("Already at the start of the program: there is nothing to step back to.")
+        before_regs = list(c.regs)
+        before_flags = {f: getattr(c, f) for f in 'NZCV'}
+        before_mem = c.get_memory()
+        self._begin_action('back')
+        try:
+            new, printed, used = self._replay(target)
+        except (RuntimeError, SimulatorError) as e:
+            return self.error(f"step back failed: {e}")
+        self.inp.extendleft(reversed(self.keys_used[len(used):]))   # those keys come again
+        self.keys_used = used
+        self.journal = [e for e in self.journal if e[0] <= target]
+        self.out_text = printed
+        new.path = self.prog.path
+        nc_cycles = new.cpu._core.cycles
+        self.heat_overview.snaps = [x for x in self.heat_overview.snaps if x[0] <= nc_cycles]
+        self.prog = new
+        self.core.svc_handler = self._svc
+        self.fault = None
+        self.exit_code = None
+        self.waiting_input = False
+        self.history = []
+        self.pipe = Pipeline(self.core, new.asm_map)
+        nc = self.core
+        self.changed = {REG_NAMES[i] for i in range(16) if nc.regs[i] != before_regs[i]}
+        self.changed |= {f for f in 'NZCV' if getattr(nc, f) != before_flags[f]}
+        after = nc.get_memory()
+        self.mem_changed = {i for i in range(len(after)) if after[i] != before_mem[i]} \
+            if after != before_mem else set()
+        self.send({'type': 'console_reset',
+                   'note': f"[loaded {os.path.basename(self.path)}]\n", 'text': printed})
+        self.send_state()
+
+    # ── step over, and hiding the OS at level 1 ─────────────────────────────
+
+    def cmd_set_options(self, msg):
+        """skip_boot: start programs at main.  step_over_os: Step instruction
+        runs a call into the built-in OS (bl putchar) as one step.  The GUI
+        turns both on at level 1.  A program that has not run past its
+        start-up yet is loaded again so the change shows at once."""
+        skip = bool(msg.get('skip_boot', self.skip_boot))
+        self.step_over_os = bool(msg.get('step_over_os', self.step_over_os))
+        c = self.core
+        fresh = c is not None and c.steps <= 3 and not c.in_insn and not self.running
+        if skip != self.skip_boot:
+            self.skip_boot = skip
+            if fresh and self.path:
+                self.cmd_load({'path': self.path, 'quiet': True})
+                return
+        self.send_state()
+
+    def call_at_pc(self):
+        """(return address, call target) if the next instruction is BL or
+        BLX Rm, else None."""
+        c = self.core
+        if c is None or c.in_insn or c.halted:
+            return None
+        pc = c.pc
+        hw = c.read16(pc)
+        if (hw & 0xF800) == 0xF000:
+            hw2 = c.read16(pc + 2)
+            if (hw2 & 0xD000) == 0xD000:          # BL
+                s = (hw >> 10) & 1
+                j1, j2 = (hw2 >> 13) & 1, (hw2 >> 11) & 1
+                i1, i2 = 1 - (j1 ^ s), 1 - (j2 ^ s)
+                off = (s << 24) | (i1 << 23) | (i2 << 22) | ((hw & 0x3FF) << 12) | ((hw2 & 0x7FF) << 1)
+                if s:
+                    off -= 1 << 25
+                return pc + 4, (pc + 4 + off) & 0xFFFFFFFF
+        if (hw & 0xFF87) == 0x4780:               # BLX Rm
+            return pc + 2, c.get_reg((hw >> 3) & 0xF) & ~1
+        return None
+
+    def _returned(self):
+        """A Step over has come back from its call (the SP check keeps a
+        recursive call from stopping too early)."""
+        if self.stop_at is None:
+            return False
+        c = self.core
+        return not c.in_insn and c.pc == self.stop_at[0] and c.sp >= self.stop_at[1]
+
+    def cmd_step_over(self, msg):
+        """Run a whole call (BL / BLX) and stop at the instruction after it;
+        any other instruction is just stepped.  Breakpoints inside the call,
+        a getchar waiting for a key and faults all stop it as Run does."""
+        self._settle()
+        c = self.core
+        if not c or c.halted:
+            return self.send_state()
+        call = self.call_at_pc()
+        if call is None:
+            return self.cmd_step_insn({}) if not self.step_over_os else self._plain_step()
+        self._begin_action('call')
+        self.stop_at = (call[0], c.sp)
+        self.running = True
+        self.last_tick = time.monotonic()
+        self.one_insn(record=True)        # the call itself, so its cycles show
+        if self.machine == 'm0plus':
+            self.pipe.follow()
+        if self._returned() or c.halted:
+            self.running = False
+            self.stop_at = None
+        self.send_state()
+
+    def _plain_step(self):
+        self.running = False
+        self._begin_action()
+        if self.machine == 'm0plus':
+            self.pipe_step_insn()
+        else:
+            self.one_insn(record=True)
+            self._finish_in_os()
+        self.send_state()
+
     def cmd_set_machine(self, msg):
         """Choose what Step Cycle / Step Insn / Run step: the multi-cycle
         datapath's clock cycles or the RP2040's 2-stage pipeline cycles."""
@@ -527,7 +896,7 @@ class Server:
         if m != self.machine:
             self.running = False
             c = self.core
-            if c and m == 'pico2' and c.in_insn:
+            if c and m == 'm0plus' and c.in_insn:
                 self._begin_action()
                 self.one_insn(record=True)    # the pipeline starts between instructions
             self.machine = m
@@ -541,6 +910,7 @@ class Server:
 
     def cmd_pause(self, msg):
         self.running = False
+        self.stop_at = None
         self.send_state()
 
     def cmd_set_bp(self, msg):
@@ -560,7 +930,8 @@ class Server:
         n = int(msg['reg'])
         v = int(msg['value']) & 0xFFFFFFFF
         self.core.set_reg(n, v)
-        self._begin_action()
+        self.journal.append((self._pos(), 'reg', (n, v)))
+        self._begin_action('edit')
         self.changed.add(REG_NAMES[n & 15])
         self.send_state()
 
@@ -569,7 +940,8 @@ class Server:
         if name not in 'NZCV' or len(name) != 1:
             return self.error(f"bad flag {name}")
         setattr(self.core, name, 1 if msg['value'] else 0)
-        self._begin_action()
+        self.journal.append((self._pos(), 'flag', (name, 1 if msg['value'] else 0)))
+        self._begin_action('edit')
         self.changed.add(name)
         self.send_state()
 
@@ -580,7 +952,8 @@ class Server:
             return self.error("write_mem out of range")
         for i, b in enumerate(data):
             self.core.set_mem_byte(addr + i, b)
-        self._begin_action()
+        self.journal.append((self._pos(), 'mem', (addr, data)))
+        self._begin_action('edit')
         self.mem_changed = set(range(addr, addr + len(data)))
         self.send_state()
 
@@ -592,11 +965,12 @@ class Server:
         """Drive an input pin from outside: value 0, 1 or null (floating)."""
         pin = int(msg['pin'])
         v = msg.get('value')
-        self._begin_action()
+        self._begin_action('edit')
         try:
             self.prog.cpu.gpio.set_external(pin, None if v is None else bool(v))
         except ValueError as e:
             return self.error(str(e))
+        self.journal.append((self._pos(), 'gpio', (pin, v)))
         self.send_state()
 
     def cmd_console_input(self, msg):
@@ -638,7 +1012,7 @@ class Server:
         """Performance report for the run so far (see picosim/timing.py).
 
         msg: mul ('fast' | 'iterative'), wait (0-3, multi-cycle memory wait
-        states), machine ('pico2' | 'pipe3') and n (instructions in the
+        states), machine ('m0plus' | 'pipe3') and n (instructions in the
         pipeline chart)."""
         from . import timing
         c = self.core
@@ -646,9 +1020,9 @@ class Server:
             return self.send({'type': 'perf', 'loaded': False})
         mul = 32 if msg.get('mul') == 'iterative' else 1
         wait = max(0, min(3, int(msg.get('wait', 0))))
-        machine = msg.get('machine', 'pico2')
+        machine = msg.get('machine', 'm0plus')
         if machine not in timing.DEPTH:
-            machine = 'pico2'
+            machine = 'm0plus'
         n = max(1, min(timing_recent_max(), int(msg.get('n', 40))))
         asm = self.prog.asm_map
         prof = c.profile()
@@ -662,6 +1036,89 @@ class Server:
                    'schedule': sched, 'names': timing.MACHINE_NAMES,
                    'clock_mhz': timing.PICO_CLOCK_MHZ, 'in_insn': c.in_insn,
                    'cycles_in_progress': c.cycle_index if c.in_insn else 0})
+
+    # ── heat map (picosim/heat.py) ──────────────────────────────────────────
+
+    def _baseline_path(self):
+        return (self.prog.path or 'program') + '.heat-baseline.json'
+
+    def _load_baseline(self):
+        try:
+            with open(self._baseline_path(), encoding='utf-8') as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return None
+
+    def _heat_report(self, msg):
+        """The heat map's data for a request (see heat.report); the 'compare'
+        view compares the run with the saved baseline."""
+        c = self.core
+        if msg.get('view') == 'compare':
+            base = self._load_baseline()
+            model = 'm0plus' if msg.get('model') == 'm0plus' else 'multicycle'
+            rep = {'view': 'compare', 'model': model, 'estimate': model == 'm0plus',
+                   'baseline': base is not None}
+            if base:
+                now = heat.baseline_data(c, self.prog.source, self.prog.path)
+                per = int(msg.get('per') or 0) or None
+                rep.update(heat.compare(now, base, model, bool(msg.get('code_only')), per))
+                rep.update(per=per, saved=base.get('saved'), code_only=bool(msg.get('code_only')))
+            return rep
+        rep = heat.report(c, self.prog.source, msg, self.heat_overview)
+        rep['baseline'] = os.path.exists(self._baseline_path())
+        return rep
+
+    def _heat_meta(self, rep):
+        return {'program': self.prog.path, 'model': heat_model_name(rep.get('model')),
+                'values': 'estimates (2-stage pipeline model)' if rep.get('estimate') else 'exact (multi-cycle FSM signals)',
+                'view': rep.get('view'), 'cycles': rep.get('cycles', rep.get('after_cycles')),
+                'instructions': rep.get('insns', ''),
+                'your_code_only': bool(rep.get('code_only')),
+                'exported': time.strftime('%Y-%m-%d %H:%M:%S')}
+
+    def cmd_heat(self, msg):
+        """Component and register usage for the heat map: see heat.report."""
+        if self.core is None:
+            return self.send({'type': 'heat', 'loaded': False})
+        rep = self._heat_report(msg)
+        rep.update(type='heat', loaded=True, req=msg.get('req', 0))
+        self.send(rep)
+
+    def cmd_heat_baseline(self, msg):
+        """action 'save': keep this run's usage as the baseline (a JSON file
+        next to the program) for the heat map's Compare view; 'clear' removes it."""
+        if self.core is None:
+            return
+        path = self._baseline_path()
+        try:
+            if msg.get('action') == 'clear':
+                if os.path.exists(path):
+                    os.remove(path)
+                note = "[heat map: baseline cleared]\n"
+            else:
+                data = heat.baseline_data(self.core, self.prog.source, self.prog.path)
+                data['saved'] = time.strftime('%Y-%m-%d %H:%M:%S')
+                with open(path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=1)
+                note = f"[heat map: baseline saved ({self.core.cycles} cycles) to {os.path.basename(path)}]\n"
+        except OSError as e:
+            return self.error(f"could not {msg.get('action', 'save')} the baseline: {e}")
+        self.console(note, 'system')
+        self.send({'type': 'heat_baseline', 'exists': os.path.exists(path)})
+
+    def cmd_heat_export(self, msg):
+        """Write the heat map's current view to `path` as CSV or JSON."""
+        if self.core is None:
+            return
+        path = os.path.abspath(os.path.expanduser(msg['path']))
+        fmt = 'json' if path.lower().endswith('.json') or msg.get('format') == 'json' else 'csv'
+        try:
+            rep = self._heat_report(msg)
+            heat.write_export(path, fmt, rep, self._heat_meta(rep))
+        except OSError as e:
+            return self.send({'type': 'heat_exported', 'ok': False, 'path': path, 'error': str(e)})
+        self.console(f"[heat map: saved {os.path.basename(path)}]\n", 'system')
+        self.send({'type': 'heat_exported', 'ok': True, 'path': path})
 
     def cmd_walkthrough(self, msg):
         """Explain the loaded program step by step for the user guide.  Runs

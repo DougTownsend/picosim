@@ -1,5 +1,5 @@
 extends Node
-## Performance window (toolbar "Performance"): three tabs about the run so far.
+## Performance window (toolbar "Performance"): four tabs about the run so far.
 ##
 ##   Metrics   — instructions, cycles and CPI on each machine, the multi-cycle
 ##               machine's phase breakdown and bus / ALU / memory use, the
@@ -9,12 +9,16 @@ extends Node
 ##   Pipeline  — the last instructions laid out on the RP2040's 2-stage
 ##               pipeline (or a 3-stage teaching pipeline), cycle by cycle;
 ##               click a cycle to see what every stage holds.
+##   Heat map  — how much each component, register and flag is used: totals,
+##               a timeline down to single cycles, per program line, and a
+##               before/after comparison (heat_tab.gd, picosim/heat.py).
 ##
 ## All numbers come from the backend's "perf" command (picosim/timing.py).
 ## While the window is open it asks again whenever the machine has moved on.
 
 const POLL := 0.35          # seconds between requests while the machine changes
 const PIPE_N := [16, 32, 64, 128]
+const HeatTab := preload("res://scripts/heat_tab.gd")
 
 var win: Window
 var tabs: TabContainer
@@ -31,6 +35,7 @@ var pipe_text: RichTextLabel
 var btn_prev: Button
 var btn_next: Button
 var bg: PanelContainer
+var heat_tab: Node
 
 var data: Dictionary = {}
 var _asked_key := ""        # machine state + options we last asked about
@@ -58,6 +63,10 @@ func _ready() -> void:
 	_build_metrics()
 	_build_compare()
 	_build_pipeline()
+	heat_tab = HeatTab.new()
+	heat_tab.name = "Heat map"
+	tabs.add_child(heat_tab)
+	tabs.tab_changed.connect(func(_t): if _heat_showing(): heat_tab.tick(1.0))
 	Backend.perf_received.connect(_on_perf)
 	Backend.program_loaded.connect(func(_p): _reset())
 	_apply_palette()
@@ -72,7 +81,8 @@ func _ready() -> void:
 		wait_select.select(2)
 	var i := args.find("--perf")
 	if i >= 0:
-		open.call_deferred(int(args[i + 1]) if i + 1 < args.size() else 0)
+		var t := args[i + 1] if i + 1 < args.size() else "0"
+		open.call_deferred(3 if t == "heat" else int(t))
 
 
 func open(tab := -1) -> void:
@@ -102,10 +112,17 @@ func _process(delta: float) -> void:
 	if not win.visible:
 		set_process(false)
 		return
+	if _heat_showing():
+		heat_tab.tick(delta)
+		return
 	_timer -= delta
 	if _timer <= 0.0:
 		_timer = POLL
 		_ask(false)
+
+
+func _heat_showing() -> bool:
+	return heat_tab != null and tabs.current_tab == heat_tab.get_index()
 
 
 ## Ask the backend for a fresh report if anything it depends on changed.
@@ -126,7 +143,7 @@ func _ask(force: bool) -> void:
 	_asked_key = key
 	_pending = true
 	Backend.send("perf", {"mul": "iterative" if mul_select.selected == 1 else "fast",
-		"wait": wait_select.selected, "machine": "pipe3" if machine_select.selected == 1 else "pico2",
+		"wait": wait_select.selected, "machine": "pipe3" if machine_select.selected == 1 else "m0plus",
 		"n": PIPE_N[n_select.selected]})
 
 
@@ -345,15 +362,15 @@ func _fill_metrics() -> void:
 	for hd in get_meta("metrics_headings"):
 		hd.visible = true
 	t += "[table=4]" + _hcell("Machine") + _hcell("Cycles") + _hcell("CPI") + _hcell("Time at %d MHz" % int(mhz))
-	for m in ["multicycle", "pico2", "pipe3"]:
+	for m in ["multicycle", "m0plus", "pipe3"]:
 		var e: Dictionary = s["machines"][m]
 		t += _cell(names[m]) + _cell(_n(e["cycles"])) + _cell(_f(e["cpi"])) + _cell(_time(e["cycles"], mhz))
 	t += "[/table]\n"
 	t += "[color=%s]%s instructions completed. CPI = cycles per instruction. The RP2040 runs at 125 MHz by default (Pico SDK); the other two machines are teaching designs, shown at the same clock for comparison.[/color]\n" % [dim, _n(s["insns"])]
-	var un := int(s["machines"]["pico2"]["untimed"])
+	var un := int(s["machines"]["m0plus"]["untimed"])
 	if un > 0:
 		t += "[color=%s]• %s SVC / BKPT (or non-ARMv6-M) instructions are not in the pipeline totals: the datasheet gives no fixed count for them (Table 81 note e), and picosim runs SVC calls directly. CPI is over the %s timed instructions.[/color]\n" % [
-			dim, _n(un), _n(s["machines"]["pico2"]["insns_timed"])]
+			dim, _n(un), _n(s["machines"]["m0plus"]["insns_timed"])]
 	var mc := float(s["multicycle_total"])
 	t += "\n[b]Multi-cycle datapath use[/b]\n"
 	t += "• Bus driven in %s of %s cycles ([b]%s%%[/b]) — one tri-state buffer at a time.\n" % [_n(s["bus_cycles"]), _n(mc), _f(100.0 * s["bus_cycles"] / mc, 1)]
@@ -391,7 +408,7 @@ func _fill_metrics() -> void:
 		_n(b["cond"]), _n(b["cond_taken"]), _f(100.0 * b["cond_taken"] / maxf(1.0, b["cond"]), 1), _n(b["pc_writes"])]
 	tail += "\n[b]Costliest instructions (multi-cycle cycles)[/b]\n[table=5]" + _hcell("Address") + _hcell("Instruction") + _hcell("Runs") + _hcell("Multi-cycle") + _hcell("RP2040")
 	for r in s["top"]:
-		var p = r["cycles"]["pico2"]
+		var p = r["cycles"]["m0plus"]
 		tail += _cell("[code]%04X[/code]" % int(r["addr"])) + _cell("[code]%s[/code]" % _esc(str(r["text"]))) + \
 			_cell(_n(r["execs"])) + _cell(_n(r["cycles"]["multicycle"]) if r["cycles"]["multicycle"] != null else "—") + \
 			_cell(_n(p) if p != null else "not timed")
@@ -419,13 +436,13 @@ func _fill_compare() -> void:
 		return
 	var t := "[table=6]" + _hcell("Machine") + _hcell("Stock design") + _hcell("Your design") + _hcell("Change") + _hcell("CPI") + _hcell("Time at %d MHz" % int(mhz))
 	var base := float(c["machines"]["multicycle"]["cycles"])
-	for m in ["multicycle", "pico2", "pipe3"]:
+	for m in ["multicycle", "m0plus", "pipe3"]:
 		var a := float(s["machines"][m]["cycles"])
 		var b := float(c["machines"][m]["cycles"])
 		var ch := "same" if a == b else ("%+.1f%%" % (100.0 * (b - a) / a))
 		t += _cell(names[m]) + _cell(_n(a)) + _cell("[b]%s[/b]" % _n(b)) + _cell(ch) + _cell(_f(c["machines"][m]["cpi"])) + _cell(_time(b, mhz))
 	t += "[/table]\n"
-	var p2 := float(c["machines"]["pico2"]["cycles"])
+	var p2 := float(c["machines"]["m0plus"]["cycles"])
 	if p2 > 0:
 		t += "With your options the RP2040's pipeline needs [b]%s×[/b] fewer cycles than the multi-cycle teaching machine for this run.\n" % _f(base / p2, 2)
 	t += "\n[b]Where the cycles go (your design)[/b]\n[table=4]" + _hcell("Group") + _hcell("Instructions") + _hcell("Multi-cycle") + _hcell("RP2040 2-stage")
@@ -434,7 +451,7 @@ func _fill_compare() -> void:
 		if int(gi["insns"]) > 0:
 			var untimed: bool = g == "OS / debug" or g == "not ARMv6-M"
 			t += _cell(g) + _cell(_n(gi["insns"])) + _cell(_n(gi["multicycle"])) + \
-				_cell("not timed" if untimed else _n(gi["pico2"]))
+				_cell("not timed" if untimed else _n(gi["m0plus"]))
 	t += "[/table]\n"
 	t += "\n[b]What each option does[/b]\n"
 	t += "• [b]Multiplier[/b] — the Cortex-M0+ can be built with a fast single-cycle multiplier or a small iterative one that takes 32 cycles. The RP2040 has the fast one. Only MULS changes: 1 → 32 cycles on the pipelines, and its EXECUTE_COMMIT state takes 32 cycles instead of 1 on the multi-cycle machine.\n"

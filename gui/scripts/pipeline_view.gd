@@ -50,6 +50,7 @@ var C_ON_STAGE: Color
 var C_PANEL_ALT: Color
 
 const ComponentInfo := preload("res://scripts/component_info.gd")
+const HeatOverlay := preload("res://scripts/heat_overlay.gd")
 
 ## Same timing rules as the CPU diagram's pulse (diagram_view.gd).
 const ANIM_FILL := 0.85
@@ -136,6 +137,7 @@ const CTRLS := {
 var st: Dictionary = {}
 var pipe: Dictionary = {}
 var font: Font
+var heat := {}                   # View ▸ Heat overlay: id → {t, pct, count} (heat_overlay.gd)
 var mono: Font
 var _scale := 1.0
 var _origin := Vector2.ZERO
@@ -629,6 +631,9 @@ func _draw() -> void:
 
 	for id in BOXES:
 		_draw_box(id, boxes.has(id))
+	for id in BOXES:
+		if heat.has(id):
+			HeatOverlay.pill(self, _rect(id), heat[id], font, _scale)
 	for id in CTRLS:
 		_draw_ctrl(id)
 	if BOXES.has(selected_id):
@@ -719,11 +724,15 @@ func _draw_box(id: String, active: bool) -> void:
 	var poly := _box_poly(r, shape)
 	if poly.is_empty():
 		draw_rect(r, fill)
+		if heat.has(id):
+			HeatOverlay.tint(self, poly, r, heat[id]["t"])
 		draw_rect(r, edge, false, ew)
 	else:
 		draw_colored_polygon(poly, fill)
+		if heat.has(id):
+			HeatOverlay.tint(self, poly, r, heat[id]["t"])
 		draw_polyline(poly + PackedVector2Array([poly[0]]), edge, ew, true)
-	var title_col := C_TEXT if active else C_DIM
+	var title_col := C_TEXT if active or heat.has(id) else C_DIM   # readable on a heat tint
 	var regs: Array = st.get("regs", [])
 	match shape:
 		"reg":

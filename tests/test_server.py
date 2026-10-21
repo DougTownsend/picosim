@@ -204,7 +204,7 @@ class ServerTest(unittest.TestCase):
         c.send(cmd='perf', machine='pipe3', n=8)
         m, _ = c.until(lambda m: m['type'] == 'perf')
         self.assertEqual(m['stock']['insns'], 2)
-        self.assertEqual(m['stock']['machines']['pico2']['cycles'], 4)   # two LDRs: 2 + 2
+        self.assertEqual(m['stock']['machines']['m0plus']['cycles'], 4)   # two LDRs: 2 + 2
         self.assertEqual(m['stock']['machines']['multicycle']['cycles'], 14)
         self.assertTrue(m['schedule']['rows'][-1]['pending'])          # the next instruction
         c.send(cmd='component_source')
@@ -219,8 +219,8 @@ class ServerTest(unittest.TestCase):
         from picosim import timing
         c = start(os.path.join(ROOT, 'test_asm_files', 'uint16_loop_test.s'))
         c.until(lambda m: m['type'] == 'state')
-        c.send(cmd='set_machine', machine='pico2')
-        st, _ = c.until(lambda m: m['type'] == 'state' and m['machine'] == 'pico2')
+        c.send(cmd='set_machine', machine='m0plus')
+        st, _ = c.until(lambda m: m['type'] == 'state' and m['machine'] == 'm0plus')
         self.assertIsNone(st['pipe']['E'])
         self.assertEqual(st['pipe']['F']['addr'], st['pc'])      # the first fetch
         seen = {'held': False, 'redirect': False}
@@ -247,7 +247,7 @@ class ServerTest(unittest.TestCase):
         self.assertTrue(seen['redirect'])
         self.assertEqual(p['cycle'], 60)
         # the cycles stepped match Table 81 for the instructions finished
-        c.send(cmd='perf', machine='pico2', n=64)
+        c.send(cmd='perf', machine='m0plus', n=64)
         m, _ = c.until(lambda m: m['type'] == 'perf')
         done = [r for r in m['schedule']['rows'] if not r['flushed'] and not r.get('pending')]
         finished = sum(r['cycles'] for r in done[:p['insns']])
@@ -268,10 +268,10 @@ class ServerTest(unittest.TestCase):
         c = start(os.path.join(ROOT, 'test_asm_files', 'test_main.s'))
         prog, _ = c.until(lambda m: m['type'] == 'program')
         c.until(lambda m: m['type'] == 'state')
-        c.send(cmd='set_machine', machine='pico2')
+        c.send(cmd='set_machine', machine='m0plus')
         c.send(cmd='set_bp', addr=prog['main'])
         c.send(cmd='run', cps=0)
-        st, _ = c.until(lambda m: m['type'] == 'state' and m['machine'] == 'pico2' and not m['running']
+        st, _ = c.until(lambda m: m['type'] == 'state' and m['machine'] == 'm0plus' and not m['running']
                         and m['steps'] > 0)
         self.assertEqual(st['pc'], prog['main'])
         self.assertEqual(st['pipe']['F']['addr'], prog['main'])  # about to execute

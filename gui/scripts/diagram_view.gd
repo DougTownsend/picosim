@@ -49,6 +49,7 @@ var C_GLOW_HEAD: Color
 var C_SEL: Color
 
 const ComponentInfo := preload("res://scripts/component_info.gd")
+const HeatOverlay := preload("res://scripts/heat_overlay.gd")
 
 ## Boxes that capture their inputs at the clock edge: data flowing into them
 ## does not continue out of them in the same cycle.
@@ -217,6 +218,7 @@ var text_scale := 1.0            # set by main when the diagram is dragged bigge
 var _card_pos = null             # Vector2 once the user has dragged the card
 var _card_grab = null            # mouse offset into the card while dragging
 var still := false               # snapshot mode (user-guide pictures): no animation
+var heat := {}                   # View ▸ Heat overlay: id → {t, pct, count} (heat_overlay.gd)
 var sources: Dictionary = {}     # component id → its Python model (server "component_source")
 
 
@@ -329,8 +331,10 @@ func select_component(id: String) -> void:
 
 
 ## "How it works in Python" section: the component's model from components.py.
+## Only with --dev on the command line: it is about how picosim is built, not
+## course material.
 func _python(id: String) -> String:
-	if not sources.has(id):
+	if not sources.has(id) or not OS.get_cmdline_user_args().has("--dev"):
 		return ""
 	return "\n\n[color=%s][b]How it works in Python[/b][/color]\n[color=%s]From picosim/components.py. tests/test_datapath_model.py checks every cycle of every test program to prove this model does exactly what the simulator does.[/color]\n[code]%s[/code]" % [
 		Palette.hex("accent"), Palette.hex("dim"), str(sources[id]).replace("[", "[lb]")]
@@ -726,6 +730,8 @@ func _draw() -> void:
 	var bus_on: bool = cycle.get("bus") != null and _reached("bus")
 	var bus_rect := Rect2(_p(20, BUS_Y - 6), Vector2(950, 12) * _scale)
 	draw_rect(bus_rect, C_WIRE_ACTIVE.darkened(0.25) if bus_on else C_BUS)
+	if heat.has("bus"):
+		HeatOverlay.tint(self, PackedVector2Array(), bus_rect, heat["bus"]["t"])
 	_text(_p(24, BUS_Y - 10), "BUS · 32-bit", 11, C_DIM)
 	if bus_on:
 		# above the bus, in the gap between the PC gate and CLR THUMB's wire
@@ -775,6 +781,12 @@ func _draw() -> void:
 
 	for id in BOXES:
 		_draw_box(id, active_boxes.has(id), changed_boxes.get(id, []) if _reached(id) else [])
+	if not heat.is_empty():
+		for id in BOXES:
+			if heat.has(id):
+				HeatOverlay.pill(self, _rect(id), heat[id], font, _scale)
+		if heat.has("bus"):
+			HeatOverlay.pill(self, bus_rect, heat["bus"], font, _scale)
 	for id in CTRLS:
 		_draw_ctrl(id)
 	if BOXES.has(selected_id):
@@ -1003,12 +1015,16 @@ func _draw_box(id: String, active: bool, changes: Array) -> void:
 	var poly := _box_poly(r, shape, ORIENT.get(id, ""))
 	if poly.is_empty():
 		draw_rect(r, fill)
+		if heat.has(id) and shape != "regfile":
+			HeatOverlay.tint(self, poly, r, heat[id]["t"])
 		draw_rect(r, edge, false, ew)
 	else:
 		draw_colored_polygon(poly, fill)
+		if heat.has(id):
+			HeatOverlay.tint(self, poly, r, heat[id]["t"])
 		draw_polyline(poly + PackedVector2Array([poly[0]]), edge, ew, true)
 
-	var title_col := C_TEXT if active else C_DIM
+	var title_col := C_TEXT if active or heat.has(id) else C_DIM   # readable on a heat tint
 	match shape:
 		"reg":
 			_text(r.position + Vector2(6, 14) * _scale, b[4], 11, title_col)
@@ -1141,6 +1157,9 @@ func _draw_regfile(r: Rect2, changes: Array) -> void:
 		var row := i if i < 8 else i - 8
 		var nm: String = names[i]
 		var y := 36.0 + row * 16.0
+		if heat.has(nm + ":rw"):     # the heat overlay: this register's reads + writes
+			HeatOverlay.tint(self, PackedVector2Array(),
+				Rect2(r.position + Vector2(col_x - 4, y - 12) * _scale, Vector2(108, 15) * _scale), heat[nm + ":rw"]["t"])
 		var colr := C_TEXT
 		if hot.has(nm):
 			colr = C_CHANGED

@@ -5,7 +5,8 @@ extends PanelContainer
 ## Text grows with the panel: drag the splitters to give it more room and the
 ## fonts and fields scale up to fill it.
 ## Registers can be shown in hex, unsigned decimal or signed decimal (saved in
-## settings.cfg as [ui] reg_format). Below level 3 the datapath registers and
+## settings.cfg as [ui] reg_format). Under the flags, a line says what the
+## last step changed and which line of the program did it.  Below level 3 the datapath registers and
 ## the FSM's next state are hidden: they belong to "Inside the CPU".
 
 const NAMES := ["R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7",
@@ -19,6 +20,8 @@ var _dim_labels: Array[Label] = []
 var flag_boxes := {}
 var dp_labels := {}
 var info_label: Label
+var change_label: Label
+var _rows := {}                  # address -> Disassembly row, for "changed by"
 var dp_row: HBoxContainer
 var format_select: OptionButton
 var reg_format := 0              # index into FORMATS
@@ -111,6 +114,14 @@ func _ready() -> void:
 		row.add_child(cb)
 		flag_boxes[f] = cb
 
+	change_label = Label.new()
+	change_label.clip_text = true
+	change_label.custom_minimum_size.y = 36
+	change_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	change_label.add_theme_font_override("font", font)
+	_font(change_label, 13)
+	v.add_child(change_label)
+
 	var dp := HBoxContainer.new()
 	dp_row = dp
 	dp.add_theme_constant_override("separation", 14)
@@ -135,6 +146,8 @@ func _ready() -> void:
 	v.add_child(info_label)
 
 	holder.resized.connect(_fit)
+	Backend.program_loaded.connect(_on_program)
+	_on_program(Backend.program)
 	set_level(Level.current)
 	Level.changed.connect(func(): set_level(Level.current))
 	_apply_palette()
@@ -160,6 +173,7 @@ func _measure() -> void:
 		dp_labels[n].text = "%s 0x00000000" % n
 	info_label.text = "Next state: FETCH_ADDR (at instruction boundary)\nInstructions: 0   Cycles: 0"
 	info_label.custom_minimum_size.y = 36
+	change_label.custom_minimum_size.y = 36
 	base_size = content.get_combined_minimum_size()
 	info_label.text = old_info
 	holder.custom_minimum_size = base_size
@@ -197,6 +211,7 @@ func _fit() -> void:
 		for w in _widths:
 			w[0].custom_minimum_size.x = w[1] * s
 		info_label.custom_minimum_size.y = 36 * s
+		change_label.custom_minimum_size.y = 36 * s
 	content.position = Vector2.ZERO
 	content.size = Vector2(avail.x, maxf(avail.y, content.get_combined_minimum_size().y))
 
@@ -259,8 +274,9 @@ func update_state(st: Dictionary) -> void:
 		e.add_theme_color_override("font_color", Palette.c("changed") if hot else Palette.c("text"))
 		var val := int(st["regs"][i])
 		var sval := val - 0x100000000 if val >= 0x80000000 else val
-		e.tooltip_text = "%s = %s\n= %d (as a signed number: %d)\nbinary %s\nType a new value (0x… for hex, or decimal) and press Enter" % [
-			NAMES[i], Backend.hex32(val), val, sval, _binary(val)]
+		e.tooltip_text = "%s = %s\n= %d (as a signed number: %d)%s\nbinary %s\n%sType a new value (0x… for hex, or decimal) and press Enter" % [
+			NAMES[i], Backend.hex32(val), val, sval, _char_note(val), _binary(val),
+			("Changed by " + _cause(NAMES[i], st) + "\n") if hot else ""]
 	var flags: Dictionary = st["flags"]
 	for f in flag_boxes:
 		var cb: CheckBox = flag_boxes[f]
@@ -274,6 +290,7 @@ func update_state(st: Dictionary) -> void:
 		var fmt := "%s %s" % [n, Backend.hex16(dpv[n]) if n.begins_with("IR") else Backend.hex32(dpv[n])]
 		l.text = fmt
 		l.add_theme_color_override("font_color", Palette.c("changed") if changed.has(n) else Palette.c("dim"))
+	_show_changes(st)
 	var state_txt: String = st["next_state"]
 	var where := ""
 	if st["in_insn"]:
@@ -284,5 +301,82 @@ func update_state(st: Dictionary) -> void:
 		info_label.text = "Next state: %s (%s)\nInstructions: %d   Cycles: %d" % [
 			state_txt, where, int(st["steps"]), int(st["cycles"])]
 	else:
-		info_label.text = "Instructions run so far: %d" % int(st["steps"])
+		info_label.text = "Instructions run so far: %d" % (int(st["steps"]) - int(st.get("boot_steps", 0)))
 	info_label.tooltip_text = info_label.text
+
+
+func _on_program(prog: Dictionary) -> void:
+	_rows.clear()
+	for row in prog.get("listing", []):
+		_rows[int(row["addr"])] = row
+
+
+## "   'H'" for a value that is a printable character.
+static func _char_note(val: int) -> String:
+	if val >= 32 and val < 127:
+		return "   = the character '%s'" % char(val)
+	if val == 10:
+		return "   = the new line character"
+	return ""
+
+
+## What changed register `name`: an instruction of the program (with its
+## source line) or, when no single instruction did, the user's action.
+func _cause(name: String, st: Dictionary) -> String:
+	var by: Dictionary = st.get("changed_by", {})
+	if by.has(name):
+		var addr := int(by[name])
+		var row: Dictionary = _rows.get(addr, {})
+		var text := str(row.get("shown", row.get("text", "?"))).strip_edges()
+		text = " ".join(text.split(" ", false))
+		var line := int(row.get("line", 0))
+		if line > 0 and addr >= 0x3000:
+			# the line as the student wrote it, without its comment
+			var src := str(row.get("source", "")).get_slice("@", 0).get_slice("/*", 0).strip_edges()
+			return "%s   (line %d)" % [src if src != "" else text, line]
+		return "%s   (at %04X, the built-in OS)" % [text, addr]
+	match str(st.get("action", "")):
+		"call": return "the function call (Step over)"
+		"run": return "running the program"
+		"back": return "Step back"
+		"edit": return "your edit"
+	return "the last step"
+
+
+## A changed register's value in a few forms: decimal (signed if negative)
+## and the character for R0–R12; hex for SP, LR and PC (they hold addresses).
+func _value_note(i: int, val: int) -> String:
+	if i >= 13:
+		return Backend.hex32(val)
+	var t := str(val)
+	if val >= 0x80000000:
+		t = "%d (signed)" % (val - 0x100000000)
+	elif val > 9:
+		t += " = 0x%X" % val
+	if val >= 32 and val < 127:
+		t += " = '%s'" % char(val)
+	elif val == 10:
+		t += " = new line"
+	return t
+
+
+## The line under the flags: each register the last step changed (not the
+## PC, which every step changes), its new value and what changed it.
+func _show_changes(st: Dictionary) -> void:
+	var changed: Array = st.get("changed", [])
+	var lines: Array[String] = []
+	var more := 0
+	for i in 15:
+		if not changed.has(NAMES[i]):
+			continue
+		if lines.size() == 2:
+			more += 1
+			continue
+		lines.append("%s = %s   ← %s" % [NAMES[i], _value_note(i, int(st["regs"][i])), _cause(NAMES[i], st)])
+	if more > 0:
+		lines[1] += "   (+%d more)" % more
+	if st.get("running", false) and str(st.get("action", "")) == "run":
+		lines.clear()
+	change_label.text = "\n".join(lines)
+	change_label.tooltip_text = change_label.text
+	change_label.add_theme_color_override("font_color", Palette.c("changed"))

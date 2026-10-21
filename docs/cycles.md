@@ -53,3 +53,27 @@ cover.
 | `MSR APSR, R0` | 8 | new | DECODE → EXECUTE_COMMIT |
 
 Multi-register transfers (PUSH, POP, LDM, STM) take fetch (3) + DECODE + EVALUATE_ADDRESS + 2 per register + 1 WRITEBACK when the base register is updated.
+
+## Component usage (the heat map)
+
+The heat map (Performance ▸ Heat map, `picosim/heat.py`) counts how often each part of the datapath is used. A part is *used* in a clock cycle when that cycle's control signals make it work. These are the rules in `heat.cycle_components`, which match the CPU diagram:
+
+| Component | Used when the cycle has |
+|---|---|
+| FSM | every cycle |
+| IR, IMM / OFFSET (+ IR2 for 32-bit encodings) | DECODE; also `LD.IR` / `LD.IR2` |
+| PC | `GatePC`, `PCINC`, `LD.PC` |
+| +2 incrementer / PCMUX / CLR THUMB | `PCINC` / `PCMUX=` / `PCMUX=BUS` or `CLR THUMB BIT` |
+| ADDR1MUX, ADDR2MUX, address adder | `ADDR1MUX=` / `ADDR2MUX=` (`ADDR1MUX=PC` or `Align` also uses PC / Align(PC,4); an immediate `ADDR2MUX` uses IMM / OFFSET) |
+| MAR / MAR +4 | `LD.MAR`, `MEM.EN` or `MAR+4` / `MAR+4` |
+| Memory / I-O | `MEM.EN` |
+| MDR / LOAD EXT / STORE ALIGN | `LD.MDR`, `R/W=`, `GateMDR` / `GateMDR` / `STORE ALIGN` (or `LD.MDR` with `GateALU`) |
+| SR2MUX / ALU A, B latches / ALU | `SR2MUX=IMM` or `SR2=` in FETCH_OPERANDS / `LD.ALUA`, `LD.ALUB` / `ALUK=` outside DECODE |
+| Register file / SET THUMB | a read or write port, or `SET THUMB BIT` / `SET THUMB BIT` |
+| Flags, COND EVAL | `LD.CC` (writes) / `BranchTaken=` (reads) |
+| Bus and its buffers | any `Gate*` signal; each buffer for its own signal |
+| Register *n* read | `SR1=Rn`, `SR2=Rn` or `SR=Rn` outside DECODE (once per port); the PC by `GatePC`, `PCINC` or PC-relative addressing |
+| Register *n* write | `DR=Rn` with `LD.REG`; SP by `LD.SP`; LR by `LD.LR`; PC by `LD.PC` |
+| Flag reads / writes | the flags a condition code tests (`COND=`), and C for ADC/SBC / the flags the ALU operation sets (ADD, SUB, CMP, CMN, NEG, ADC, SBC: NZCV; shifts: NZC; others: NZ) |
+
+Each encoding is clocked once on a scratch core, separately for a taken and a not-taken B<cond>, and multiplied by how often it ran. `tests/test_heat.py` checks that this gives exactly the counts from clocking every example cycle by cycle. The 2-stage pipeline's usage is an estimate built from the Table 81 cycle counts above.

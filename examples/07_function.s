@@ -7,6 +7,10 @@
 @   A function that calls another one must first save LR on the stack with
 @   PUSH, and returns with POP {PC}. Watch LR, SP and the PC, and the stack
 @   in the Memory tab.
+@
+@ Your turn (picosim checks it when the program finishes)
+@ Challenge: Make it print 4 and then 8, using twice for both numbers.
+@ Expect: output "48\n"
 
         .syntax unified
         .cpu cortex-m0plus

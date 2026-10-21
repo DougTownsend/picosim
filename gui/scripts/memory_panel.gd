@@ -1,6 +1,7 @@
 extends PanelContainer
 ## Bottom-left memory view.
 ##   Disassembly — follows the PC; click the ● column to toggle a breakpoint.
+##                 The Source column is the line of the .s file each row came from.
 ##   Memory      — hex dump with go-to, byte editing and a stack view.
 
 var tabs: TabContainer
@@ -18,7 +19,7 @@ var write_data: LineEdit
 var hex_addr := 0x3000
 var _dim_labels: Array[Label] = []
 const COLUMNS := [[0, "", 22, false], [1, "Address", 86, false], [2, "Raw", 96, false],
-	[3, "Label", 110, false], [4, "Instruction", 200, true]]
+	[3, "Label", 100, false], [4, "Instruction", 190, false], [5, "Source (line in your file)", 220, true]]
 const HEX_LINE := "0000    00 01 02 03 04 05 06 07  08 09 0A 0B 0C 0D 0E 0F  ................"
 
 
@@ -71,6 +72,7 @@ func _color_row(it: TreeItem) -> void:
 	it.set_custom_color(1, Palette.c("dim"))
 	it.set_custom_color(2, Palette.c("dim"))
 	it.set_custom_color(3, Palette.c("label"))
+	it.set_custom_color(5, Palette.c("muted"))
 
 
 func _build_disasm() -> Control:
@@ -91,7 +93,7 @@ func _build_disasm() -> Control:
 
 	tree = Tree.new()
 	tree.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	tree.columns = 5
+	tree.columns = COLUMNS.size()
 	tree.hide_root = true
 	tree.column_titles_visible = true
 	tree.select_mode = Tree.SELECT_SINGLE
@@ -189,7 +191,12 @@ func set_program(prog: Dictionary) -> void:
 		it.set_text(1, "%04X" % a)
 		it.set_text(2, row["raw"])
 		it.set_text(3, row["label"])
-		it.set_text(4, row["text"])
+		it.set_text(4, row.get("shown", row["text"]))
+		var line := int(row.get("line", 0))
+		if line > 0:
+			it.set_text(5, "%3d   %s" % [line, row["source"]])
+			it.set_tooltip_text(5, "Line %d of %s:\n%s" % [line,
+				"the built-in OS (os.s)" if int(row["addr"]) < 0x3000 else "your file", row["source"]])
 		_color_row(it)
 		it.set_metadata(0, a)
 		it.set_tooltip_text(0, "Toggle breakpoint")
@@ -218,13 +225,13 @@ func update_state(st: Dictionary) -> void:
 		var it: TreeItem = items[a]
 		it.set_text(0, "●" if bps.has(a) else "")
 	if cur_item != null:
-		for c in 5:
+		for c in COLUMNS.size():
 			cur_item.clear_custom_bg_color(c)
 		cur_item.set_text(1, "%04X" % int(cur_item.get_metadata(0)))
 	var addr := int(st["insn_addr"])
 	cur_item = items.get(addr)
 	if cur_item != null:
-		for c in 5:
+		for c in COLUMNS.size():
 			cur_item.set_custom_bg_color(c, Palette.c("pc_row"))
 		cur_item.set_text(1, "▶%04X" % addr)
 		if follow.button_pressed:

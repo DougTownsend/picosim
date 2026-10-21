@@ -151,6 +151,34 @@ def _escape(b):
     return ''.join(esc.get(c, chr(c)) for c in b)
 
 
+def source_lines(path, source_name):
+    """{address: line number} for the instructions assembled from the file
+    named `source_name` (its base name), from the ELF's DWARF line table.
+    Empty if the ELF has no line information."""
+    out = {}
+    want = os.path.basename(source_name).encode()
+    with open(path, 'rb') as f:
+        elf = ELFFile(f)
+        if not elf.has_dwarf_info():
+            return out
+        dwarf = elf.get_dwarf_info()
+        for cu in dwarf.iter_CUs():
+            lp = dwarf.line_program_for_CU(cu)
+            if lp is None:
+                continue
+            files = lp['file_entry']
+            ver = lp['version']
+            for entry in lp.get_entries():
+                st = entry.state
+                if st is None or st.end_sequence:
+                    continue
+                # DWARF 5 numbers files from 0, earlier versions from 1
+                i = st.file if ver >= 5 else st.file - 1
+                if 0 <= i < len(files) and os.path.basename(files[i].name) == want:
+                    out.setdefault(st.address, st.line)
+    return out
+
+
 def elf_symbol(path, names):
     """Address of the first of `names` defined in the ELF at `path`, or None."""
     with open(path, 'rb') as f:
@@ -389,7 +417,9 @@ def _script_dir():
 
 
 def assemble(s_file, elf_file, ld_file, extra_s_files=None, extra_ld_flags=None):
-    """Assemble and link a .s file.  Returns (ok, message)."""
+    """Assemble and link a .s file.  Returns (ok, message).  Line-number debug
+    info (-g) is always included, so the GUI can show each instruction's
+    source line (see source_lines)."""
     import subprocess, shutil
     if shutil.which('arm-none-eabi-gcc') is None:
         return False, ("arm-none-eabi-gcc not found on PATH.\n"
@@ -398,6 +428,7 @@ def assemble(s_file, elf_file, ld_file, extra_s_files=None, extra_ld_flags=None)
         'arm-none-eabi-gcc',
         '-mcpu=cortex-m0plus', '-mthumb',
         '-nostdlib',
+        '-g',                   # DWARF line table: address -> source line
         '-Wa,--keep-locals',    # keep .L* labels in the assembler object
         '-Wl,--discard-none',   # prevent the linker from stripping them
         '-T', ld_file,

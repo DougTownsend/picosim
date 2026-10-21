@@ -44,7 +44,7 @@ class Pipeline:
         if new <= 0:
             return
         recs = [r for r in c.recent(min(new, 512)) if r['seq'] > self.seq]
-        sch = timing.schedule('pico2', recs, 1, self.asm, t0=self.total)
+        sch = timing.schedule('m0plus', recs, 1, self.asm, t0=self.total)
         self.rows.extend(sch['rows'])
         del self.rows[:-KEEP]
         self.total = sch['total']

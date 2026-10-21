@@ -155,6 +155,18 @@ public:
     uint64_t recent_n = 0;            // records written so far
     std::vector<AddrProf> prof = std::vector<AddrProf>(0x8000);
 
+    // Instruction trace for the heat map's timeline (picosim/heat.py): one
+    // uint16 per completed instruction, (address/2 & 0x7FFF) << 1 | taken.
+    // Off until itrace_enable(cap); entries past the cap are not kept.
+    std::vector<uint16_t> itrace;
+    size_t   itrace_cap = 0;
+    uint64_t itrace_dropped = 0;
+    // heat_set_table(): for each trace code, the component indices used in
+    // each of its clock cycles (an index repeats when used twice)
+    std::vector<std::vector<std::vector<uint16_t>>> heat_cycles =
+        std::vector<std::vector<std::vector<uint16_t>>>(0x10000);
+    size_t   heat_ncomp = 0;
+
     void note_access(uint32_t addr, bool write) {
         if (!count_data) return;
         uint8_t* c = write ? cur_rec.writes : cur_rec.reads;
@@ -181,6 +193,47 @@ public:
         a.taken += cur_rec.cond_taken;
         a.hw1 = cur_rec.hw1; a.hw2 = cur_rec.hw2;
         for (int i = 0; i < 4; ++i) { a.reads[i] += cur_rec.reads[i]; a.writes[i] += cur_rec.writes[i]; }
+        if (itrace_cap) {
+            if (itrace.size() < itrace_cap)
+                itrace.push_back((uint16_t)((((_insn_addr >> 1) & 0x7FFF) << 1) | (cur_rec.cond_taken ? 1 : 0)));
+            else
+                itrace_dropped++;
+        }
+    }
+
+    // Component use per bucket of `bucket` clock cycles over cycles
+    // [start, end) of the traced run: a flat vector, bucket-major, of
+    // heat_ncomp counts per bucket.  Cycles are numbered from the first
+    // traced instruction; a trace code with no table entry ends the walk.
+    std::vector<uint32_t> heat_timeline(uint64_t start, uint64_t end, uint64_t bucket) const {
+        if (bucket == 0) bucket = 1;
+        uint64_t nb = end > start ? (end - start + bucket - 1) / bucket : 0;
+        std::vector<uint32_t> out(nb * heat_ncomp, 0);
+        uint64_t t = 0;
+        for (uint16_t code : itrace) {
+            const auto& cyc = heat_cycles[code];
+            if (cyc.empty()) break;
+            uint64_t len = cyc.size();
+            if (t + len <= start) { t += len; continue; }
+            if (t >= end) break;
+            for (uint64_t k = 0; k < len; ++k, ++t) {
+                if (t < start || t >= end) continue;
+                uint32_t* row = &out[((t - start) / bucket) * heat_ncomp];
+                for (uint16_t ci : cyc[k]) if (ci < heat_ncomp) row[ci]++;
+            }
+        }
+        return out;
+    }
+
+    // Total clock cycles the trace covers (codes with a table entry).
+    uint64_t heat_trace_cycles() const {
+        uint64_t t = 0;
+        for (uint16_t code : itrace) {
+            const auto& cyc = heat_cycles[code];
+            if (cyc.empty()) break;
+            t += cyc.size();
+        }
+        return t;
     }
 
     void reset_profile() {
@@ -2038,6 +2091,28 @@ PYBIND11_MODULE(_picosim_core, m) {
             }
             return out;
         }, "Per-address execution totals: execs, branched, data reads/writes by region [RAM, SIO, APB, AHB].")
+        .def("itrace_enable", [](CPUCore& s, size_t cap) {
+            s.itrace_cap = cap; s.itrace.clear(); s.itrace_dropped = 0;
+            if (cap) s.itrace.reserve(std::min<size_t>(cap, 1u << 20));
+        }, py::arg("cap"), "Record every completed instruction (address/2 << 1 | taken), up to cap entries; 0 turns it off.")
+        .def("itrace_len", [](const CPUCore& s) { return s.itrace.size(); })
+        .def_readonly("itrace_dropped", &CPUCore::itrace_dropped)
+        .def("itrace", [](const CPUCore& s, size_t start, size_t n) {
+            size_t a = std::min(start, s.itrace.size());
+            size_t b = std::min(s.itrace.size(), a + n);
+            return std::vector<uint16_t>(s.itrace.begin() + a, s.itrace.begin() + b);
+        }, py::arg("start") = 0, py::arg("n") = (size_t)-1, "Trace codes [start, start+n).")
+        .def("heat_set_table", [](CPUCore& s, const std::vector<std::pair<uint16_t, std::vector<std::vector<uint16_t>>>>& entries, size_t ncomp) {
+            for (auto& v : s.heat_cycles) v.clear();
+            for (const auto& e : entries) s.heat_cycles[e.first] = e.second;
+            s.heat_ncomp = ncomp;
+        }, py::arg("entries"), py::arg("ncomp"), "For each trace code: the component indices of each of its cycles.")
+        .def("heat_timeline", [](const CPUCore& s, uint64_t start, uint64_t end, uint64_t bucket) {
+            std::vector<uint32_t> v;
+            { py::gil_scoped_release release; v = s.heat_timeline(start, end, bucket); }
+            return v;
+        }, py::arg("start"), py::arg("end"), py::arg("bucket"), "Component use per bucket over traced cycles [start, end).")
+        .def("heat_trace_cycles", &CPUCore::heat_trace_cycles)
         .def("recent", [](const CPUCore& s, size_t n) {
             // the last n completed instructions, oldest first
             py::list out;

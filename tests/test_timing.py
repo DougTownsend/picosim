@@ -126,25 +126,25 @@ class Table81Test(unittest.TestCase):
         for name, hw1, hw2, regs, flags, want in TABLE81:
             with self.subTest(row=name):
                 rec = run_one(hw1, hw2, regs, flags)
-                self.assertEqual(timing.cycles('pico2', hw1, hw2, rec), want)
+                self.assertEqual(timing.cycles('m0plus', hw1, hw2, rec), want)
 
     def test_single_cycle_io_port(self):
         # "2 if to AHB interface or SCS, 1 if to single-cycle I/O port"
         rec = run_one(0x6842, regs={0: 0xD0000000})          # LDR r2, [r0, #4] -> SIO
-        self.assertEqual(timing.cycles('pico2', 0x6842, 0, rec), 1)
+        self.assertEqual(timing.cycles('m0plus', 0x6842, 0, rec), 1)
         rec = run_one(0x6042, regs={0: 0xD0000010})          # STR r2, [r0, #4] -> SIO
-        self.assertEqual(timing.cycles('pico2', 0x6042, 0, rec), 1)
+        self.assertEqual(timing.cycles('m0plus', 0x6042, 0, rec), 1)
         rec = run_one(0x6842, regs={0: 0x40014000})          # APB: Table 81 still says 2
-        self.assertEqual(timing.cycles('pico2', 0x6842, 0, rec), 2)
+        self.assertEqual(timing.cycles('m0plus', 0x6842, 0, rec), 2)
         self.assertEqual(rec['reads'][timing.RG_APB], 1)
 
     def test_iterative_multiplier(self):
         rec = run_one(0x4348)
-        self.assertEqual(timing.cycles('pico2', 0x4348, 0, rec, mul_cycles=32), 32)
+        self.assertEqual(timing.cycles('m0plus', 0x4348, 0, rec, mul_cycles=32), 32)
         self.assertEqual(timing.cycles('multicycle', 0x4348, 0, rec, mul_cycles=32), 6 + 31)
 
     def test_untimed(self):
-        self.assertIsNone(timing.cycles('pico2', 0xDF02, 0, run_one(0xDF02)))   # SVC
+        self.assertIsNone(timing.cycles('m0plus', 0xDF02, 0, run_one(0xDF02)))   # SVC
         self.assertIsNone(timing.pico_row(0xBE00)[2])                          # BKPT
 
     def test_three_stage_branch_penalty(self):
@@ -153,7 +153,7 @@ class Table81Test(unittest.TestCase):
                                        (0x1842, 0, None, 0), (0x6842, 0, None, 0)]:
             rec = run_one(hw1, hw2, flags=flags)
             self.assertEqual(timing.cycles('pipe3', hw1, hw2, rec),
-                             timing.cycles('pico2', hw1, hw2, rec) + extra, hex(hw1))
+                             timing.cycles('m0plus', hw1, hw2, rec) + extra, hex(hw1))
 
 
 class ProfileTest(unittest.TestCase):
@@ -189,7 +189,7 @@ class ProfileTest(unittest.TestCase):
             h.core.step()
             h.core.check_halt()
         recs = h.core.recent(200)
-        for m in ('pico2', 'pipe3'):
+        for m in ('m0plus', 'pipe3'):
             sch = timing.schedule(m, recs)
             busy = set()
             total = 0

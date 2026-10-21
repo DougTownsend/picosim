@@ -3,7 +3,7 @@ Cycle timing of three machines that run the same ARMv6-M program.
 
   multicycle  the course's multi-cycle teaching datapath (the CPU diagram).
               Exact: the cycles the C++ FSM actually clocks.
-  pico2       the RP2040's Cortex-M0+, a 2-stage pipeline (fetch | decode +
+  m0plus      the RP2040's Cortex-M0+, a 2-stage pipeline (fetch | decode +
               execute).  Cycle counts are RP2040 datasheet Table 81
               ("Cortex-M0+ instruction summary"), which assumes zero wait
               states: code and data in SRAM (or the XIP cache hitting).
@@ -32,11 +32,11 @@ from ._picosim_core import CPUCore
 
 REGIONS = ('RAM', 'SIO', 'APB', 'AHB')
 RG_SIO, RG_APB = 1, 2
-MACHINES = ('multicycle', 'pico2', 'pipe3')
+MACHINES = ('multicycle', 'm0plus', 'pipe3')
 MACHINE_NAMES = {'multicycle': 'Multi-cycle (teaching datapath)',
-                 'pico2': '2-stage pipeline (RP2040 Cortex-M0+)',
+                 'm0plus': '2-stage pipeline (RP2040 Cortex-M0+)',
                  'pipe3': '3-stage pipeline (teaching)'}
-DEPTH = {'pico2': 2, 'pipe3': 3}
+DEPTH = {'m0plus': 2, 'pipe3': 3}
 PICO_CLOCK_MHZ = 125          # the Pico SDK's default system clock for RP2040
 
 

@@ -6,6 +6,10 @@
 @   CMP subtracts two numbers only to set the flags N Z C V; it keeps no
 @   result. BNE ("branch if not equal") jumps back to loop while Z = 0.
 @   Step through: the Z flag turns on when R4 reaches 6, and the loop ends.
+@
+@ Your turn (picosim checks it when the program finishes)
+@ Challenge: Make it count up to 9, printing 123456789.
+@ Expect: output "123456789\n"
 
         .syntax unified
         .cpu cortex-m0plus

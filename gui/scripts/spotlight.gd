@@ -3,6 +3,8 @@ extends Control
 ## the Level, main.gd calls show_new() with the new buttons and panels, and
 ## each gets a pulsing outline and a small NEW tag for a few seconds, then
 ## fades out.  It sits on top of the whole window and never takes a click.
+## The first-run tour (tour.gd) uses hold() instead: one outline, no tag,
+## until release().
 
 const DURATION := 7.0     # seconds the outlines stay
 const FADE := 1.5         # the last seconds fade out
@@ -10,6 +12,7 @@ const PULSE_HZ := 1.1
 
 var _targets: Array = []  # Controls
 var _t := 0.0
+var _held := false        # hold(): stay until release(), without the NEW tag
 var _font: Font
 
 
@@ -23,21 +26,35 @@ func _ready() -> void:
 ## Outline `controls` for a few seconds (the ones not on screen are skipped).
 func show_new(controls: Array) -> void:
 	_targets = controls.filter(func(c): return c is Control and is_instance_valid(c))
+	_held = false
 	_t = 0.0
 	set_process(not _targets.is_empty())
 	queue_redraw()
 
 
+## Outline `controls` until release() (the tour's coach marks).
+func hold(controls: Array) -> void:
+	show_new(controls)
+	_held = true
+
+
+func release() -> void:
+	_held = false
+	_targets.clear()
+	set_process(false)
+	queue_redraw()
+
+
 func _process(delta: float) -> void:
 	_t += delta
-	if _t >= DURATION:
+	if _t >= DURATION and not _held:
 		_targets.clear()
 		set_process(false)
 	queue_redraw()
 
 
 func _draw() -> void:
-	var fade := clampf((DURATION - _t) / FADE, 0.0, 1.0)
+	var fade := 1.0 if _held else clampf((DURATION - _t) / FADE, 0.0, 1.0)
 	var pulse := 0.6 + 0.4 * sin(_t * TAU * PULSE_HZ)
 	var col := Palette.c("changed")
 	var ink := Palette.c("bg")
@@ -55,6 +72,8 @@ func _draw() -> void:
 		box.set_border_width_all(3)
 		box.set_corner_radius_all(6)
 		draw_style_box(box, r)
+		if _held:
+			continue
 		# a NEW tag on the top-right corner, kept inside the window
 		var fs := 11
 		var w := _font.get_string_size("NEW", HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + 12

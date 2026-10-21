@@ -61,6 +61,18 @@ const SCHEMES := {
 	},
 }
 
+## Heat-map ramps (the dataviz reference palette).  Sequential: one hue
+## (blue), the lightest step for "little" on a light surface and the
+## darkest on a dark one, so low use recedes into the background.
+## Diverging (before/after): blue = less, red = more, a neutral grey at
+## zero; both arms step through the same lightness (checked in OKLab).
+const SEQ_BLUE := ["cde2fb", "b7d3f6", "9ec5f4", "86b6ef", "6da7ec", "5598e7", "3987e5",
+	"2a78d6", "256abf", "1c5cab", "184f95", "104281", "0d366b"]
+const DIV_BLUE := ["b7d3f6", "86b6ef", "5598e7", "2a78d6", "1c5cab", "104281"]   # light → dark
+const DIV_RED := ["f7c0bd", "ee918c", "e66767", "cf3a3a", "a02a2a", "721c1c"]
+const DIV_MID_LIGHT := "f0efec"
+const DIV_MID_DARK := "383835"
+
 var preference := "system"    # what the user picked: "system" or a scheme
 var current := "blue"          # the scheme in use
 var ui_theme: Theme = null    # null in "blue": Godot's default control theme
@@ -108,6 +120,31 @@ func hex(key: String) -> String:
 
 func is_light() -> bool:
 	return current == "light"
+
+
+## Sequential heat colour for t in 0..1 (0 = least used).
+func heat(t: float) -> Color:
+	var steps: Array = SEQ_BLUE if is_light() else SEQ_BLUE.duplicate()
+	if not is_light():
+		steps.reverse()           # dark surface: low use is dark, high use bright
+	return _ramp(steps, clampf(t, 0.0, 1.0))
+
+
+## Diverging colour for t in -1..1: blue below zero, red above, grey at 0.
+func diverging(t: float) -> Color:
+	t = clampf(t, -1.0, 1.0)
+	var mid := DIV_MID_LIGHT if is_light() else DIV_MID_DARK
+	var arm: Array = (DIV_RED if t > 0 else DIV_BLUE).duplicate()
+	if not is_light():
+		arm.reverse()             # on dark, the poles are the bright steps
+	arm.push_front(mid)
+	return _ramp(arm, absf(t))
+
+
+func _ramp(steps: Array, t: float) -> Color:
+	var x := t * (steps.size() - 1)
+	var i := mini(int(x), steps.size() - 2)
+	return Color(steps[i]).lerp(Color(steps[i + 1]), x - i)
 
 
 ## Pick a scheme by name, or "system" to follow the OS; the choice is saved.
