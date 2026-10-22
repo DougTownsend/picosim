@@ -60,6 +60,7 @@ const ANIM_FILL := 0.85
 const ANIM_STEP := 1.6
 const ANIM_MIN := 0.35
 const ANIM_RUN_MIN := 0.06   # running faster than this per cycle → no animation
+const RUN_FRAME := 1.0 / 30.0  # seconds between pulse frames while Run is on (a step gets every frame)
 const TAIL := 70.0           # glow tail length, virtual units
 
 ## id: [x, y, w, h, label, shape, tooltip]
@@ -456,11 +457,17 @@ func set_speed(v: int) -> void:
 	cps = v
 
 
+var _since_draw := 0.0
+
 func _process(delta: float) -> void:
 	_dist += _speed * delta
+	_since_draw += delta
 	if _dist >= _total + TAIL:
 		_dist = INF
 		set_process(false)
+	elif st.get("running", false) and _since_draw < RUN_FRAME:
+		return   # while Run is on, the pulse is redrawn at 30 frames a second
+	_since_draw = 0.0
 	queue_redraw()
 
 

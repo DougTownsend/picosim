@@ -18,6 +18,7 @@ const SettingsDialog := preload("res://scripts/settings_dialog.gd")
 const Spotlight := preload("res://scripts/spotlight.gd")
 const Tour := preload("res://scripts/tour.gd")
 const ChallengeBar := preload("res://scripts/challenge_bar.gd")
+const ExplainPanel := preload("res://scripts/explain_panel.gd")
 const MACHINES := ["multicycle", "m0plus"]
 
 ## Clock-speed presets (cycles per second); 0 = as fast as possible.
@@ -42,6 +43,8 @@ var mem_panel
 var console_panel
 var diagram
 var cycle_panel
+var explain_panel                # "Explain this step", above the right column
+var explain_split: VSplitContainer
 var pipe_view
 var pipe_caption: RichTextLabel
 var caption_panel: PanelContainer
@@ -104,6 +107,7 @@ var _screenshot_wait := 40       # frames to let the UI settle before --screensh
 var _demo_cycles := 0
 var _demo_steps := 0              # --demo-steps N: press Step N times
 var _demo_back := 0               # --demo-back N: then Step back N times
+var _demo_run := -1               # --demo-run CPS: press Run at that speed (0 = Max)
 var _demo_click_pin := 0
 var _demo_component := ""
 var _demo_click_gate := ""        # --demo-click-gate ID: click that buffer with a real mouse event
@@ -151,6 +155,8 @@ func _ready() -> void:
 			_demo_steps = int(args[i + 1])
 		if args[i] == "--demo-back" and i + 1 < args.size():
 			_demo_back = int(args[i + 1])
+		if args[i] == "--demo-run" and i + 1 < args.size():
+			_demo_run = int(args[i + 1])
 		if args[i] == "--demo-click-pin" and i + 1 < args.size():
 			_demo_click_pin = int(args[i + 1])
 		if args[i] == "--demo-click-gate" and i + 1 < args.size():
@@ -199,6 +205,11 @@ func _process(_delta: float) -> void:
 			Backend.send("step_back")
 		_demo_steps = 0
 		_demo_back = 0
+	if _demo_run >= 0 and Backend.state.get("loaded", false):
+		var cps := _demo_run
+		_demo_run = -1
+		# after the level's set_options, which may load the program again
+		get_tree().create_timer(1.0).timeout.connect(func(): Backend.send("run", {"cps": cps}))
 	if _demo_click_pin > 0 and Backend.state.get("loaded", false) and _screenshot_frames == 20:
 		pico_view.demo_click(_demo_click_pin)
 		_demo_click_pin = 0
@@ -280,10 +291,19 @@ func _build_ui() -> void:
 	pico_home = lower
 	pico_view.fullscreen_toggled.connect(_on_pico_fullscreen)
 
-	# right column: diagram on top; cycle inspector + console underneath
+	# right column: "Explain this step" on top (it folds away), then the
+	# diagram, then the cycle inspector + console underneath
+	explain_split = VSplitContainer.new()
+	explain_split.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hsplit.add_child(explain_split)
+	explain_panel = ExplainPanel.new()
+	explain_split.add_child(explain_panel)
 	right_split = VSplitContainer.new()
 	right_split.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	hsplit.add_child(right_split)
+	right_split.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	explain_split.add_child(right_split)
+	explain_split.collapsed = not explain_panel.is_open
+	explain_panel.toggled_open.connect(func(on): explain_split.collapsed = not on)
 
 	# the multi-cycle datapath and the 2-stage pipeline share one area
 	diagram_area = MarginContainer.new()   # stacks its children, full size
@@ -519,12 +539,14 @@ func _build_toolbar() -> Control:
 	return bar
 
 
-## The five coach marks of the first-run tour (tour.gd).
+## The six coach marks of the first-run tour (tour.gd).
 func _start_tour() -> void:
 	level_bar.visible = false
 	tour.start([
 		[btn_insn, "Step through your program",
 			"Press [b]Step instruction[/b] (or the [b]S[/b] key) to run one line of your program, then look at what changed. [b]◀ Step back[/b] ([b]B[/b]) undoes a step, so try things freely. [b]Run[/b] ([b]Space[/b]) lets the program go by itself."],
+		[explain_panel, "Explain this step",
+			"After every step this panel says in plain words what the processor just did, and what the next step will do: where the program goes next and why. Tick [b]More detail[/b] to see exactly what changed. Click its title to fold it away."],
 		[regs_panel, "Registers",
 			"The CPU's 16 registers, the numbers it is working on. Whatever the last step changed turns [color={yellow}]yellow[/color], and the line under the flags says which line of your file changed it."],
 		[mem_panel, "Your program",
@@ -694,7 +716,7 @@ func _apply_level() -> void:
 func _setup_text_scaling() -> void:
 	for sp in find_children("*", "SplitContainer", true, false):
 		sp.dragged.connect(func(_offset): _drag_frame = Engine.get_process_frames())
-	for panel in [mem_panel, cycle_panel, console_panel, diagram]:
+	for panel in [mem_panel, cycle_panel, console_panel, diagram, explain_panel]:
 		var fonts := []
 		for c in [panel] + panel.find_children("*", "Control", true, false):
 			for item in FONT_ITEMS:
@@ -1023,6 +1045,7 @@ func _on_state(st: Dictionary) -> void:
 	pico_view.update_state(st)
 	console_panel.update_state(st)
 	cycle_panel.update_state(st)
+	explain_panel.update_state(st)
 	diagram.update_state(st)
 	var m := MACHINES.find(str(st.get("machine", "multicycle")))
 	if m >= 0 and m != machine_select.selected:
@@ -1031,9 +1054,11 @@ func _on_state(st: Dictionary) -> void:
 	pipe_view.update_state(st)
 	var p = st.get("pipe")
 	if p is Dictionary:
-		var scroll := pipe_caption.get_v_scroll_bar().value
-		pipe_caption.text = PipelineView.caption(p)
-		pipe_caption.get_v_scroll_bar().value = scroll
+		var cap := PipelineView.caption(p)
+		if cap != pipe_caption.text:   # parsing BBCode again is the costly part
+			var scroll := pipe_caption.get_v_scroll_bar().value
+			pipe_caption.text = cap
+			pipe_caption.get_v_scroll_bar().value = scroll
 	_update_controls()
 	var loaded: bool = st.get("loaded", false)
 	if loaded == welcome.visible:
@@ -1138,13 +1163,13 @@ func _on_palette() -> void:
 
 func _set_status(text: String, bad: bool) -> void:
 	_status_bad = bad
-	status_label.text = text
+	Backend.set_text(status_label, text)
 	status_label.tooltip_text = text
 	var font := status_label.get_theme_font("font")
 	var fsize := status_label.get_theme_font_size("font_size")
 	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize).x
 	status_label.custom_minimum_size.x = maxf(260.0, ceilf(w) + 4.0)
-	status_label.add_theme_color_override("font_color", Palette.c("error") if bad else Palette.c("muted"))
+	Backend.set_color(status_label, "font_color", Palette.c("error") if bad else Palette.c("muted"))
 
 
 func _update_controls() -> void:

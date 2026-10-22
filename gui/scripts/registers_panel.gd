@@ -32,6 +32,7 @@ var base_size := Vector2.ZERO    # content's minimum size at scale 1
 var ui_scale := 1.0
 var _fonts: Array = []           # [control, theme item, base size]
 var _widths: Array = []          # [control, base minimum width]
+var _tip_keys := []              # per register: what its tooltip was last built from
 
 
 func _ready() -> void:
@@ -268,28 +269,32 @@ func update_state(st: Dictionary) -> void:
 	var changed: Array = st.get("changed", [])
 	for i in 16:
 		var e := reg_edits[i]
-		if not e.has_focus():
-			e.text = _fmt(int(st["regs"][i]))
-		var hot := changed.has(NAMES[i])
-		e.add_theme_color_override("font_color", Palette.c("changed") if hot else Palette.c("text"))
 		var val := int(st["regs"][i])
-		var sval := val - 0x100000000 if val >= 0x80000000 else val
-		e.tooltip_text = "%s = %s\n= %d (as a signed number: %d)%s\nbinary %s\n%sType a new value (0x… for hex, or decimal) and press Enter" % [
-			NAMES[i], Backend.hex32(val), val, sval, _char_note(val), _binary(val),
-			("Changed by " + _cause(NAMES[i], st) + "\n") if hot else ""]
+		if not e.has_focus():
+			Backend.set_text(e, _fmt(val))
+		var hot := changed.has(NAMES[i])
+		Backend.set_color(e, "font_color", Palette.c("changed") if hot else Palette.c("text"))
+		var cause := _cause(NAMES[i], st) if hot else ""
+		var key := [val, cause]
+		_tip_keys.resize(16)
+		if _tip_keys[i] != key:   # the tooltip only changes with these
+			_tip_keys[i] = key
+			var sval := val - 0x100000000 if val >= 0x80000000 else val
+			e.tooltip_text = "%s = %s\n= %d (as a signed number: %d)%s\nbinary %s\n%sType a new value (0x… for hex, or decimal) and press Enter" % [
+				NAMES[i], Backend.hex32(val), val, sval, _char_note(val), _binary(val),
+				("Changed by " + cause + "\n") if hot else ""]
 	var flags: Dictionary = st["flags"]
 	for f in flag_boxes:
 		var cb: CheckBox = flag_boxes[f]
 		cb.set_pressed_no_signal(int(flags[f]) != 0)
 		var fc := Palette.c("changed") if changed.has(f) else Palette.c("text")
-		cb.add_theme_color_override("font_color", fc)
-		cb.add_theme_color_override("font_pressed_color", fc)
+		Backend.set_color(cb, "font_color", fc)
+		Backend.set_color(cb, "font_pressed_color", fc)
 	var dpv: Dictionary = st["datapath"]
 	for n in DP_NAMES:
 		var l: Label = dp_labels[n]
-		var fmt := "%s %s" % [n, Backend.hex16(dpv[n]) if n.begins_with("IR") else Backend.hex32(dpv[n])]
-		l.text = fmt
-		l.add_theme_color_override("font_color", Palette.c("changed") if changed.has(n) else Palette.c("dim"))
+		Backend.set_text(l, "%s %s" % [n, Backend.hex16(dpv[n]) if n.begins_with("IR") else Backend.hex32(dpv[n])])
+		Backend.set_color(l, "font_color", Palette.c("changed") if changed.has(n) else Palette.c("dim"))
 	_show_changes(st)
 	var state_txt: String = st["next_state"]
 	var where := ""
@@ -298,10 +303,10 @@ func update_state(st: Dictionary) -> void:
 	else:
 		where = "at instruction boundary"
 	if Level.at_least(3):
-		info_label.text = "Next state: %s (%s)\nInstructions: %d   Cycles: %d" % [
-			state_txt, where, int(st["steps"]), int(st["cycles"])]
+		Backend.set_text(info_label, "Next state: %s (%s)\nInstructions: %d   Cycles: %d" % [
+			state_txt, where, int(st["steps"]), int(st["cycles"])])
 	else:
-		info_label.text = "Instructions run so far: %d" % (int(st["steps"]) - int(st.get("boot_steps", 0)))
+		Backend.set_text(info_label, "Instructions run so far: %d" % (int(st["steps"]) - int(st.get("boot_steps", 0))))
 	info_label.tooltip_text = info_label.text
 
 
@@ -377,6 +382,6 @@ func _show_changes(st: Dictionary) -> void:
 		lines[1] += "   (+%d more)" % more
 	if st.get("running", false) and str(st.get("action", "")) == "run":
 		lines.clear()
-	change_label.text = "\n".join(lines)
+	Backend.set_text(change_label, "\n".join(lines))
 	change_label.tooltip_text = change_label.text
-	change_label.add_theme_color_override("font_color", Palette.c("changed"))
+	Backend.set_color(change_label, "font_color", Palette.c("changed"))

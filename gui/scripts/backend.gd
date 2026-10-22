@@ -154,6 +154,21 @@ func _exit_tree() -> void:
 
 # ── helpers shared by the panels ────────────────────────────────────────────
 
+## Set a Label's, LineEdit's or Button's text only when it differs: setting
+## it reshapes the text and lays the panel out again, even to the same value,
+## and states arrive up to 30 times a second while a program runs.
+static func set_text(c: Control, s: String) -> void:
+	if c.text != s:
+		c.text = s
+
+
+## Override a theme colour only when it differs (an override change makes the
+## control and its container lay themselves out again).
+static func set_color(c: Control, item: StringName, col: Color) -> void:
+	if not c.has_theme_color_override(item) or c.get_theme_color(item) != col:
+		c.add_theme_color_override(item, col)
+
+
 static func hex32(v: Variant) -> String:
 	return "0x%08X" % int(v)
 

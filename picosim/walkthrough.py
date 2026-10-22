@@ -141,6 +141,14 @@ class Walkthrough:
         self.output = ''
         self.core.svc_handler = self._svc
 
+    @classmethod
+    def describer(cls, prog):
+        """Only the wording (summary, explain) for a program that is already
+        loaded; its machine is left alone (explain.py uses this)."""
+        w = cls.__new__(cls)
+        w.prog = prog
+        return w
+
     def _svc(self, num):
         c = self.core
         if num == 2:

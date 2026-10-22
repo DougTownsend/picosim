@@ -24,6 +24,11 @@ extends Node
 ## The topic list follows the Level menu (level.gd): a section or topic above
 ## the current level is left out of the list, but its page still opens from a
 ## link, so nothing a lower-level page mentions is ever a dead end.
+##
+## Every page opens with a short version (two paragraphs at most, see
+## _summaries) that covers what a student must know; "Show the full details"
+## folds out the rest of the page: step-by-step instructions, every option
+## and the exact values.  Which pages are unfolded is kept until picosim closes.
 
 const INFO_PATH := "res://scripts/component_info.gd"
 const STATES_PATH := "res://scripts/state_info.gd"
@@ -50,6 +55,9 @@ var _open_size := Vector2i.ZERO   # window size when opened: text scale 1
 var _sec_level := 1               # level of the section being added (see _section)
 var _sec_name := ""               # name of the section being added
 var _collapsed := {}              # section name → true: its topics are folded away
+var _sums := {}                   # topic id → its short version (see _summaries)
+var _unfolded := {}               # topic id → true: its full details are shown
+var _unfold_all := false          # --guide-details (screenshots): every page unfolded
 
 var _wt: Dictionary = {}          # the walkthrough message for the loaded program
 var _wt_waiting := false          # asked the backend, no answer yet
@@ -133,6 +141,7 @@ func _ready() -> void:
 	var k := args.find("--guide-scroll")    # screenshots: scroll the page to line N
 	if k >= 0 and k + 1 < args.size():
 		get_tree().create_timer(1.0).timeout.connect(func(): body.scroll_to_line(int(args[k + 1])))
+	_unfold_all = args.has("--guide-details")
 	var fo := args.find("--guide-fold")     # screenshots: click section heading NAME
 	if fo >= 0 and fo + 1 < args.size():
 		get_tree().create_timer(0.5).timeout.connect(func():
@@ -282,13 +291,47 @@ func _show(id: String) -> void:
 		_show_pipewalk()
 		return
 	_wt_gen += 1
-	body.text = _text[id]
+	body.text = _page(id)
 	body.scroll_to_line(0)
+
+
+## A page as shown: its heading, the short version, then the fold-out with
+## the full details.  Pages without a short version are shown whole.
+func _page(id: String) -> String:
+	var full: String = _text[id]
+	var sum := str(_sums.get(id, ""))
+	if sum == "":
+		return full
+	const END := "[/font_size]\n\n"        # the end of the heading (_h)
+	var cut := full.find(END)
+	var head := full.substr(0, cut + END.length()) if cut >= 0 else ""
+	var rest := full.substr(cut + END.length()) if cut >= 0 else full
+	var t := head + sum.strip_edges() + "\n\n"
+	if _unfolded.has(id) or _unfold_all:
+		t += _fold(id, true) + "\n\n" + rest.strip_edges() + "\n\n" + _fold(id, true)
+	else:
+		t += _fold(id, false) + "   [color=%s]step-by-step instructions, every option and the exact values[/color]" % _c("dim")
+	return t
+
+
+func _fold(id: String, open: bool) -> String:
+	return _button("fold:" + id, "▾  Hide the details" if open else "▸  Show the full details")
 
 
 func _on_meta(m: Variant) -> void:
 	var s := str(m)
-	if s == "wt:all":
+	if s.begins_with("fold:"):
+		var id := s.substr(5)
+		var opening := not _unfolded.has(id)
+		if opening:
+			_unfolded[id] = true
+		else:
+			_unfolded.erase(id)
+		var keep := body.get_v_scroll_bar().value
+		body.text = _page(id)
+		# opening keeps the short version in view; closing goes back to the top
+		(func(): body.get_v_scroll_bar().value = keep if opening else 0.0).call_deferred()
+	elif s == "wt:all":
 		_wt_goto(-1)
 	elif s.begins_with("wt:"):
 		_wt_goto(int(s.substr(3)))
@@ -318,6 +361,8 @@ func _select(id: String) -> void:
 ## Add a topic; it is listed only if its level (or its section's) is reached.
 func _topic(id: String, name: String, bb: String, lvl := 0) -> void:
 	_text[id] = _space_tables(_lists(bb))
+	if _sums.has(id):
+		_sums[id] = _space_tables(_lists(str(_sums[id])))
 	if maxi(lvl, _sec_level) > Level.current or _collapsed.has(_sec_name):
 		return
 	_ids.append(id)
@@ -455,6 +500,7 @@ static func _asm(s: String) -> String:
 # ── content ─────────────────────────────────────────────────────────────────
 
 func _add_topics() -> void:
+	_sums = _summaries()
 	_section("Getting started")
 
 	var levels := ""
@@ -565,6 +611,29 @@ func _add_topics() -> void:
 	_topic("examples2", "Level 2 examples", _examples2())
 
 	_section("The main window")
+
+	var ex := _h("Explain this step") + \
+		_sub("Where it is") + \
+		"At the top of the right-hand column" + (", above the CPU diagram when it is shown" if Level.at_least(3) else ", above the serial console") + ". Click its title ([b]▾ Explain this step[/b]) to fold it away, and again to bring it back. Drag the bar under it to give it more room: its text grows with it.\n" + \
+		_sub("What just happened") + \
+		"After each " + _k("Step instruction") + (", " + _k("Step over") if Level.at_least(2) else "") + (", " + _k("Step cycle") if Level.at_least(3) else "") + " or " + _k("◀ Step back") + ", this part names the instruction (with its line number in your file) and says in plain words what it did, with the real values: [i]Worked out R2 = R0 + R1 = 3 + 4 = 7[/i], or [i]Checked the condition “not equal” (Z = 0). The flags say Z = 0, so it jumped to loop[/i]. After " + _k("Run") + " stops, it says how many instructions ran and why Run stopped (the end of the program, a breakpoint, a key to type, or Pause).\n" + \
+		_sub("What happens next") + \
+		"The instruction ▶ points at, and what it [i]will[/i] do with the values the registers hold now. picosim finds this out exactly, by running that instruction on a copy of the machine and throwing the copy away, so your program is not touched. Two lines follow:\n" + \
+		"• [b]Then[/b] — where the program goes after it: the next line, back up to the top of a loop, into a function, or back to the code that called the function.\n" + \
+		"• [b]Why[/b] — what the instruction is for: saving registers at the start of a function, setting the flags for the branch on the next line, deciding whether to go round a loop again… When the line has a comment in your file, the comment is quoted too, so good comments make better explanations.\n" + \
+		_sub("More detail") + \
+		"Tick [b]More detail[/b] in the panel's corner for the full picture. It is remembered.\n" + \
+		_grid(["Detail", "What it says"], [
+			["How this instruction works", "One or two sentences about the instruction itself: what [code]movs[/code] does, what the S means, when a [code]bne[/code] jumps."],
+			["What changed", "Every register and flag that changed, old → new, with what each flag means" + (", plus memory bytes and pins" if Level.at_least(2) else "") + ", and anything printed."],
+			["PC", "Where the PC moved: on by 2 (or 4) to the next instruction, or a jump."],
+		] + ([["In memory", "The instruction's bits, as the Raw column of the Disassembly shows them."]] if Level.at_least(2) else []) + \
+		([["Clock cycles", "How many cycles it takes on the teaching datapath, and the FSM states in order. With " + _k("Step cycle") + ", each cycle is explained on its own: what the datapath does, which tri-state buffer drives the bus, the control signals and what changes at the clock edge."]] if Level.at_least(3) else []) + \
+		([["RP2040 pipeline", "Its cycles on the Pico's own 2-stage pipeline, from datasheet Table 81."]] if Level.at_least(4) else []), 1) + \
+		_note("Try this", "Before you press Step, read [b]What happens next[/b] and work out the new values yourself. Then step and check them against [b]What just happened[/b] and the yellow registers.") + \
+		_sub("While Run is on") + \
+		"Explanations pause: the panel says the program is running and is not updated, so Run is not slowed down. When Run stops, the panel explains where and why, and what comes next.\n"
+	_topic("explain", "Explain this step", ex)
 
 	var regs := _h("Registers panel") + \
 		"Top left. The processor's 16 registers, each holding one 32-bit number. Values changed by the last step are [color=" + _c("changed") + "]yellow[/color].\n" + \
@@ -984,6 +1053,98 @@ func _add_topics() -> void:
 		topics.set_item_tooltip(i, "Change the Level menu in the toolbar to see more of picosim and more of this guide")
 
 
+# ── the short versions ──────────────────────────────────────────────────────
+# What every page opens with: at most two short paragraphs, in plain words,
+# with everything a student must know to use that part of picosim.  The rest
+# of the page is behind "Show the full details" (see _page).
+
+func _summaries() -> Dictionary:
+	var l2 := Level.at_least(2)
+	var l3 := Level.at_least(3)
+	var l4 := Level.at_least(4)
+	var y := _c("changed")
+	var d := {}
+	d["start"] = "picosim runs programs written in [b]assembly language[/b], the instructions the Raspberry Pi Pico's processor understands, and lets you watch them one step at a time. To begin, click " + _k("Examples") + " and pick [b]Say hello[/b]. Press " + _k("Step instruction") + " (" + _k("S") + ") to run one instruction: whatever changed turns [color=" + y + "]yellow[/color] in the Registers, the " + _link("explain", "Explain this step") + " panel says what happened and what comes next, and anything printed appears in the serial console. " + _k("Run") + " (" + _k("Space") + ") lets the program go by itself, " + _k("◀ Step back") + " (" + _k("B") + ") undoes a step and " + _k("Reload") + " starts over. Nothing you do can break anything.\n\n" + \
+		"The " + _k("Level") + " menu (top right) decides how much of picosim you see: start at Level 1 and move up when your class does. Then read " + _link("tour", "The screen at a glance") + " and " + _link("running", "How a program runs") + "; the " + _link("glossary", "Glossary") + " explains any word you do not know."
+	var panels := "the [b]Registers[/b] (top left) show the numbers the CPU is working on, the [b]Disassembly[/b] under them lists your program with ▶ on the next instruction, [b]Explain this step[/b] (top right) describes each step, and the [b]serial console[/b] (bottom right) shows what the program prints"
+	if l2:
+		panels += "; the [b]Pico board[/b] (bottom left) shows the chip's pins and the [b]Memory[/b] tab shows the bytes in memory"
+	if l3:
+		panels += "; " + _k("Show CPU Diagram") + " adds a drawing of the processor's insides"
+	d["tour"] = "Across the top is the toolbar: " + _k("Open…") + " and " + _k("Examples") + " load a program, " + _k("Reload") + " starts it over, " + _k("◀ Step back") + ", " + _k("Step instruction") + " and " + _k("Run") + " move through it, and " + _k("Speed") + " sets how fast Run goes. Below it, " + panels + ".\n\n" + \
+		"Hover any button for a reminder of what it does. A greyed-out button cannot be used right now: for example Step after the program has finished, until you press " + _k("Reload") + ". " + _k("View") + " ▸ [b]Show the tour again[/b] replays the short first-run tour."
+	d["running"] = "Every program runs the same way: picosim's small [b]built-in OS[/b] calls your [code]main[/code], the CPU runs one instruction at a time from top to bottom (unless a branch jumps somewhere else), the program calls functions such as [code]putchar[/code] to print, and [code]main[/code] ends with [code]pop {…, pc}[/code], which returns to the OS. The OS then stops the processor and the status text says [b]halted[/b]." + \
+		(" At Level 1 the OS's own instructions are hidden, so ▶ starts on [code]main[/code] and each [code]bl putchar[/code] is one step." if not l2 else " From Level 2 you also step through the OS's instructions: three at the start and two inside each putchar; " + _k("Step over") + " (" + _k("O") + ") runs a whole call in one step.") + "\n\n" + \
+		_k("Step instruction") + " runs one instruction. " + _k("Run") + " keeps going until the program ends, reaches a [b]breakpoint[/b] (click a row's first column in the Disassembly) or you press " + _k("Pause") + ". " + _k("◀ Step back") + " undoes a step, and " + _k("Reload") + " starts again. The full details walk through Say hello line by line, with the real values."
+	d["programs"] = "A program is a plain text file whose name ends in [code].s[/code]. It starts with three lines ([code].syntax unified[/code], [code].cpu cortex-m0plus[/code], [code].thumb[/code]), then the label [code]main:[/code] and one instruction per line; anything after [code]@[/code] is a comment. [code]main[/code] begins with [code]push {r7, lr}[/code] and ends with [code]pop {r7, pc}[/code], and [code]bl putchar[/code] prints the character in R0.\n\n" + \
+		"Write and save the file in any text editor (VS Code, for example); picosim reloads it by itself when you save. " + _k("Open…") + " (" + _k("Ctrl/Cmd+O") + ") loads a file. If the assembler finds a mistake, a box lists each wrong line and what usually fixes it. The easiest start is a copy of an example."
+	d["challenges"] = "Some examples set a [b]challenge[/b]: a small change for you to make, shown in a strip under the toolbar. Change the file, save it and run the program to the end: the strip turns [color=" + _c("green") + "]green[/color] if your program did it, or lists what is still wrong. Teachers can add their own with [code]@ Challenge:[/code] and [code]@ Expect:[/code] comment lines (see the details)."
+	d["numbers"] = "The CPU stores everything as bits (0s and 1s), and picosim shows them in [b]hexadecimal[/b]: base 16, with the digits 0–9 and A–F and [code]0x[/code] in front. One hex digit is exactly 4 bits, so a 32-bit register is 8 hex digits. For example [code]0x2A[/code] = 2 × 16 + 10 = 42. Hover a register to see its value in decimal and binary too.\n\n" + \
+		"Characters are numbers as well ([b]ASCII[/b]): 'H' is 72 ([code]0x48[/code]) and the digits '0' to '9' are 48 to 57. That is why printing the number 7 needs the character '7': add [code]'0'[/code] (48) before calling putchar."
+	d["instructions"] = "Each line of a program is one [b]instruction[/b]: its name (the mnemonic, such as [code]movs[/code] or [code]adds[/code]) and what it works on (registers such as [code]r0[/code] and constants such as [code]#5[/code]). The Level 1 examples use [code]movs[/code] (put a value in a register), [code]adds[/code] and [code]subs[/code] (add and subtract), [code]cmp[/code] (compare), [code]b[/code] and the conditional branches (jump), [code]bl[/code] (call a function) and [code]push[/code] / [code]pop[/code] (save and restore registers).\n\n" + \
+		"Two rules avoid most mistakes: write [code]movs[/code], [code]adds[/code] and [code]subs[/code] with the [b]S[/b] on the end, and use registers [b]R0 to R7[/b]. A constant in [code]movs[/code], [code]cmp[/code] or two-register [code]adds[/code] / [code]subs[/code] must be 0 to 255; the three-register form ([code]adds r0, r1, #3[/code]) takes only 0 to 7."
+	d["branches"] = "A program makes decisions in two steps. First an instruction such as [code]cmp r4, #6[/code] compares two numbers and sets the four [b]flags[/b]: N (negative), Z (zero), C (carry) and V (overflow). Then a conditional branch such as [code]bne loop[/code] reads the flags and either jumps to the label or carries on with the next line.\n\n" + \
+		"[code]beq[/code] jumps if the numbers were equal and [code]bne[/code] if they were not; [code]blt[/code], [code]bgt[/code], [code]ble[/code] and [code]bge[/code] compare signed numbers, and [code]blo[/code], [code]bhi[/code], [code]bls[/code] and [code]bhs[/code] unsigned ones. A loop works this way: change a counter, compare it, and branch back while the loop is not finished."
+	d["examples"] = "Three examples for Level 1, opened from " + _k("Examples") + ": [b]Say hello[/b] prints [code]Hi![/code] one letter at a time ([code]movs[/code] and [code]bl putchar[/code]), [b]Add two numbers[/b] adds 3 and 4 and prints 7, and [b]Count with a loop[/b] prints [code]12345[/code] with a loop ([code]cmp[/code] and [code]bne[/code]). Each file starts with a comment that says what to watch.\n\n" + \
+		"Step through each one with " + _link("explain", "Explain this step") + " open, then try the change suggested in its [b]Try it[/b] line or its challenge."
+	d["memmap"] = "Memory is one long row of bytes, and each byte has a number called its [b]address[/b]. A [b]word[/b] is 4 bytes (what one register holds) and a halfword 2. picosim keeps its built-in OS at [code]0x0000[/code]–[code]0x2FFF[/code], your program from [code]0x3000[/code] upward and the stack at the top, just below [code]0x10000[/code]; the Pico's hardware (its pins) is at high addresses such as [code]0xD0000000[/code].\n\n" + \
+		"A word is stored lowest byte first ([b]little-endian[/b]), so [code]0x0000300D[/code] appears in memory as [code]0D 30 00 00[/code]. A word must start at an address that is a multiple of 4, and a halfword at a multiple of 2; otherwise the program stops with a fault, as on a real Pico."
+	d["loadstore"] = "The ALU works only on registers, so a value in memory must be [b]loaded[/b] into a register ([code]ldr[/code]), worked on, and [b]stored[/b] back ([code]str[/code]). The address goes in square brackets: [code]ldr r0, [lb]r1][/code] means \"R0 = the word at the address in R1\". [code]ldrb[/code] / [code]strb[/code] move one byte and [code]ldrh[/code] / [code]strh[/code] a halfword.\n\n" + \
+		"To put an address, or any number bigger than 255, into a register, write [code]ldr r1, =label[/code]: the assembler stores the number just after your code and loads it from there. Data such as [code]numbers: .word 10, 20[/code] goes after a [code].data[/code] line."
+	d["stack"] = "A [b]function[/b] is code you call with [code]bl name[/code] and that comes back with [code]bx lr[/code]: [code]bl[/code] puts the return address in LR before it jumps. A function that calls another function must save LR first, because the second [code]bl[/code] overwrites it. It saves it on the stack with [code]push {…, lr}[/code] and returns with [code]pop {…, pc}[/code].\n\n" + \
+		"The [b]stack[/b] is memory at the top of RAM. SP points at its top, and it grows down: each push moves SP down 4 bytes per register. The rules: arguments and results go in R0–R3, a function may change R0–R3, and it must put R4–R7 back as it found them."
+	d["gpio"] = "The [b]GPIO pins[/b] (GP0–GP29) can be [b]outputs[/b], which your program drives high (1) or low (0) to light an LED, or [b]inputs[/b], which it reads to see a button. A program controls them by storing to special addresses ([b]memory-mapped I/O[/b]): write 5 to the pin's IO_BANK0 CTRL register to connect it to your program, write its bit to [code]GPIO_OE_SET[/code] to make it an output, then write its bit to [code]GPIO_OUT_SET[/code], [code]GPIO_OUT_CLR[/code] or [code]GPIO_OUT_XOR[/code] to make it high, low or flip it.\n\n" + \
+		"Each pin is one bit in these registers: GP15 is bit 15, so its [b]mask[/b] is [code]1 << 15[/code] = [code]0x8000[/code]. To read a button, load [code]GPIO_IN[/code] ([code]0xD0000004[/code]) and test the pin's bit with [code]ands[/code]. The [b]Blink an LED[/b] and [b]Buttons and LEDs[/b] examples do both."
+	d["examples2"] = "Five examples for Level 2: [b]Add up a list in memory[/b] ([code]ldr[/code] and [code]str[/code]), [b]Blink an LED[/b] (GPIO outputs), [b]Echo what you type[/b] ([code]getchar[/code]), [b]Call a function[/b] ([code]bl[/code], LR and the stack) and [b]Buttons and LEDs[/b] (GPIO inputs). Keep the Memory tab and the Pico board in view while you step: that is where these programs show what they do."
+	d["registers"] = "The Registers panel (top left) shows the CPU's 16 registers: R0–R12 hold your values, [b]SP[/b] points at the stack, [b]LR[/b] holds a function's return address and [b]PC[/b] is the address of the next instruction. Whatever the last step changed turns [color=" + y + "]yellow[/color], and the line under the flags says which line of your file changed it.\n\n" + \
+		"The four check boxes are the flags N Z C V. The menu at the top right shows the values in " + _k("Hex") + ", " + _k("Decimal") + " or " + _k("Signed") + "; hover a register to see every form at once, or click one, type a new value and press " + _k("Enter") + " (" + _k("Reload") + " puts everything back)."
+	d["memory"] = "The Disassembly lists your program one instruction per row: its address, its bits ([b]Raw[/b]), its label, the instruction as the CPU sees it and the line of your file it came from ([b]Source[/b]). The row with ▶ runs next. Click a row's first column to put a [b]breakpoint[/b] (a red ●) there: " + _k("Run") + " stops just before that instruction." + \
+		("\n\nThe [b]Memory[/b] tab shows the bytes in memory, 16 per row. Type an address or a label in [b]Go to[/b] to jump there; the stack, from SP upward, is shown under the dump." if l2 else "")
+	d["pico"] = "The drawing of the Raspberry Pi Pico (bottom left) shows what your program does to the chip's pins. A pin your program drives high shows a green [b]1[/b], one driven low a dark [b]0[/b], and an input reading high a blue [b]1[/b]; a [color=" + y + "]yellow[/color] ring marks a pin the last step changed. Hover a pin for its numbers and state.\n\n" + \
+		"Click an [i]input[/i] pin to drive it like a switch: floating → 1 → 0 → floating. In [b]Pico (USB serial)[/b] mode, with a board you flashed connected, the drawing shows your real board's pins instead."
+	d["serial"] = "The serial console (bottom right) shows what your program prints with [code]putchar[/code]. When the program calls [code]getchar[/code] it waits for a key: click in the console and type (each key is sent at once), or type a line in the box underneath and press " + _k("Enter") + ". " + _k("Clear") + " empties it."
+	d["layout"] = "Drag the bars between the panels to resize them; a panel you make bigger also gets bigger text. Zoom the whole window with " + _k("−") + " / " + _k("+") + " in the toolbar, " + _k("Ctrl/Cmd +") + " / " + _k("Ctrl/Cmd −") + " or " + _k("Ctrl/Cmd") + " + mouse wheel, and click the percentage to fit the window again. " + _k("View") + " picks the colours (System, Blue, Dark or Light). picosim remembers all of these."
+	d["explain"] = "[b]Explain this step[/b] (top right) describes every step as you take it. [b]What just happened[/b] says in plain words what the instruction did, with the real values. [b]What happens next[/b] says what the next instruction will do, where the program goes after it ([b]Then[/b]) and what that is for ([b]Why[/b], often using the comment on that line of the program). It is exact: picosim really runs the next instruction on a copy of the machine to find out.\n\n" + \
+		"Tick [b]More detail[/b] for exactly what changed (registers, flags" + (", memory and pins" if l2 else "") + "), how the instruction works" + (", how it is stored in memory" if l2 else "") + (" and its clock cycles" if l3 else "") + ". While " + _k("Run") + " is on, the panel waits, then explains where Run stopped. Click its title to fold it away."
+	d["hardware"] = "The same [code].s[/code] file can run on a real Raspberry Pi Pico plugged in by USB. Choose [b]Pico (USB serial)[/b] in the mode menu and click " + _k("Flash") + ": picosim builds your program, copies it to the board and connects the console, so you see what the board prints. If picotool is not installed, hold the board's [b]BOOTSEL[/b] button while you plug it in, so it appears as a drive.\n\n" + \
+		"The first build takes a few minutes because it downloads the Pico SDK; later ones take seconds. If Flash fails the console says why, and the details list what to do. Stepping, the registers and the CPU diagram work only in Simulator mode."
+	d["cpuintro"] = "Inside the processor, every instruction is a short series of [b]clock cycles[/b]. In each cycle the [b]control unit[/b] (a finite-state machine, or FSM) turns on [b]control signals[/b] that tell the [b]datapath[/b] (the registers, a shared bus, the ALU, adders and memory) what to do; at the [b]clock edge[/b] that ends the cycle, the registers take their new values.\n\n" + \
+		"This teaching processor has one bus and one memory, so every instruction first spends 3 cycles fetching itself from memory, and most take 5 to 7 cycles in all. " + _k("Show CPU Diagram") + " draws it, and " + _k("Step cycle") + " (" + _k("C") + " or " + _k("F11") + ") runs one cycle at a time."
+	d["blocks"] = "The CPU diagram is built from a few kinds of part. [b]Registers[/b] store a value and change only at the clock edge. The [b]bus[/b] carries one value at a time between parts, and [b]tri-state buffers[/b] decide which part drives it. [b]Multiplexers[/b] (muxes) pick one of their inputs, [b]adders[/b] and the [b]ALU[/b] compute, [b]memory[/b] reads or writes at the address in MAR, and the [b]FSM[/b] controls them all.\n\n" + \
+		"Muxes, adders and the ALU have no memory: their output follows their inputs straight away. Registers remember, which is why the diagram shows a register's new value as a [color=" + y + "]yellow[/color] [code]old → new[/code] caption until the next cycle starts."
+	d["diagram"] = "The CPU diagram shows the multi-cycle datapath during the cycle that just ran. [color=" + _c("accent") + "]Bright blue[/color] wires and boxes carry data in this cycle, [color=" + _c("purple") + "]purple dashed[/color] stubs are control signals from the FSM (bright means on), and a [color=" + y + "]yellow[/color] [code]old → new[/code] caption marks a register that takes a new value at the clock edge. When you step, a glowing pulse follows the data along the wires.\n\n" + \
+		"Hover a block for a one-line summary, or click it for a card that explains what it does and when it is used."
+	d["cycles"] = "The cycle inspector under the diagram follows the current instruction one clock cycle at a time. The left side lists its cycles (click one to look at it again) with the phase chips F, D, EA, FO, EX and SR; the right side says what the cycle does, which control signals it turns on and what changes at the clock edge.\n\n" + \
+		"Every instruction starts with the same 3 fetch cycles. Typical totals: B 5, ADDS, MOVS and CMP 6, LDR and STR 7, BL 9, and PUSH or POP of 2 registers 10."
+	d["tutorial"] = "This tutorial follows one instruction, [code]adds r2, r0, r1[/code] from [b]Add two numbers[/b], through its six clock cycles with the real values: three fetch cycles, DECODE, FETCH_OPERANDS (R0 and R1 go into the ALU) and EXECUTE_COMMIT (the sum goes into R2 and the flags). Set a breakpoint on it, press " + _k("Run") + ", then press " + _k("Step cycle") + " once for each row of the table."
+	d["kinds"] = "After the 3-cycle fetch, each kind of instruction uses its own states. A load or store works out its address (EVALUATE_ADDRESS) and then reads or writes memory: 7 cycles. A branch decides and changes the PC: 5 cycles. BL saves the return address in LR and jumps: 9 cycles, because it is 32 bits long and is fetched in two halves. PUSH and POP move one register every two cycles: 6 + 2 per register."
+	d["signals"] = "Control signals are how the FSM runs the datapath. Most follow a pattern: [code]GateX[/code] puts X on the bus, [code]LD.X[/code] makes X load a new value at the clock edge, [code]XMUX=…[/code] picks a mux input, [code]ALUK=…[/code] picks the ALU's operation, and [code]MEM.EN[/code] with [code]R/W=READ[/code] or [code]WRITE[/code] makes memory do an access. The details list every signal."
+	d["states"] = "The FSM is always in exactly one [b]state[/b], and each state is one clock cycle that turns on its own control signals. Every instruction starts with [code]FETCH_ADDR → FETCH_MEMORY → FETCH_IR[/code], then DECODE, then the states its kind needs: for example FETCH_OPERANDS → EXECUTE_COMMIT for an ADDS. The details list every state, what it does and which instructions use it."
+	d["components"] = "Every block on the multi-cycle datapath diagram, in the order data usually flows, with what it does, how it works and when it is used. The same card opens when you click a block on the diagram."
+	d["pipeintro"] = "The real Pico's processor, the Cortex-M0+, overlaps instructions in a [b]2-stage pipeline[/b]: while one instruction is decoded and executed, the next one is already being fetched. When nothing gets in the way, an instruction finishes every clock cycle (CPI = 1), instead of every 5 to 7 cycles as on the multi-cycle datapath.\n\n" + \
+		"Two things cost extra cycles: instructions that need Execute for more than one cycle (loads, stores, PUSH, POP and BL), and taken branches, where the instruction fetched behind the branch is thrown away ([b]flushed[/b]). Pipelining changes only [i]when[/i] things happen, never the results."
+	d["pipeline"] = "Pick [b]2-stage pipeline[/b] in the machine menu to see the Pico's own processor. The left stage is [color=" + _c("stage_f") + "]Fetch[/color] and the right one [color=" + _c("stage_e") + "]Decode + Execute[/color], joined by the IF/EX pipeline register. Each instruction in flight is a coloured token that moves across as you step, and FLUSH turns red when a taken branch throws away the wrong instruction. The registers show the state after the instruction in Execute has finished."
+	d["pipecycles"] = _k("Step cycle") + " (" + _k("C") + " or " + _k("F11") + ") moves the pipeline one clock cycle; " + _k("Step instruction") + " (" + _k("S") + " or " + _k("F10") + ") jumps to the next instruction's first Execute cycle. Under the stages, the instruction strip shows the last 8 cycles as a staircase, and the panel under the diagram explains what each stage holds and why it waits, refills or is flushed.\n\n" + \
+		"A perfect 2-stage pipeline gets CPI = 1. Instructions that take several Execute cycles, and taken branches (1 extra cycle each on the M0+), are where cycles are lost. With only one Execute stage there are no data hazards."
+	d["pipecomponents"] = "Every block on the pipeline diagram, Fetch stage first, with what it does and how it connects. The same card opens when you click a block on the diagram."
+	d["perfmath"] = "A program's run time is [b]N × CPI ÷ f[/b]: N is how many instructions it runs, CPI the average number of clock cycles per instruction, and f the clock frequency (the RP2040 runs at 125 MHz, so one cycle lasts 8 ns). For the [b]Add up a list in memory[/b] example the multi-cycle datapath takes 205 cycles (CPI 6.41) and the RP2040's pipeline 50, so the pipeline is 205 ÷ 50 = 4.1 times as fast."
+	d["performance"] = "The Performance window (" + _k("F2") + ") times the run so far on three machines that give exactly the same results: the multi-cycle teaching datapath, the RP2040's 2-stage pipeline and a 3-stage teaching pipeline. [b]Metrics[/b] shows cycles, CPI and time; [b]Compare[/b] tries a slower multiplier or slower memory; [b]Pipeline[/b] draws a cycle-by-cycle chart; [b]Heat map[/b] shows which parts were busy. The RP2040's numbers come from its datasheet (Table 81)."
+	d["heat"] = "The heat map (Performance ▸ [b]Heat map[/b]) colours each part of the CPU, each register and each flag by how much your program used it: the stronger the colour, the busier the part. [b]Totals[/b] gives each part's share of all cycles, [b]Timeline[/b] shows the use cycle by cycle, and [b]Per line[/b] shows which lines of your program cause it.\n\n" + \
+		"To see what a change saves: " + _k("Save baseline") + ", change the program, run it again and choose [b]Compare[/b]. The multi-cycle counts are exact; the pipeline's are an estimate from the datasheet's cycle counts."
+	var keys := _k("S") + " steps one instruction, " + _k("B") + " steps back, " + _k("Space") + " runs or pauses"
+	if l2:
+		keys += ", " + _k("O") + " steps over a call"
+	if l3:
+		keys += ", " + _k("C") + " steps one clock cycle"
+	if l4:
+		keys += ", " + _k("F2") + " opens the Performance window"
+	d["keys"] = keys + ", " + _k("F1") + " opens this guide, " + _k("Ctrl/Cmd+O") + " opens a file and " + _k("Ctrl/Cmd+R") + " reloads it. Holding a step key repeats it. The keys work only in Simulator mode, and not while you are typing in a box or in the serial console."
+	d["trouble"] = "Most problems have a quick fix. If Step does nothing, the program has finished: press " + _k("Reload") + ". If it is waiting, type a key in the serial console. If Run is slow, move the " + _k("Speed") + " slider to the right. If the program will not load, the [b]Could not load program[/b] box gives the line number and what is wrong: fix that line and save.\n\n" + \
+		"A [b]CPU fault[/b] message in the console means the program did something that would crash a real Pico. The most common cause is a [code]main[/code] without [code]pop {…, pc}[/code] at its end. The details list every message you may see, with what to do."
+	d["glossary"] = "Short meanings of the words used in picosim and in this guide, in alphabetical order. More words appear as you raise the Level."
+	return d
+
+
 # ── getting-started pages ───────────────────────────────────────────────────
 # Written for a student who missed the first class: everything a level 1
 # student sees is explained here, and the values quoted are the ones the
@@ -1004,6 +1165,7 @@ func _first_steps() -> String:
 		t += "3. Step twice more and look at the " + _link("registers", "Registers") + ": the one that just changed turns [color=" + _c("changed") + "]yellow[/color]. After [code]movs r0, #'H'[/code], R0 holds [code]0x00000048[/code], the " + _link("numbers", "ASCII code") + " for the letter H.\n"
 		t += "4. Step three more times. [code]bl putchar[/code] jumps into the OS's [code]putchar[/code] (address [code]0010[/code]), [code]svc #2[/code] prints the [b]H[/b] in the " + _link("serial", "serial console") + " on the right, and [code]bx lr[/code] comes back to the next line of your program. (" + _k("Step over") + " does all three at once.)\n"
 	t += "5. Press " + _k("Run") + " (" + _k("Space") + ") to let the rest go by itself. When the status text at the top says [b]halted[/b], the program has finished; press " + _k("Reload") + " to watch it again.\n"
+	t += "Each time you step, the " + _link("explain", "Explain this step") + " panel at the top right says what that instruction did and what the next one will do, so you can follow along without guessing.\n"
 	return t
 
 
@@ -1015,12 +1177,13 @@ func _tour() -> String:
 	var left := "[b]Registers[/b]\n[color=%s]the CPU's 16 registers and flags[/color]\n\n[b]Disassembly[/b]\n[color=%s]your program, one instruction per row[/color]" % [_c("dim"), _c("dim")]
 	if Level.at_least(2):
 		left += "\n\n[b]Raspberry Pi Pico board[/b]\n[color=%s]the chip's pins[/color]" % _c("dim")
-	var right := "[b]Serial console[/b]\n[color=%s]what your program prints, and the keys you type[/color]" % _c("dim")
+	var right := "[b]Explain this step[/b]\n[color=%s]what the last step did, and what happens next[/color]\n\n" % _c("dim") + \
+		"[b]Serial console[/b]\n[color=%s]what your program prints, and the keys you type[/color]" % _c("dim")
 	if Level.at_least(3):
-		right = "[b]CPU diagram[/b] (when shown)\n[color=%s]the datapath, cycle by cycle[/color]\n\n" % _c("dim") + right
+		right = right.replace("\n\n[b]Serial", "\n\n[b]CPU diagram[/b] (when shown)\n[color=%s]the datapath, cycle by cycle[/color]\n\n[b]Serial" % _c("dim"))
 	t += "[table=2][cell bg=%s border=%s padding=16,12,16,12 expand=1]%s[/cell][cell bg=%s border=%s padding=16,12,16,12 expand=1]%s[/cell][/table]\n" % [
 		_c("panel_alt"), _c("edge"), left, _c("panel_alt"), _c("edge"), right]
-	t += "Click a panel's name to read about it: " + _link("registers", "Registers") + ", " + _link("memory", "Disassembly") + ", " + _link("serial", "Serial console") + ". Drag the bars between panels to resize them.\n"
+	t += "Click a panel's name to read about it: " + _link("registers", "Registers") + ", " + _link("memory", "Disassembly") + ", " + _link("explain", "Explain this step") + ", " + _link("serial", "Serial console") + ". Drag the bars between panels to resize them.\n"
 	t += _sub("The toolbar, left to right")
 	var rows := [
 		[_k("Open…"), "Open a [code].s[/code] file of your own (" + _k("Ctrl/Cmd+O") + ")."],
@@ -1053,7 +1216,7 @@ func _tour() -> String:
 	t += _grid(["Control", "What it does"], rows, 1)
 	t += "Buttons that cannot be used right now are greyed out: for example Step and Run after the program has halted, until you press " + _k("Reload") + ".\n"
 	t += _sub("The tour")
-	t += "The first time you load a program, a short tour points out Step, the Registers, the Disassembly, the console and this guide, one at a time. " + _k("Next ▶") + " moves on and " + _k("Skip tour") + " (or " + _k("Esc") + ") ends it. To see it again, choose " + _k("View") + " ▸ [b]Show the tour again[/b].\n"
+	t += "The first time you load a program, a short tour points out Step, Explain this step, the Registers, the Disassembly, the console and this guide, one at a time. " + _k("Next ▶") + " moves on and " + _k("Skip tour") + " (or " + _k("Esc") + ") ends it. To see it again, choose " + _k("View") + " ▸ [b]Show the tour again[/b].\n"
 	return t
 
 
@@ -1253,22 +1416,28 @@ func _branches() -> String:
 ## something to try in each.
 func _examples() -> String:
 	var t := _h("Level 1 examples")
-	t += "Open each one from " + _k("Examples") + " and keep this page beside it. Every example file also starts with a short [i]What to watch[/i] comment." + (" At Level 1 each [code]bl putchar[/code] is one step; from Level 2 you also step through the " + _link("running", "built-in OS") + "'s instructions (three at the start, two in each putchar)." if not Level.at_least(2) else " Remember that the first three steps, and the two steps after each [code]bl putchar[/code], are the " + _link("running", "built-in OS") + " (" + _k("Step over") + " skips them).") + "\n"
+	t += "Open each one from " + _k("Examples") + " and keep this page beside it. Every example file also starts with a short [i]What to watch[/i] comment." + (" At Level 1 each [code]bl putchar[/code] is one press of Step, although putchar's two instructions still run (the status text counts them); from Level 2 you also step through the " + _link("running", "built-in OS") + "'s instructions (three at the start, two in each putchar)." if not Level.at_least(2) else " Remember that the first three steps, and the two steps after each [code]bl putchar[/code], are the " + _link("running", "built-in OS") + " (" + _k("Step over") + " skips them).") + "\n"
 	var dim := _c("dim")
 	var boot := 0 if Level.at_least(2) else 3   # level 1 counts from main
-	t += "\n[font_size=%d][b]1 · Say hello[/b][/font_size]   [color=%s]01_hello.s · %d instructions[/color]\n" % [roundi(18 * text_scale), dim, 23 - boot]
+	# [instructions the status text counts, Step presses at level 1] (checked by running them)
+	var runs := {"01": [23, 11], "02": [20, 12], "03": [52, 36]}
+	var count := func(k: String) -> String:
+		if Level.at_least(2):
+			return "%d instructions" % runs[k][0]
+		return "%d instructions, %d presses of Step" % [runs[k][0] - boot, runs[k][1]]
+	t += "\n[font_size=%d][b]1 · Say hello[/b][/font_size]   [color=%s]01_hello.s · %s[/color]\n" % [roundi(18 * text_scale), dim, count.call("01")]
 	t += "Prints [code]Hi![/code] one letter at a time. Shows how [code]movs[/code] puts a character's code in R0 and how [code]bl putchar[/code] prints it.\n"
 	t += "• Before each [code]bl putchar[/code], R0 holds the code: [code]0x48[/code] H, [code]0x69[/code] i, [code]0x21[/code] !, [code]0x0A[/code] new line.\n"
 	t += "• Watch LR change on every [code]bl[/code] ([code]0x00003009[/code], [code]0x0000300F[/code], …): it is always the address of the next line, plus 1.\n"
 	t += "• " + _link("running", "How a program runs") + " goes through this example line by line.\n"
 	t += "[b]Try it:[/b] make it print your initials. Copy a [code]movs[/code] / [code]bl putchar[/code] pair for each letter, and use [code]#' '[/code] for a space.\n"
-	t += "\n[font_size=%d][b]2 · Add two numbers[/b][/font_size]   [color=%s]02_add.s · %d instructions[/color]\n" % [roundi(18 * text_scale), dim, 20 - boot]
+	t += "\n[font_size=%d][b]2 · Add two numbers[/b][/font_size]   [color=%s]02_add.s · %s[/color]\n" % [roundi(18 * text_scale), dim, count.call("02")]
 	t += "Puts 3 and 4 in registers, adds and subtracts them, and prints the sum.\n"
 	t += "• R0 = 3, R1 = 4, then [code]adds r2, r0, r1[/code] makes R2 = 7 and [code]subs r3, r1, r0[/code] makes R3 = 1.\n"
 	t += "• The [code]subs[/code] turns the C flag on: 4 − 3 did not need to borrow.\n"
 	t += "• [code]adds r0, #'0'[/code] turns 7 into [code]0x37[/code], the character '7', which is printed. See " + _link("numbers", "Printing a number") + ".\n"
 	t += "[b]Try it:[/b] change 3 and 4 in the file (keep the sum under 10), save and press " + _k("Reload") + ". Or, without editing: when ▶ reaches [code]movs r0, r2[/code], click R2 in the Registers panel, type 5, press Enter, then Run. It prints 5.\n"
-	t += "\n[font_size=%d][b]3 · Count with a loop[/b][/font_size]   [color=%s]03_count_loop.s · %d instructions[/color]\n" % [roundi(18 * text_scale), dim, 52 - boot]
+	t += "\n[font_size=%d][b]3 · Count with a loop[/b][/font_size]   [color=%s]03_count_loop.s · %s[/color]\n" % [roundi(18 * text_scale), dim, count.call("03")]
 	t += "Prints [b]12345[/b] with a loop: the same five lines run once for each digit.\n"
 	t += "• R4 is the counter. It is kept in R4, not R0–R3, because putchar may change those; that is why [code]main[/code] pushes R4.\n"
 	t += "• In the Disassembly, the row labelled [code]loop[/code] is where [code]bne loop[/code] jumps back to; it shows as [code]bne #0x3004[/code].\n"
@@ -1614,7 +1783,7 @@ func _examples2() -> String:
 		return "\n[font_size=%d][b]%s[/b][/font_size]   [color=%s]%s%s[/color]\n" % [roundi(18 * text_scale), n, dim, f, extra]
 	t += head.call("4 · Add up a list in memory", "04_memory.s", " · 32 instructions")
 	t += "Loads four numbers with [code]ldr[/code], adds them up, and stores the total with [code]str[/code].\n"
-	t += "• Open the Memory tab and Go to [code]numbers[/code]. The dump starts at the row [code]3020[/code]; its first 4 bytes are the literal pool, and [code]numbers[/code] starts at [code]3024[/code]: [code]0A 00 00 00  14 00 00 00  1E 00 00 00  28 00 00 00[/code] are 10, 20, 30 and 40 as little-endian words. [code]total[/code] follows at [code]3034[/code], still 0.\n"
+	t += "• Open the Memory tab and Go to [code]numbers[/code]. The dump starts at the row [code]3020[/code]; its first 4 bytes are the end of the literal pool (the address of [code]total[/code]), and [code]numbers[/code] starts at [code]3024[/code]: [code]0A 00 00 00  14 00 00 00  1E 00 00 00  28 00 00 00[/code] are 10, 20, 30 and 40 as little-endian words. [code]total[/code] follows at [code]3034[/code], still 0.\n"
 	t += "• Watch R1 step through [code]0x3024[/code], [code]0x3028[/code], [code]0x302C[/code], [code]0x3030[/code] and R2 grow to [code]0x64[/code] (100). " + _link("loadstore", "Loads and stores") + " has the table.\n"
 	t += "• At the [code]str[/code], the bytes at [code]3034[/code] turn yellow: [code]64 00 00 00[/code].\n"
 	t += "[b]Try it:[/b] add a fifth number ([code].word 10, 20, 30, 40, 50[/code] and [code]movs r3, #5[/code]). The total becomes 150, [code]0x96[/code].\n"
@@ -1637,8 +1806,8 @@ func _examples2() -> String:
 	t += "• [code]print_digit[/code] calls putchar, so it saves LR with [code]push {lr}[/code] and returns with [code]pop {pc}[/code].\n"
 	t += "[b]Try it:[/b] remove [code]push {lr}[/code] and change [code]pop {pc}[/code] to [code]bx lr[/code]. After printing 4 the program is stuck on that [code]bx lr[/code] forever: see why in the stack page.\n"
 	t += head.call("8 · Buttons and LEDs", "08_button_led.s", " · runs until you pause it")
-	t += "Two jobs, chosen with " + _k("⚙ Settings") + " → FIND_PINS: [i]find my pins[/i] (which pins your real LEDs and buttons are on) or [i]run it[/i] (the LED is on while you hold the button).\n"
-	t += "• [b]Run it[/b], in the simulator: press Run. GP14 (the button, with its pull-up on) shows a blue [b]1[/b]. Click GP14 twice: it is driven to 1 and then to 0, and at 0 (\"pressed\": the button connects the pin to GND) GP15 turns green. Click once more to let go.\n"
+	t += "Two jobs, chosen with " + _k("⚙ Settings") + " → FIND_PINS: [i]find my pins[/i] (which pins your real LEDs and buttons are on; this is what it does at first) or [i]run it[/i] (the LED is on while you hold the button).\n"
+	t += "• [b]Run it[/b], in the simulator: in " + _k("⚙ Settings") + " set FIND_PINS to [i]run it[/i] and click " + _k("Apply and reload") + ", then press Run. GP14 (the button, with its pull-up on) shows a blue [b]1[/b]. Click GP14 twice: it is driven to 1 and then to 0, and at 0 (\"pressed\": the button connects the pin to GND) GP15 turns green. Click once more to let go.\n"
 	t += "• [b]Find my pins[/b] is meant for a real board (see " + _link("hardware", "Running on a real Pico") + "): it switches each free pin high and low and prints its number, then reports every button you press. In the simulator, type a key in the console each time it asks (twice), let part 1 run, then click pins in part 2 to see them reported.\n"
 	t += "• The program is longer than the others: look for [code]ands[/code], [code]orrs[/code], [code]eors[/code], [code]tst[/code] (an AND that only sets flags) and [code]mvns[/code] (NOT), and for functions such as [code]print[/code] and [code]print_num[/code].\n"
 	return t

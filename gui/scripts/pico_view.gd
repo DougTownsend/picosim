@@ -79,6 +79,15 @@ var mono: Font
 var _scale := 1.0
 var _origin := Vector2.ZERO
 var btn_full: Button
+var _key = null          # what the drawing shows: redrawn only when it changes
+## The board is painted once into a texture (_vp) and that one texture is
+## drawn each frame: Godot renders every drawing in the window on every
+## frame, and the board's hundreds of shapes cost the CPU each time even
+## when nothing on it changed.  _ci is what the drawing helpers draw on.
+var _ci: CanvasItem = self
+var _vp: SubViewport
+var _painter: Control
+var _vp_scale := 0.0
 
 
 func _ready() -> void:
@@ -87,7 +96,16 @@ func _ready() -> void:
 	clip_contents = true
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	tooltip_text = " "
-	resized.connect(queue_redraw)
+	_vp = SubViewport.new()
+	_vp.disable_3d = true
+	_vp.size_2d_override_stretch = true
+	_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	add_child(_vp)
+	_painter = Painter.new()
+	_painter.view = self
+	_vp.add_child(_painter)
+	resized.connect(_refresh)
+	get_window().size_changed.connect(_refresh)   # zoom changes the pixel size
 	_load_colors()
 	Palette.changed.connect(_load_colors)
 
@@ -106,7 +124,7 @@ func _load_colors() -> void:
 	C_BG = Palette.c("surface")
 	C_TEXT = Palette.c("text")
 	C_DIM = Palette.c("dim")
-	queue_redraw()
+	_refresh()
 
 
 func set_fullscreen(on: bool) -> void:
@@ -120,7 +138,12 @@ func _on_full_toggled(on: bool) -> void:
 
 func update_state(s: Dictionary) -> void:
 	st = s
-	queue_redraw()
+	# the board is a big drawing and most states (a Run frame, a step that
+	# touches no pin) leave it as it was
+	var key := [s.get("loaded"), s.get("gpio"), s.get("gpio_changed"), s.get("gpio_source"), _last_io()]
+	if key != _key:
+		_key = key
+		_refresh()
 
 
 # ── geometry ────────────────────────────────────────────────────────────────
@@ -158,7 +181,7 @@ func _text(pos: Vector2, s: String, size: float, col: Color, f: Font = null, cen
 	var fs := _fs(size)
 	if center:
 		pos.x -= fnt.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x / 2.0
-	draw_string(fnt, pos, s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+	_ci.draw_string(fnt, pos, s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
 
 
 func _box(rect: Rect2, bg: Color, radius := 0.0, border := Color.TRANSPARENT, bw := 0.0,
@@ -174,7 +197,7 @@ func _box(rect: Rect2, bg: Color, radius := 0.0, border := Color.TRANSPARENT, bw
 		sb.shadow_size = int(shadow * _scale)
 		sb.shadow_offset = Vector2(0, shadow * 0.5 * _scale)
 	sb.anti_aliasing = true
-	draw_style_box(sb, rect)
+	_ci.draw_style_box(sb, rect)
 
 
 func _half_disc(center: Vector2, radius: float, up: bool, col: Color) -> void:
@@ -183,13 +206,47 @@ func _half_disc(center: Vector2, radius: float, up: bool, col: Color) -> void:
 	for k in 17:
 		var a := PI * k / 16.0
 		pts.append(center + Vector2(cos(a), sin(a) * (-1.0 if up else 1.0)) * radius)
-	draw_colored_polygon(pts, col)
+	_ci.draw_colored_polygon(pts, col)
 
 
 # ── drawing ─────────────────────────────────────────────────────────────────
 
+class Painter extends Control:
+	var view: Control
+
+	func _draw() -> void:
+		view._ci = self
+		view._paint()
+		view._ci = view
+
+
+## Paint the board again into its texture, at the size it has on screen in
+## real pixels, so it stays sharp at any zoom.
+func _refresh() -> void:
+	if _vp == null or size.x < 1.0 or size.y < 1.0:
+		return
+	var s := get_viewport().get_final_transform().get_scale().x * get_global_transform().get_scale().x
+	_vp_scale = s
+	_vp.size = Vector2i(ceili(size.x * s), ceili(size.y * s))
+	_vp.size_2d_override = Vector2i(ceili(size.x), ceili(size.y))
+	_painter.size = size
+	_painter.queue_redraw()
+	_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	queue_redraw()
+
+
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, size), C_BG)
+	if _vp == null:
+		_paint()
+		return
+	var s := get_viewport().get_final_transform().get_scale().x * get_global_transform().get_scale().x
+	if not is_equal_approx(s, _vp_scale):
+		_refresh.call_deferred()
+	draw_texture_rect(_vp.get_texture(), Rect2(Vector2.ZERO, Vector2(_vp.size_2d_override)), false)
+
+
+func _paint() -> void:
+	_ci.draw_rect(Rect2(Vector2.ZERO, size), C_BG)
 	_scale = min(size.x / W, size.y / H)
 	_origin = (size - Vector2(W, H) * _scale) / 2.0
 
@@ -225,9 +282,9 @@ func _draw_pcb() -> void:
 	# mounting holes: 2.1 mm, 2 mm from each end, 11.4 mm apart
 	for hx in [BOARD.position.x + 2.0 * MM, BOARD.end.x - 2.0 * MM]:
 		for hy in [CY - 5.7 * MM, CY + 5.7 * MM]:
-			draw_circle(_p(hx, hy), 21 * _scale, C_GOLD)           # plated ring
-			draw_circle(_p(hx, hy), 18 * _scale, C_GOLD_DARK)
-			draw_circle(_p(hx, hy), 1.05 * MM * _scale, C_BG)       # 2.1 mm drill
+			_ci.draw_circle(_p(hx, hy), 21 * _scale, C_GOLD)           # plated ring
+			_ci.draw_circle(_p(hx, hy), 18 * _scale, C_GOLD_DARK)
+			_ci.draw_circle(_p(hx, hy), 1.05 * MM * _scale, C_BG)       # 2.1 mm drill
 
 
 func _draw_traces() -> void:
@@ -243,7 +300,7 @@ func _draw_traces() -> void:
 		var mid_y := (y1 + target.y) / 2.0
 		var pts := PackedVector2Array([_p(pos.x, pos.y), _p(pos.x, y1), _p(pos.x + (target.x - pos.x) * 0.35, mid_y),
 			_p(target.x, target.y)])
-		draw_polyline(pts, C_TRACE, 3.0 * _scale, true)
+		_ci.draw_polyline(pts, C_TRACE, 3.0 * _scale, true)
 
 
 func _draw_silkscreen() -> void:
@@ -255,20 +312,20 @@ func _draw_silkscreen() -> void:
 	_text(_p(772, 360), "Raspberry Pi Pico", 12, C_SILK, null, true)
 	_text(_p(772, 377), "© 2020", 9, C_SILK, null, true)
 	# component outlines
-	draw_rect(_r(226, 240, 48, 52), C_SILK, false, 1.0 * _scale)
+	_ci.draw_rect(_r(226, 240, 48, 52), C_SILK, false, 1.0 * _scale)
 
 
 func _draw_components() -> void:
 	# passives: tan bodies with tinned ends
 	for p in PASSIVES:
 		var r := _r(p[0], p[1], p[2], p[3])
-		draw_rect(r, Color("b89a6a"))
+		_ci.draw_rect(r, Color("b89a6a"))
 		if p[2] > p[3]:
-			draw_rect(Rect2(r.position, Vector2(r.size.x * 0.25, r.size.y)), C_METAL)
-			draw_rect(Rect2(r.position + Vector2(r.size.x * 0.75, 0), Vector2(r.size.x * 0.25, r.size.y)), C_METAL)
+			_ci.draw_rect(Rect2(r.position, Vector2(r.size.x * 0.25, r.size.y)), C_METAL)
+			_ci.draw_rect(Rect2(r.position + Vector2(r.size.x * 0.75, 0), Vector2(r.size.x * 0.25, r.size.y)), C_METAL)
 		else:
-			draw_rect(Rect2(r.position, Vector2(r.size.x, r.size.y * 0.25)), C_METAL)
-			draw_rect(Rect2(r.position + Vector2(0, r.size.y * 0.75), Vector2(r.size.x, r.size.y * 0.25)), C_METAL)
+			_ci.draw_rect(Rect2(r.position, Vector2(r.size.x, r.size.y * 0.25)), C_METAL)
+			_ci.draw_rect(Rect2(r.position + Vector2(0, r.size.y * 0.75), Vector2(r.size.x, r.size.y * 0.25)), C_METAL)
 
 	# buck-boost regulator (RT6150) and its inductor, by VBUS/VSYS
 	_box(_r(172, 196, 34, 28), C_CHIP, 2, Color("2c2e33"), 1, 3)
@@ -278,16 +335,16 @@ func _draw_components() -> void:
 
 	# BOOTSEL button: white housing with a round actuator
 	_box(_r(228, 242, 44, 48), Color("f1f1ee"), 4, Color("c9c9c4"), 1.5, 4)
-	draw_circle(_p(250, 266), 13 * _scale, Color("dcdcd7"))
-	draw_circle(_p(250, 266), 10 * _scale, Color("e9e9e4"))
+	_ci.draw_circle(_p(250, 266), 13 * _scale, Color("dcdcd7"))
+	_ci.draw_circle(_p(250, 266), 10 * _scale, Color("e9e9e4"))
 	_text(_p(250, 306), "BOOTSEL", 8, C_SILK, null, true)
 
 	# on-board LED (GP25), next to the USB connector
 	var led := _gpio(25)
 	var lit: bool = led.get("level") != null and int(led["level"]) == 1
 	if lit:
-		draw_circle(_p(190, 352), 26 * _scale, Color(0.22, 0.95, 0.35, 0.18))
-		draw_circle(_p(190, 352), 15 * _scale, Color(0.22, 0.95, 0.35, 0.35))
+		_ci.draw_circle(_p(190, 352), 26 * _scale, Color(0.22, 0.95, 0.35, 0.18))
+		_ci.draw_circle(_p(190, 352), 15 * _scale, Color(0.22, 0.95, 0.35, 0.35))
 	_box(_r(182, 346, 16, 12), C_HIGH if lit else Color("e7dfc4"), 2, Color("9e977f"), 1)
 	_text(_p(190, 374), "LED", 8, C_SILK, null, true)
 	if lit:
@@ -295,10 +352,10 @@ func _draw_components() -> void:
 
 	# QSPI flash (W25Q16JV, SOIC-8) with gull-wing leads
 	for k in 4:
-		draw_rect(_r(356 + k * 16, 196, 6, 10), C_METAL)
-		draw_rect(_r(356 + k * 16, 262, 6, 10), C_METAL)
+		_ci.draw_rect(_r(356 + k * 16, 196, 6, 10), C_METAL)
+		_ci.draw_rect(_r(356 + k * 16, 262, 6, 10), C_METAL)
 	_box(_r(348, 204, 70, 60), C_CHIP, 3, Color("2c2e33"), 1, 4)
-	draw_circle(_p(356, 213), 2.5 * _scale, Color("3a3c41"))
+	_ci.draw_circle(_p(356, 213), 2.5 * _scale, Color("3a3c41"))
 	_text(_p(383, 232), "W25Q16JV", 8, Color("8c9098"), null, true)
 	_text(_p(383, 246), "IQ", 7, Color("6d7179"), null, true)
 
@@ -310,12 +367,12 @@ func _draw_components() -> void:
 	for k in 14:
 		var tx := x0 + 8 + k * (s - 16) / 13.0
 		var ty := y0 + 8 + k * (s - 16) / 13.0
-		draw_rect(_r(tx - 1.5, y0 - 4, 3, 5), C_METAL_DARK)
-		draw_rect(_r(tx - 1.5, y0 + s - 1, 3, 5), C_METAL_DARK)
-		draw_rect(_r(x0 - 4, ty - 1.5, 5, 3), C_METAL_DARK)
-		draw_rect(_r(x0 + s - 1, ty - 1.5, 5, 3), C_METAL_DARK)
+		_ci.draw_rect(_r(tx - 1.5, y0 - 4, 3, 5), C_METAL_DARK)
+		_ci.draw_rect(_r(tx - 1.5, y0 + s - 1, 3, 5), C_METAL_DARK)
+		_ci.draw_rect(_r(x0 - 4, ty - 1.5, 5, 3), C_METAL_DARK)
+		_ci.draw_rect(_r(x0 + s - 1, ty - 1.5, 5, 3), C_METAL_DARK)
 	_box(_r(x0, y0, s, s), C_CHIP, 4, Color("2f3136"), 1.5, 6)
-	draw_circle(_p(x0 + 10, y0 + 10), 3 * _scale, Color("34363b"))
+	_ci.draw_circle(_p(x0 + 10, y0 + 10), 3 * _scale, Color("34363b"))
 	_draw_raspberry(Vector2(cx, y0 + 30), 0.9)
 	_text(_p(cx, y0 + 64), "RP2040", 13, Color("c7cad0"), null, true)
 	_text(_p(cx, y0 + 80), "RP2-B2", 8, Color("80848c"), null, true)
@@ -329,8 +386,8 @@ func _draw_components() -> void:
 	var names := ["SWCLK", "GND", "SWDIO"]
 	for k in 3:
 		var py := CY - 40 + k * 40
-		draw_circle(_p(866, py), 9 * _scale, C_GOLD)
-		draw_circle(_p(866, py), 4 * _scale, C_GOLD_DARK)
+		_ci.draw_circle(_p(866, py), 9 * _scale, C_GOLD)
+		_ci.draw_circle(_p(866, py), 4 * _scale, C_GOLD_DARK)
 		_text(_p(821, py + 4), names[k], 7, C_SILK)
 	_text(_p(866, CY - 58), "DEBUG", 7, C_SILK, null, true)
 
@@ -339,10 +396,10 @@ func _draw_raspberry(c: Vector2, k: float) -> void:
 	# Tiny raspberry logo etched on the RP2040 lid.
 	var col := Color("55585e")
 	var leaf := Color("4a4d52")
-	draw_circle(_p(c.x - 6 * k, c.y - 10 * k), 4 * k * _scale, leaf)
-	draw_circle(_p(c.x + 6 * k, c.y - 10 * k), 4 * k * _scale, leaf)
+	_ci.draw_circle(_p(c.x - 6 * k, c.y - 10 * k), 4 * k * _scale, leaf)
+	_ci.draw_circle(_p(c.x + 6 * k, c.y - 10 * k), 4 * k * _scale, leaf)
 	for off in [Vector2(0, 0), Vector2(-7, 2), Vector2(7, 2), Vector2(-4, 8), Vector2(4, 8), Vector2(0, 13)]:
-		draw_circle(_p(c.x + off.x * k, c.y + off.y * k - 2), 4.2 * k * _scale, col)
+		_ci.draw_circle(_p(c.x + off.x * k, c.y + off.y * k - 2), 4.2 * k * _scale, col)
 
 
 func _draw_usb() -> void:
@@ -351,9 +408,9 @@ func _draw_usb() -> void:
 	_box(r, C_METAL, 6, C_METAL_DARK, 2, 8)
 	_box(_r(76, CY - 57, 84, 12), Color(1, 1, 1, 0.25), 4)        # highlight
 	_box(_r(72, CY - 34, 14, 68), Color("3a3f46"), 2)              # port opening
-	draw_rect(_r(74, CY - 20, 8, 40), Color("1e2227"))
+	_ci.draw_rect(_r(74, CY - 20, 8, 40), Color("1e2227"))
 	for k in 5:                                                     # solder tabs
-		draw_rect(_r(150, CY - 44 + k * 22, 12, 6), C_METAL_DARK)
+		_ci.draw_rect(_r(150, CY - 44 + k * 22, 12, 6), C_METAL_DARK)
 
 
 func _draw_pin(num: int, changed: Dictionary) -> void:
@@ -366,12 +423,12 @@ func _draw_pin(num: int, changed: Dictionary) -> void:
 
 	# pad: castellated half-hole at the edge joined to the through-hole
 	var pad := _r(pos.x - 11, minf(edge, pos.y), 22, absf(pos.y - edge))
-	draw_rect(pad, C_GOLD)
+	_ci.draw_rect(pad, C_GOLD)
 	_half_disc(_p(pos.x, edge), 11 * _scale, not top, C_GOLD)
 	_half_disc(_p(pos.x, edge), 5.5 * _scale, not top, C_BG)
-	draw_circle(c, r, C_GOLD)
-	draw_arc(c, r, 0, TAU, 24, C_GOLD_DARK, 1.2 * _scale)
-	draw_circle(c, r * 0.5, C_HOLE)
+	_ci.draw_circle(c, r, C_GOLD)
+	_ci.draw_arc(c, r, 0, TAU, 24, C_GOLD_DARK, 1.2 * _scale)
+	_ci.draw_circle(c, r * 0.5, C_HOLE)
 
 	var label_y := edge - 12 if top else edge + 24
 	if typeof(info) == TYPE_STRING:
@@ -398,25 +455,27 @@ func _draw_pin(num: int, changed: Dictionary) -> void:
 		var fill := C_HIGH if high else Color("2a2f38")
 		if not is_out and high:
 			fill = C_IN
-		draw_circle(c, r * 1.15, fill)
-		draw_arc(c, r * 1.15, 0, TAU, 24, C_HIGH if high and is_out else (C_IN if not is_out else C_LOW), 1.5 * _scale)
+		_ci.draw_circle(c, r * 1.15, fill)
+		_ci.draw_arc(c, r * 1.15, 0, TAU, 24, C_HIGH if high and is_out else (C_IN if not is_out else C_LOW), 1.5 * _scale)
 		_text(c + Vector2(0, 5.5 * _scale), "1" if high else "0", 15.0 if high else 11.0,
 			Color("0b1a0f") if high else C_LOW, mono, true)
 	if changed.has(gp):
-		draw_arc(c, r * 1.7, 0, TAU, 32, C_CHANGED, 2.5 * _scale)
+		_ci.draw_arc(c, r * 1.7, 0, TAU, 32, C_CHANGED, 2.5 * _scale)
+
+
+## The current instruction's last I/O write, decoded ("" if none).
+func _last_io() -> String:
+	var hist: Array = [] if _board() else st.get("history", [])
+	for i in range(hist.size() - 1, -1, -1):
+		for ch in hist[i]["changes"]:
+			if ch["kind"] == "io":
+				return "%s  ←  %s" % [_io_name(int(ch["addr"])), Backend.hex32(ch["new"])]
+	return ""
 
 
 func _draw_io_caption() -> void:
 	# Most recent I/O write of the current instruction, decoded.
-	var hist: Array = [] if _board() else st.get("history", [])
-	var text := ""
-	for i in range(hist.size() - 1, -1, -1):
-		for ch in hist[i]["changes"]:
-			if ch["kind"] == "io":
-				text = "%s  ←  %s" % [_io_name(int(ch["addr"])), Backend.hex32(ch["new"])]
-				break
-		if text != "":
-			break
+	var text := _last_io()
 	var changed: Array = st.get("gpio_changed", [])
 	var parts := []
 	for gp in changed:
@@ -436,7 +495,7 @@ func _draw_legend() -> void:
 	var y := 80.0
 	var x := 330.0
 	for item in [[C_HIGH, "output 1"], [Color("2a2f38"), "0"], [C_IN, "input 1"], [C_CHANGED, "just changed"]]:
-		draw_circle(_p(x, y - 4), 6 * _scale, item[0])
+		_ci.draw_circle(_p(x, y - 4), 6 * _scale, item[0])
 		_text(_p(x + 11, y), item[1], 10, C_DIM)
 		x += 95
 

@@ -31,10 +31,14 @@ var follow_latest := true
 var asm := {}
 var font: Font
 var _dim_labels: Array[Label] = []
+var _key = null               # what the list and the details were last built from
 
 
 func _ready() -> void:
 	font = Backend.mono_font()
+	# while hidden (below level 3, or on the pipeline) nothing is rebuilt;
+	# showing the panel catches up with the latest state
+	visibility_changed.connect(func(): if is_visible_in_tree(): update_state(Backend.state))
 
 	var cols := HBoxContainer.new()
 	cols.add_theme_constant_override("separation", 14)
@@ -125,6 +129,7 @@ func _ready() -> void:
 
 
 func _apply_palette() -> void:
+	_key = null
 	var sb := Palette.panel_box("panel", 6, 8)
 	sb.content_margin_left = 10
 	sb.content_margin_right = 10
@@ -166,6 +171,7 @@ func _rich(parent: Control, min_h: int) -> RichTextLabel:
 
 
 func _on_program(prog: Dictionary) -> void:
+	_key = null
 	asm.clear()
 	for row in prog["listing"]:
 		asm[int(row["addr"])] = str(row["text"]).strip_edges()
@@ -178,8 +184,12 @@ func _asm_at(a: int) -> String:
 
 
 func update_state(st: Dictionary) -> void:
-	if not st.get("loaded", false):
+	if not st.get("loaded", false) or not is_visible_in_tree():
 		return
+	var key := [st["history"], st["insn_total"], st["in_insn"], st["pc"], st.get("fault")]
+	if key == _key:
+		return   # a Run frame in which this instruction's cycles did not change
+	_key = key
 	history = st["history"]
 	var total := int(st["insn_total"])
 	if history.size() > 0:

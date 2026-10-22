@@ -34,6 +34,7 @@ from .loader import load_program, LoadError
 from . import settings as prog_settings
 from . import challenge as challenges
 from . import heat
+from . import explain
 from .cpu import SimulatorError, svc_write_data
 from .pipeline import Pipeline
 
@@ -41,6 +42,7 @@ REG_NAMES = ['R0', 'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7',
              'R8', 'R9', 'R10', 'R11', 'R12', 'SP', 'LR', 'PC']
 MAX_SPEED = 0            # cps value meaning "as fast as possible"
 FRAME = 1 / 30           # state broadcast interval while running
+IDLE_POLL = 0.02         # select() timeout while nothing is running
 HEX_DEFAULT = (0x3000, 256)
 PICO_VID = 0x2E8A
 MACHINES = ('multicycle', 'm0plus')
@@ -112,6 +114,7 @@ class Server:
         self.fault = None          # why the CPU stopped, if it faulted
         self.gpio_before = []      # pin states at the start of the last action
         self.dirty = False         # a state update is pending
+        self.unsent = False        # Run has made progress the GUI has not been sent
 
         self.mode = 'sim'          # 'sim' or 'pico'
         self.machine = 'multicycle'  # what Step Cycle steps: see MACHINES
@@ -137,6 +140,15 @@ class Server:
         self.check_results = None    # their results once the program has halted
         self.heat_overview = heat.Overview()   # coarse heat-map samples past the trace's end
         self.watch_next = 0.0
+        # "Explain this step": the machine before the last user action, what
+        # that action was, and the explanation built from them (explain.py)
+        self.step_kind = 'load'      # load, insn, cycle, call, run, back, edit, pipe
+        self.before = None
+        self.insn_before = None      # the machine when the current instruction began
+        self.explainer = None
+        self.explanation = None
+        self.explain_due = False
+        self.explain_id = 0
 
     # ── transport ────────────────────────────────────────────────────────────
 
@@ -165,8 +177,7 @@ class Server:
             self.send_state()
         while self.conn:
             busy = self.running and not self.waiting_input
-            timeout = 0 if busy else 0.02
-            r, _, _ = select.select([self.conn], [], [], timeout)
+            r, _, _ = select.select([self.conn], [], [], self._wait())
             if r:
                 try:
                     data = self.conn.recv(65536)
@@ -192,6 +203,20 @@ class Server:
                 self.error(f"internal error: {e!r}")
                 self.dirty = True
         self.close_serial()
+
+    def _wait(self):
+        """How long the loop may sleep in select(): not at all while running
+        flat out, until the next clock cycle is due at a set speed, otherwise
+        a short poll (serial, flash, file changes).  A command from the GUI
+        wakes it at once, so sleeping never delays a key press."""
+        if not self.running or self.waiting_input:
+            return IDLE_POLL
+        if self.cps == MAX_SPEED or self.stop_at is not None:
+            return 0
+        due = (1.0 - self.cycle_credit) / self.cps - (time.monotonic() - self.last_tick)
+        if self.unsent:
+            due = min(due, FRAME - (time.monotonic() - self.last_frame))
+        return min(max(0.0, due), IDLE_POLL)
 
     def dispatch(self, line):
         try:
@@ -271,7 +296,26 @@ class Server:
             'serial': self.serial.port if self.serial else None,
             'machine': self.machine,
             'pipe': self.pipe.view() if self.machine == 'm0plus' else None,
+            'explain': self._explanation(),
         })
+
+    def _explanation(self):
+        """The "Explain this step" text for the last user action, built once
+        when the action is over (never while Run is on: explanations are
+        for stepping, and building one every frame would cost time)."""
+        if self.running and not self.waiting_input:
+            self.explain_due = True           # explain where Run stops
+            return {'kind': 'running'}
+        if self.explain_due:
+            self.explain_due = False
+            try:
+                self.explanation = explain.build(self)
+            except Exception as e:            # never let an explanation break stepping
+                self.explanation = {'kind': 'error', 'now': {'head': '', 'simple':
+                                    f"(picosim could not explain this step: {e!r})", 'detail': []}, 'next': None}
+            self.explain_id += 1
+            self.explanation['id'] = self.explain_id
+        return self.explanation
 
     def _checks(self):
         """The challenge's results once the program has finished (not after a
@@ -375,15 +419,24 @@ class Server:
         g = self.prog.cpu.gpio if self.prog else None
         return g.pin_states() if g else []
 
-    def _begin_action(self, action='step'):
+    def _begin_action(self, action='step', kind=None):
         """Start a user action: 'step', 'call' (Step over), 'run', 'back' (Step back) or 'edit'
         (a value typed into a register, flag, memory or pin).  Changes that
-        no single instruction made are put down to it."""
+        no single instruction made are put down to it.  `kind` says more
+        exactly what it is, for the explanation (see step_kind)."""
         self.action = action
         self.writer = {}
         self.changed = set()
         self.mem_changed = set()
         self.gpio_before = self.gpio_pins()
+        c = self.core
+        if c is not None:
+            self.step_kind = kind or action
+            self.before = {'pc': c.insn_addr if c.in_insn else c.pc, 'snap': explain.snap(c),
+                           'out': len(self.out_text), 'steps': c.steps, 'cycles': c.cycles}
+            if not c.in_insn:
+                self.insn_before = self.before
+            self.explain_due = True
 
     def _fault(self, e):
         self.core.halted = True
@@ -480,11 +533,13 @@ class Server:
                 self.heat_overview.maybe(c)   # the trace is full: keep coarse samples
             after = c.regs
             self.changed |= {REG_NAMES[i] for i in range(16) if before[i] != after[i]}
+            self.unsent = True
         else:
             self.cycle_credit += (now - self.last_tick) * self.cps
             self.cycle_credit = min(self.cycle_credit, self.cps * 0.1 + 1)
             while self.cycle_credit >= 1:
                 self.cycle_credit -= 1
+                self.unsent = True
                 if pipe:
                     if not self.pipe_step():
                         break
@@ -501,8 +556,10 @@ class Server:
         if hit or (c.halted and not self._pipe_draining()):
             self.running = False
             self.stop_at = None
-        if not self.running or now - self.last_frame >= FRAME or self.waiting_input:
+        # at a set speed most passes run no cycle at all: send only real progress
+        if not self.running or self.waiting_input or (self.unsent and now - self.last_frame >= FRAME):
             self.last_frame = now
+            self.unsent = False
             self.send_state()
 
     # ── commands ─────────────────────────────────────────────────────────────
@@ -567,7 +624,8 @@ class Server:
             prog.run_to_main()
             self.boot_steps = self.core.steps   # level 1 counts from main
         self.pipe = Pipeline(self.core, prog.asm_map)
-        self._begin_action()
+        self.explainer = explain.Explainer(prog)
+        self._begin_action(kind='load')
         self.breakpoints &= set(prog.asm_map)
         self.hexview = (max(prog.main_addr, 0x3000) & ~0xF, HEX_DEFAULT[1])
         self.send_program()
@@ -615,7 +673,7 @@ class Server:
             return
         self._settle()
         self.running = False
-        self._begin_action()
+        self._begin_action(kind='pipe' if self.machine == 'm0plus' else 'cycle')
         if self.machine == 'm0plus':
             self.pipe_step()
         else:
@@ -631,7 +689,7 @@ class Server:
             if call and call[1] < 0x3000:      # bl putchar / bl getchar: one step
                 return self.cmd_step_over(msg)
         self.running = False
-        self._begin_action()
+        self._begin_action(kind='insn')
         if self.machine == 'm0plus':
             self.pipe_step_insn()
         else:
@@ -879,7 +937,7 @@ class Server:
 
     def _plain_step(self):
         self.running = False
-        self._begin_action()
+        self._begin_action(kind='insn')
         if self.machine == 'm0plus':
             self.pipe_step_insn()
         else:

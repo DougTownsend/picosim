@@ -163,7 +163,7 @@ goes on:
 
 | Level | Shows |
 |---|---|
-| 1 · Basics | Step instruction, Run, the registers and flags (in hex, decimal or signed), the disassembly and the serial console |
+| 1 · Basics | Step instruction, Run, the registers and flags (in hex, decimal or signed), the disassembly, Explain this step and the serial console |
 | 2 · Memory & I/O | + the Memory tab and stack, the Pico board, Pico (USB serial) mode |
 | 3 · Inside the CPU | + Step cycle, the CPU diagram and cycle inspector, MAR/MDR/IR, the program walkthrough |
 | 4 · Pipeline & performance | + the 2-stage pipeline and the Performance window (the whole app) |
@@ -195,13 +195,31 @@ uses the RP2040's second core to send the pin levels over USB about 50 times
 a second, as `\x02P<levels>,<directions>\x03` frames; picosim removes these
 from the console text (another serial monitor would show them).
 
+**Explain this step** (the fold-out panel at the top of the right-hand
+column) explains every step as the student takes it: what the instruction
+just did, with the real values, and what the next instruction will do, where
+the program goes after it and why (from the shape of the code and the
+comment on that line). The forecast is exact: `picosim/explain.py` runs the
+next instruction on a scratch copy of the machine. **More detail** adds what
+changed, how the instruction works, its encoding and, from level 3, its clock
+cycles. While Run is on the panel is not rebuilt.
+
 The guide (F1) lists only the topics for the current level. Pass
 `--level=N` after Godot's `--` to override the level for one run, e.g. for
 classroom demos or screenshots. It is written as the course's reference for
 students who start from nothing: each level has a reading path on its
 *Start here* page, lessons with values taken from the bundled examples, and
-a glossary that grows with the level. Click a section heading in its topic
-list to fold that section away; the choice is remembered.
+a glossary that grows with the level. Every page opens with a short version
+(two paragraphs at most) and folds out the full details on demand. Click a
+section heading in its topic list to fold that section away; the choice is
+remembered.
+
+The GUI is built to stay light on battery: Godot runs in low-processor mode
+(it redraws only when something on screen changes), the backend sleeps until
+the next clock cycle is due when Run has a set speed and sends only real
+progress, panels skip updates that change nothing, the Pico board is drawn
+once into a texture, and while Run is on the diagram's pulse is redrawn at
+30 frames a second.
 
 Raising the Level switches on what the new level adds (the Memory tab at 2,
 the CPU diagram at 3, the 2-stage pipeline at 4), shows a "New at Level N"

@@ -9,6 +9,8 @@ config/name="picosim"
 config/description="Multi-cycle ARMv6-M teaching simulator"
 run/main_scene="res://main.tscn"
 config/features=PackedStringArray("4.7")
+run/low_processor_mode=true
+run/low_processor_mode_sleep_usec=16000
 
 [autoload]
 

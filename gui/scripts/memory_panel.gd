@@ -17,6 +17,9 @@ var goto_edit: LineEdit
 var write_addr: LineEdit
 var write_data: LineEdit
 var hex_addr := 0x3000
+var _bps_key = null       # the breakpoints the ● column shows
+var _cur_key = null       # [address, colour] of the ▶ row
+var _hex_key = null       # what the hex dump and stack view show
 var _dim_labels: Array[Label] = []
 const COLUMNS := [[0, "", 22, false], [1, "Address", 86, false], [2, "Raw", 96, false],
 	[3, "Label", 100, false], [4, "Instruction", 190, false], [5, "Source (line in your file)", 220, true]]
@@ -34,6 +37,8 @@ func _ready() -> void:
 	tabs.set_tab_title(1, "Memory")
 	tabs.set_tab_tooltip(0, "Your program, one instruction per row")
 	tabs.set_tab_tooltip(1, "The bytes in memory, and the stack")
+	# the hex dump is only drawn while its tab is open
+	tabs.tab_changed.connect(func(_t): if Backend.state.get("loaded", false): _render_hex(Backend.state))
 	set_level(Level.current)
 	Level.changed.connect(func(): set_level(Level.current))
 	_apply_palette()
@@ -48,6 +53,7 @@ func set_level(n: int) -> void:
 
 
 func _apply_palette() -> void:
+	_hex_key = null
 	add_theme_stylebox_override("panel", Palette.panel_box("panel", 6, 6))
 	for l in _dim_labels:
 		l.add_theme_color_override("font_color", Palette.c("dim"))
@@ -184,6 +190,8 @@ func set_program(prog: Dictionary) -> void:
 	tree.clear()
 	items.clear()
 	cur_item = null
+	_bps_key = null
+	_cur_key = null
 	var root := tree.create_item()
 	for row in prog["listing"]:
 		var it := tree.create_item(root)
@@ -218,31 +226,44 @@ func _on_cell_selected() -> void:
 func update_state(st: Dictionary) -> void:
 	if not st.get("loaded", false):
 		return
-	var bps := {}
-	for b in st["breakpoints"]:
-		bps[int(b)] = true
-	for a in items:
-		var it: TreeItem = items[a]
-		it.set_text(0, "●" if bps.has(a) else "")
-	if cur_item != null:
-		for c in COLUMNS.size():
-			cur_item.clear_custom_bg_color(c)
-		cur_item.set_text(1, "%04X" % int(cur_item.get_metadata(0)))
+	# Only what changed is touched: every TreeItem change redraws the whole
+	# list, and states arrive up to 30 times a second while a program runs.
+	if st["breakpoints"] != _bps_key:
+		_bps_key = st["breakpoints"]
+		var bps := {}
+		for b in st["breakpoints"]:
+			bps[int(b)] = true
+		for a in items:
+			var it: TreeItem = items[a]
+			it.set_text(0, "●" if bps.has(a) else "")
 	var addr := int(st["insn_addr"])
-	cur_item = items.get(addr)
-	if cur_item != null:
-		for c in COLUMNS.size():
-			cur_item.set_custom_bg_color(c, Palette.c("pc_row"))
-		cur_item.set_text(1, "▶%04X" % addr)
-		if follow.button_pressed:
-			tree.scroll_to_item(cur_item, true)
+	var key := [addr, Palette.c("pc_row")]
+	if key != _cur_key:
+		_cur_key = key
+		if cur_item != null:
+			for c in COLUMNS.size():
+				cur_item.clear_custom_bg_color(c)
+			cur_item.set_text(1, "%04X" % int(cur_item.get_metadata(0)))
+		cur_item = items.get(addr)
+		if cur_item != null:
+			for c in COLUMNS.size():
+				cur_item.set_custom_bg_color(c, Palette.c("pc_row"))
+			cur_item.set_text(1, "▶%04X" % addr)
+	if cur_item != null and follow.button_pressed:
+		tree.scroll_to_item(cur_item, true)
 	_render_hex(st)
 
 
 # ── hex / stack ─────────────────────────────────────────────────────────────
 
 func _render_hex(st: Dictionary) -> void:
+	if not hex_text.is_visible_in_tree():
+		return   # drawn when the Memory tab is opened (see _ready)
 	var hv: Dictionary = st["hexview"]
+	var key := [hv, st["mem_changed"], st["regs"][13], st["insn_addr"], st["stack"]]
+	if key == _hex_key:
+		return
+	_hex_key = key
 	hex_addr = int(hv["addr"])
 	var data := PackedByteArray(str(hv["data"]).hex_decode())
 	var changed := {}

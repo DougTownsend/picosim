@@ -57,6 +57,7 @@ const ANIM_FILL := 0.85
 const ANIM_STEP := 1.6
 const ANIM_MIN := 0.35
 const ANIM_RUN_MIN := 0.06
+const RUN_FRAME := 1.0 / 30.0  # seconds between frames while Run is on (a step gets every frame)
 const TAIL := 60.0
 
 ## Token colours, by instruction: follow one instruction from stage to stage.
@@ -346,10 +347,16 @@ func _start_anim(one_step: bool) -> void:
 	set_process(true)
 
 
+var _since_draw := 0.0
+
 func _process(delta: float) -> void:
 	_prog = minf(1.0, _prog + delta / maxf(_dur, 0.001))
+	_since_draw += delta
 	if _prog >= 1.0:
 		set_process(false)
+	elif st.get("running", false) and _since_draw < RUN_FRAME:
+		return   # while Run is on, the tokens are redrawn at 30 frames a second
+	_since_draw = 0.0
 	queue_redraw()
 
 
