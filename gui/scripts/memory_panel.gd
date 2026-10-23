@@ -2,7 +2,9 @@ extends PanelContainer
 ## Bottom-left memory view.
 ##   Disassembly — follows the PC; click the ● column to toggle a breakpoint.
 ##                 The Source column is the line of the .s file each row came from.
-##   Memory      — hex dump with go-to, byte editing and a stack view.
+##   Memory      — the memory explorer (memory_view.gd): a map of memory, the
+##                 bytes coloured by what they are, the stack, and what the
+##                 last step read or wrote.
 
 var tabs: TabContainer
 var tree: Tree
@@ -11,19 +13,13 @@ var items := {}          # addr -> TreeItem
 var cur_item: TreeItem = null
 var font: Font
 
-var hex_text: RichTextLabel
-var stack_text: RichTextLabel
-var goto_edit: LineEdit
-var write_addr: LineEdit
-var write_data: LineEdit
-var hex_addr := 0x3000
+const MemoryView := preload("res://scripts/memory_view.gd")
+var mem_view
 var _bps_key = null       # the breakpoints the ● column shows
 var _cur_key = null       # [address, colour] of the ▶ row
-var _hex_key = null       # what the hex dump and stack view show
 var _dim_labels: Array[Label] = []
 const COLUMNS := [[0, "", 22, false], [1, "Address", 86, false], [2, "Raw", 96, false],
 	[3, "Label", 100, false], [4, "Instruction", 190, false], [5, "Source (line in your file)", 220, true]]
-const HEX_LINE := "0000    00 01 02 03 04 05 06 07  08 09 0A 0B 0C 0D 0E 0F  ................"
 
 
 func _ready() -> void:
@@ -37,10 +33,12 @@ func _ready() -> void:
 	tabs.set_tab_title(1, "Memory")
 	tabs.set_tab_tooltip(0, "Your program, one instruction per row")
 	tabs.set_tab_tooltip(1, "The bytes in memory, and the stack")
-	# the hex dump is only drawn while its tab is open
-	tabs.tab_changed.connect(func(_t): if Backend.state.get("loaded", false): _render_hex(Backend.state))
+	# the Memory tab is kept up to date only while it is open
+	tabs.tab_changed.connect(func(_t): if Backend.state.get("loaded", false): _update_memory(Backend.state))
 	set_level(Level.current)
 	Level.changed.connect(func(): set_level(Level.current))
+	if OS.get_cmdline_user_args().has("--memory-tab"):   # screenshots
+		tabs.current_tab = 1
 	_apply_palette()
 	Palette.changed.connect(_apply_palette)
 
@@ -53,7 +51,6 @@ func set_level(n: int) -> void:
 
 
 func _apply_palette() -> void:
-	_hex_key = null
 	add_theme_stylebox_override("panel", Palette.panel_box("panel", 6, 6))
 	for l in _dim_labels:
 		l.add_theme_color_override("font_color", Palette.c("dim"))
@@ -62,13 +59,8 @@ func _apply_palette() -> void:
 	update_state(Backend.state)
 
 
-## Largest text scale at which a hex-dump row still fits without wrapping.
-func max_text_scale() -> float:
-	var line := font.get_string_size(HEX_LINE, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
-	return (size.x - 40.0) / line
-
-
 func _on_text_scale(s: float) -> void:
+	mem_view.set_text_scale(s)
 	for c in COLUMNS:
 		tree.set_column_custom_minimum_width(c[0], roundi(c[2] * s))
 
@@ -94,7 +86,7 @@ func _build_disasm() -> Control:
 	var hint := Label.new()
 	hint.text = "click ● to toggle a breakpoint"
 	_dim_labels.append(hint)
-	hint.add_theme_font_size_override("font_size", 12)
+	hint.add_theme_font_size_override("font_size", 13)
 	top.add_child(hint)
 
 	tree = Tree.new()
@@ -104,7 +96,7 @@ func _build_disasm() -> Control:
 	tree.column_titles_visible = true
 	tree.select_mode = Tree.SELECT_SINGLE
 	tree.add_theme_font_override("font", font)
-	tree.add_theme_font_size_override("font_size", 13)
+	tree.add_theme_font_size_override("font_size", 14)
 	for c in COLUMNS:
 		tree.set_column_title(c[0], c[1])
 		tree.set_column_custom_minimum_width(c[0], c[2])
@@ -116,77 +108,14 @@ func _build_disasm() -> Control:
 
 
 func _build_hex() -> Control:
-	var v := VBoxContainer.new()
-	var top := HBoxContainer.new()
-	v.add_child(top)
-	var gl := Label.new()
-	gl.text = "Go to"
-	top.add_child(gl)
-	goto_edit = LineEdit.new()
-	goto_edit.placeholder_text = "0x3000 or label"
-	goto_edit.custom_minimum_size.x = 140
-	goto_edit.add_theme_font_override("font", font)
-	goto_edit.text_submitted.connect(_on_goto)
-	goto_edit.tooltip_text = "Type an address (like 0x3000) or a label from your program and press Enter"
-	top.add_child(goto_edit)
-	for spec in [["PC", "pc"], ["SP", "sp"], ["main", "main"]]:
-		var b := Button.new()
-		b.text = spec[0]
-		b.focus_mode = Control.FOCUS_NONE
-		b.pressed.connect(_goto_special.bind(spec[1]))
-		b.tooltip_text = {"pc": "Show the memory at the PC (the instruction being run)",
-			"sp": "Show the memory at SP (the top of the stack)", "main": "Show the start of your program"}[spec[1]]
-		top.add_child(b)
-
-	hex_text = RichTextLabel.new()
-	hex_text.bbcode_enabled = true
-	hex_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	hex_text.add_theme_font_override("normal_font", font)
-	hex_text.add_theme_font_size_override("normal_font_size", 13)
-	hex_text.scroll_active = true
-	hex_text.selection_enabled = true
-	v.add_child(hex_text)
-
-	var wr := HBoxContainer.new()
-	v.add_child(wr)
-	var wl := Label.new()
-	wl.text = "Write bytes at"
-	wr.add_child(wl)
-	write_addr = LineEdit.new()
-	write_addr.placeholder_text = "0x2000"
-	write_addr.custom_minimum_size.x = 90
-	write_addr.add_theme_font_override("font", font)
-	write_addr.tooltip_text = "The address of the first byte to change"
-	wr.add_child(write_addr)
-	write_data = LineEdit.new()
-	write_data.placeholder_text = "de ad be ef"
-	write_data.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	write_data.add_theme_font_override("font", font)
-	write_data.text_submitted.connect(func(_t): _on_write())
-	write_data.tooltip_text = "The new bytes in hex, separated by spaces"
-	wr.add_child(write_data)
-	var wb := Button.new()
-	wb.text = "Write"
-	wb.pressed.connect(_on_write)
-	wb.tooltip_text = "Write the bytes into memory"
-	wr.add_child(wb)
-
-	var sl := Label.new()
-	sl.text = "Stack (from SP)"
-	_dim_labels.append(sl)
-	v.add_child(sl)
-	stack_text = RichTextLabel.new()
-	stack_text.bbcode_enabled = true
-	stack_text.custom_minimum_size.y = 120
-	stack_text.add_theme_font_override("normal_font", font)
-	stack_text.add_theme_font_size_override("normal_font_size", 13)
-	v.add_child(stack_text)
-	return v
+	mem_view = MemoryView.new()
+	return mem_view
 
 
 # ── disassembly ─────────────────────────────────────────────────────────────
 
 func set_program(prog: Dictionary) -> void:
+	mem_view.set_program(prog)
 	tree.clear()
 	items.clear()
 	cur_item = null
@@ -251,95 +180,9 @@ func update_state(st: Dictionary) -> void:
 			cur_item.set_text(1, "▶%04X" % addr)
 	if cur_item != null and follow.button_pressed:
 		tree.scroll_to_item(cur_item, true)
-	_render_hex(st)
+	_update_memory(st)
 
 
-# ── hex / stack ─────────────────────────────────────────────────────────────
-
-func _render_hex(st: Dictionary) -> void:
-	if not hex_text.is_visible_in_tree():
-		return   # drawn when the Memory tab is opened (see _ready)
-	var hv: Dictionary = st["hexview"]
-	var key := [hv, st["mem_changed"], st["regs"][13], st["insn_addr"], st["stack"]]
-	if key == _hex_key:
-		return
-	_hex_key = key
-	hex_addr = int(hv["addr"])
-	var data := PackedByteArray(str(hv["data"]).hex_decode())
-	var changed := {}
-	for a in st["mem_changed"]:
-		changed[int(a)] = true
-	var sp := int(st["regs"][13])
-	var pc := int(st["insn_addr"])
-	var dim := Palette.hex("dim")
-	var hot := Palette.hex("changed")
-	var out := "[color=%s]Addr    00 01 02 03 04 05 06 07  08 09 0A 0B 0C 0D 0E 0F  ASCII[/color]\n" % dim
-	for row in range(0, data.size(), 16):
-		var line := "[color=%s]%04X[/color]    " % [dim, hex_addr + row]
-		var ascii := ""
-		for i in 16:
-			if row + i >= data.size():
-				break
-			var a := hex_addr + row + i
-			var b := data[row + i]
-			var cell := "%02X" % b
-			if changed.has(a):
-				cell = "[color=%s][b]%s[/b][/color]" % [hot, cell]
-			elif a == sp:
-				cell = "[bgcolor=%s]%s[/bgcolor]" % [Palette.hex("sp_bg"), cell]
-			elif a >= pc and a < pc + 2:
-				cell = "[bgcolor=%s]%s[/bgcolor]" % [Palette.hex("pc_bg"), cell]
-			line += cell + (" " if i != 7 else "  ")
-			ascii += char(b) if b >= 32 and b < 127 else "."
-		out += line + " " + ascii.replace("[", "[lb]") + "\n"
-	hex_text.text = out
-
-	var sk: Dictionary = st["stack"]
-	var sdata := PackedByteArray(str(sk["data"]).hex_decode())
-	var sbase := int(sk["addr"])
-	var s := ""
-	for off in range(0, sdata.size() - 3, 4):
-		var w := sdata.decode_u32(off)
-		var a := sbase + off
-		var mark := "SP→ " if a == sp else "    "
-		var word_hot := false
-		for k in 4:
-			if changed.has(a + k):
-				word_hot = true
-		var val := "0x%08X" % w
-		if word_hot:
-			val = "[color=%s]%s[/color]" % [hot, val]
-		s += "%s[color=%s]%04X[/color]  %s\n" % [mark, dim, a, val]
-	if sdata.size() == 0:
-		s = "[color=%s](stack is empty — SP at top of RAM)[/color]" % dim
-	stack_text.text = s
-
-
-func _on_goto(text: String) -> void:
-	var v = Backend.parse_number(text)
-	if v == null:
-		var labels: Dictionary = Backend.program.get("labels", {})
-		if labels.has(text.strip_edges()):
-			v = int(labels[text.strip_edges()])
-	if v != null:
-		Backend.send("view_mem", {"addr": int(v) & 0xFFF0, "len": 256})
-
-
-func _goto_special(which: String) -> void:
-	var st := Backend.state
-	if not st.get("loaded", false):
-		return
-	var a := 0
-	match which:
-		"pc": a = int(st["insn_addr"])
-		"sp": a = int(st["regs"][13])
-		"main": a = int(Backend.program.get("main", 0x3000))
-	Backend.send("view_mem", {"addr": max(0, (a & 0xFFF0) - 0x40), "len": 256})
-
-
-func _on_write() -> void:
-	var a = Backend.parse_number(write_addr.text)
-	var hexs := write_data.text.replace(" ", "").replace(",", "").replace("0x", "")
-	if a == null or hexs.length() == 0 or hexs.length() % 2 != 0 or not hexs.is_valid_hex_number():
-		return
-	Backend.send("write_mem", {"addr": a, "data": hexs})
+func _update_memory(st: Dictionary) -> void:
+	if mem_view.is_visible_in_tree():
+		mem_view.update_state(st)

@@ -75,7 +75,7 @@ func _draw() -> void:
 		if _held:
 			continue
 		# a NEW tag on the top-right corner, kept inside the window
-		var fs := 11
+		var fs := 12
 		var w := _font.get_string_size("NEW", HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + 12
 		var tag := Rect2(r.end.x - w - 4, r.position.y - 9, w, 18)
 		tag.position.x = clampf(tag.position.x, 0.0, maxf(0.0, get_viewport_rect().size.x - get_global_rect().position.x - w))

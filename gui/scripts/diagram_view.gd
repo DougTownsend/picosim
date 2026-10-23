@@ -284,7 +284,7 @@ func _build_card() -> void:
 	hint.mouse_default_cursor_shape = Control.CURSOR_MOVE
 	hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card_hint = hint
-	hint.add_theme_font_size_override("font_size", 12)
+	hint.add_theme_font_size_override("font_size", 13)
 	head.add_child(hint)
 	var close := Button.new()
 	close.text = "✕"
@@ -302,7 +302,7 @@ func _build_card() -> void:
 	card_text.add_theme_font_override("mono_font", mono)
 	card_text.add_theme_font_size_override("normal_font_size", 14)
 	card_text.add_theme_font_size_override("bold_font_size", 14)
-	card_text.add_theme_font_size_override("mono_font_size", 12)
+	card_text.add_theme_font_size_override("mono_font_size", 13)
 	v.add_child(card_text)
 
 
@@ -739,7 +739,7 @@ func _draw() -> void:
 	draw_rect(bus_rect, C_WIRE_ACTIVE.darkened(0.25) if bus_on else C_BUS)
 	if heat.has("bus"):
 		HeatOverlay.tint(self, PackedVector2Array(), bus_rect, heat["bus"]["t"])
-	_text(_p(24, BUS_Y - 10), "BUS · 32-bit", 11, C_DIM)
+	_text(_p(24, BUS_Y - 10), "BUS · 32-bit", 12, C_DIM)
 	if bus_on:
 		# above the bus, in the gap between the PC gate and CLR THUMB's wire
 		_text(_p(432, BUS_Y - 11), "bus = " + Backend.hex32(cycle["bus"]), 13, C_CHANGED, mono)
@@ -755,9 +755,9 @@ func _draw() -> void:
 			_arrow(pts, C_WIRE, 1.5 * _scale, tag == "ctrl")
 		if tag.begins_with("stub:"):
 			var lbl := tag.substr(5)
-			var tw := font.get_string_size(lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(9)).x
+			var tw := font.get_string_size(lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(10)).x
 			draw_string(font, pts[0] + Vector2(-tw / 2.0, -4 * _scale), lbl,
-				HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(9), C_DIM)
+				HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(10), C_DIM)
 	for a in _paths:
 		_draw_flow(a)
 		if _reached_wire(a, 0.0):
@@ -928,7 +928,7 @@ func _gate_rect(gid: String) -> Rect2:
 	var g := _gate_geom(gid)
 	var c: Vector2 = g["c"]
 	var r := Rect2(_p(c.x - 11, c.y - 11), Vector2(22, 22) * _scale)
-	var lw := font.get_string_size(GATES[gid][1], HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(9)).x
+	var lw := font.get_string_size(GATES[gid][1], HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(10)).x
 	var s0: Vector2 = g["stub"][0]
 	var lx := _p(s0.x, 0).x + (3 * _scale if g["side"] > 0 else -3 * _scale - lw)
 	return r.merge(Rect2(Vector2(lx, _p(0, c.y - 9).y), Vector2(lw, 14 * _scale)))
@@ -946,10 +946,10 @@ func _draw_gate(gid: String, on: bool) -> void:
 	var s1: Vector2 = g["stub"][1]
 	_ctrl_stub(_p(s0.x, s0.y), _p(s1.x, s1.y), ctrl_on)
 	var lbl: String = GATES[gid][1]
-	var lw := font.get_string_size(lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(9)).x
+	var lw := font.get_string_size(lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(10)).x
 	var lp := _p(s0.x, s0.y + 3)
 	lp.x += 3 * _scale if g["side"] > 0 else -3 * _scale - lw
-	draw_string(font, lp, lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(9), C_CTRL if ctrl_on else C_DIM)
+	draw_string(font, lp, lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(10), C_CTRL if ctrl_on else C_DIM)
 	if selected_id == gid:
 		draw_polyline(tri + PackedVector2Array([tri[0]]), C_SEL, 2.5 * _scale, true)
 		_arrow(PackedVector2Array([_p(s0.x, s0.y), _p(s1.x, s1.y)]), C_SEL, 2.0 * _scale, true)
@@ -988,7 +988,7 @@ func _draw_ctrl(id: String) -> void:
 	var v := _ctrl_value(id)
 	var on := v != ""
 	_ctrl_stub(_p(c[0][0][0], c[0][0][1]), _p(c[0][1][0], c[0][1][1]), on)
-	_text(_p(c[2][0], c[2][1]), v if on else c[3], 8.5, C_CTRL if on else C_DIM, mono if on else font)
+	_text(_p(c[2][0], c[2][1]), v if on else c[3], 9.5, C_CTRL if on else C_DIM, mono if on else font)
 
 
 func _rect(id: String) -> Rect2:
@@ -1034,23 +1034,23 @@ func _draw_box(id: String, active: bool, changes: Array) -> void:
 	var title_col := C_TEXT if active or heat.has(id) else C_DIM   # readable on a heat tint
 	match shape:
 		"reg":
-			_text(r.position + Vector2(6, 14) * _scale, b[4], 11, title_col)
+			_text(r.position + Vector2(6, 14) * _scale, b[4], 12, title_col)
 			var v := int(values.get(b[4], 0))
 			var txt := Backend.hex16(v) if b[4].begins_with("IR") else Backend.hex32(v)
 			_text(r.position + Vector2(6, r.size.y / _scale - 7) * _scale, txt, 14,
 				C_CHANGED if not changes.is_empty() else C_TEXT, mono)
 		"fsm":
-			_text(r.position + Vector2(6, 16) * _scale, "FSM  (control)", 11, C_DIM)
+			_text(r.position + Vector2(6, 16) * _scale, "FSM  (control)", 12, C_DIM)
 			var state := str(cycle.get("state", st.get("next_state", "")))
 			var phase := str(cycle.get("phase", ""))
 			if cycle.is_empty():
 				state = "next: " + str(st.get("next_state", ""))
 			_text(r.position + Vector2(6, 40) * _scale, state, 13, C_TEXT, mono)
-			_text(r.position + Vector2(6, 60) * _scale, phase, 11, C_CTRL)
+			_text(r.position + Vector2(6, 60) * _scale, phase, 12, C_CTRL)
 		"regfile":
 			_draw_regfile(r, changes)
 		"flags":
-			_text(r.position + Vector2(6, 14) * _scale, "FLAGS", 10, title_col)
+			_text(r.position + Vector2(6, 14) * _scale, "FLAGS", 11, title_col)
 			var x := 8.0
 			for f in ["N", "Z", "C", "V"]:
 				var hot := false
@@ -1066,7 +1066,7 @@ func _draw_box(id: String, active: bool, changes: Array) -> void:
 				for f in ["N", "Z", "C", "V"]:
 					o += str(int(before.get(f, 0)))
 					nw += str(int(after.get(f, 0)))
-				_text(Vector2(r.position.x, r.end.y + 13 * _scale), "NZCV %s → %s" % [o, nw], 9.5, C_CHANGED, mono)
+				_text(Vector2(r.position.x, r.end.y + 13 * _scale), "NZCV %s → %s" % [o, nw], 10.5, C_CHANGED, mono)
 		"alu":
 			var op := ""
 			if str(cycle.get("state", "")) != "DECODE":
@@ -1098,23 +1098,23 @@ func _draw_box(id: String, active: bool, changes: Array) -> void:
 					if h["state"] == "FETCH_OPERANDS" and int(h["insn_addr"]) == int(cycle.get("insn_addr", -1)):
 						line = _operands(h["signals"], values, "=")
 			if line != "":
-				_text(r.position + Vector2(0, 45) * _scale, line, 10, C_DIM, mono, bw)
+				_text(r.position + Vector2(0, 45) * _scale, line, 11, C_DIM, mono, bw)
 		"mem":
-			_text(r.position + Vector2(8, 18) * _scale, b[4], 12, title_col)
-			_text(r.position + Vector2(8, 36) * _scale, "64 KB RAM · I/O at ≥ 0x10000 (GPIO)", 10, C_DIM)
+			_text(r.position + Vector2(8, 18) * _scale, b[4], 13, title_col)
+			_text(r.position + Vector2(8, 36) * _scale, "64 KB RAM · I/O at ≥ 0x10000 (GPIO)", 11, C_DIM)
 			var line := ""
 			if _has("R/W=READ"):
 				line = "read  M[%s]" % Backend.hex32(before.get("MAR", 0))
 			elif _has("R/W=WRITE"):
 				line = "write M[%s]" % Backend.hex32(before.get("MAR", 0))
 			if line != "":
-				_text(r.position + Vector2(8, 62) * _scale, line, 12, C_TEXT, mono)
+				_text(r.position + Vector2(8, 62) * _scale, line, 13, C_TEXT, mono)
 			var y := 84.0
 			for c in changes.slice(0, 3):
 				var w := int(c.get("width", 4))
 				var line2 := "%s ← %s" % [c["name"], _hexw(int(c["new"]), w)] if c["kind"] == "io" \
 					else "%s: %s → %s" % [c["name"], _hexw(int(c["old"]), w), _hexw(int(c["new"]), w)]
-				_text(r.position + Vector2(8, y) * _scale, line2, 11, C_CHANGED, mono)
+				_text(r.position + Vector2(8, y) * _scale, line2, 12, C_CHANGED, mono)
 				y += 18
 		_:
 			_text(r.position + Vector2(0, r.size.y / _scale / 2 + 5) * _scale, b[4], 11,
@@ -1126,7 +1126,7 @@ func _draw_box(id: String, active: bool, changes: Array) -> void:
 		var ir: bool = b[4].begins_with("IR")
 		var o: String = Backend.hex16(c["old"]) if ir else Backend.hex32(c["old"])
 		var n: String = Backend.hex16(c["new"]) if ir else Backend.hex32(c["new"])
-		_text(Vector2(r.position.x, r.end.y + 13 * _scale), "%s → %s" % [o, n], 10, C_CHANGED, mono)
+		_text(Vector2(r.position.x, r.end.y + 13 * _scale), "%s → %s" % [o, n], 11, C_CHANGED, mono)
 
 
 ## "A=… B=…" for the ALU inputs a FETCH_OPERANDS cycle with these signals
@@ -1148,7 +1148,7 @@ func _operands(sigs: Array, vals: Dictionary, op: String) -> String:
 
 func _draw_regfile(r: Rect2, changes: Array) -> void:
 	var active := _has("LD.REG") or _has("SR1=") or _has("SR2=") or _has("SET THUMB BIT") or _has("LD.SP")
-	_text(r.position + Vector2(8, 16) * _scale, "REGISTER FILE", 11, C_TEXT if active else C_DIM)
+	_text(r.position + Vector2(8, 16) * _scale, "REGISTER FILE", 12, C_TEXT if active else C_DIM)
 	var hot := {}
 	for c in changes:
 		hot[c["name"]] = c
@@ -1172,10 +1172,10 @@ func _draw_regfile(r: Rect2, changes: Array) -> void:
 			colr = C_CHANGED
 		elif reads.has(nm):
 			colr = C_EDGE_ACTIVE
-		_text(r.position + Vector2(col_x, y) * _scale, "%-3s %08X" % [nm, int(values.get(nm, 0))], 10.5, colr, mono)
+		_text(r.position + Vector2(col_x, y) * _scale, "%-3s %08X" % [nm, int(values.get(nm, 0))], 11.5, colr, mono)
 	var y2 := 36.0 + 7 * 16.0 + 14
 	for c in changes.slice(0, 1):
-		_text(r.position + Vector2(118, y2) * _scale, "%s → %s" % [c["name"], Backend.hex32(c["new"])], 10, C_CHANGED, mono)
+		_text(r.position + Vector2(118, y2) * _scale, "%s → %s" % [c["name"], Backend.hex32(c["new"])], 11, C_CHANGED, mono)
 
 
 func _hexw(v: int, w: int) -> String:

@@ -853,8 +853,8 @@ func _check_scheme() -> void:
 func _init_zoom() -> void:
 	var cfg := ConfigFile.new()
 	var saved = null
-	if cfg.load(SETTINGS) == OK:
-		saved = cfg.get_value("ui", "zoom", null)
+	if cfg.load(SETTINGS) == OK and cfg.has_section_key("ui", "zoom"):
+		saved = cfg.get_value("ui", "zoom")
 	# The window opens filling most of the screen (Godot does not remember
 	# window sizes between runs, so this happens on every launch).
 	var win := get_window()
@@ -973,6 +973,7 @@ func _on_diagram_toggled(on: bool) -> void:
 	cycle_area.visible = on
 	btn_diagram.text = "Hide CPU Diagram" if on else "Show CPU Diagram"
 	console_panel.set_compact(on)
+	explain_panel.set_diagram_shown(on)
 
 
 func _on_pico_fullscreen(on: bool) -> void:

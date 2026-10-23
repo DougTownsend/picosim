@@ -174,3 +174,49 @@ class RunLoopPowerTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class MemoryTabDataTest(unittest.TestCase):
+    """What the Memory tab is sent: regions, the last step's accesses and the stack notes."""
+
+    def test_regions(self):
+        s = server(os.path.join(EX, '04_memory.s'))
+        r = [m for m in s.out if m.get('type') == 'program'][-1]['regions']
+        self.assertEqual(r['sections']['text'], [0x3000, 0x3024])
+        self.assertEqual(r['sections']['data'], [0x3024, 0x3038])
+        kinds = {k for _, _, k in r['runs']}
+        self.assertEqual(kinds, {'insn', 'lit'})
+        self.assertEqual(r['os_code_end'], 0x18)
+
+    def test_loads_and_stores(self):
+        s = server(os.path.join(EX, '04_memory.s'), skip_boot=True, step_over_os=True)
+        reads = []
+        for _ in range(30):
+            s.cmd_step_insn({})
+            drive(s)
+            for a in state(s)['mem_access']:
+                reads.append((a['kind'], a['addr'], a['size']))
+            if s.core.halted:
+                break
+        self.assertIn(('read', 0x3024, 4), reads)          # ldr r0, [r1]: numbers[0]
+        self.assertIn(('read', 0x3030, 4), reads)          # numbers[3]
+        self.assertIn(('write', 0x3034, 4), reads)         # str r2, [r1]: total
+        self.assertIn(('write', 0xFFF8, 4), reads)         # push {r7, lr}
+
+    def test_stack_notes(self):
+        s = server(os.path.join(EX, '07_function.s'), skip_boot=True, step_over_os=True)
+        s.cmd_step_insn({})                                 # push {r7, lr}
+        st = state(s)['stack']
+        self.assertEqual(st['addr'], 0xFFF8)
+        self.assertEqual(len(st['data']), 16)               # 8 bytes, as hex
+        self.assertIn('R7 saved by push {r7, lr}', st['notes'][str(0xFFF8)]['note'])
+        self.assertEqual(st['notes'][str(0xFFF8)]['func'], 'main')
+        self.assertIn('LR saved by push {r7, lr}', st['notes'][str(0xFFFC)]['note'])
+        self.assertEqual(st['notes'][str(0xFFFC)]['reg'], 'LR')
+
+    def test_no_accesses_while_running(self):
+        s = server(os.path.join(EX, '04_memory.s'))
+        s.cmd_run({'cps': 0})
+        s.run_slice()
+        if s.running:
+            self.assertEqual(state(s)['mem_access'], [])

@@ -177,7 +177,7 @@ func _rich(parent: Control) -> RichTextLabel:
 	r.add_theme_font_override("mono_font", Backend.mono_font())
 	r.add_theme_font_size_override("normal_font_size", 14)
 	r.add_theme_font_size_override("bold_font_size", 14)
-	r.add_theme_font_size_override("mono_font_size", 13)
+	r.add_theme_font_size_override("mono_font_size", 14)
 	parent.add_child(r)
 	return r
 
@@ -666,7 +666,7 @@ class PipeChart extends Control:
 					draw_rect(rect, Palette.c("panel_alt"))
 					draw_rect(rect, dim, false, 1.0)
 					letter = st + "✕"
-					draw_string(font, rect.position + Vector2(2, 14), letter, HORIZONTAL_ALIGNMENT_LEFT, CELL - 4, 11, dim)
+					draw_string(font, rect.position + Vector2(2, 14), letter, HORIZONTAL_ALIGNMENT_LEFT, CELL - 4, 12, dim)
 					continue
 				if st == "E":
 					k += 1
@@ -688,8 +688,8 @@ class PipeChart extends Control:
 		for c in range(cmin, cmax + 1):
 			var n := c - cmin
 			if n % 5 == 0 and _col_x(c) >= xoff + LABEL_W:
-				draw_string(font, Vector2(_col_x(c) + 3, 38), str(n), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, dim)
-		draw_string(font, Vector2(xoff + 4, 38), "cycle →", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, dim)
+				draw_string(font, Vector2(_col_x(c) + 3, 38), str(n), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, dim)
+		draw_string(font, Vector2(xoff + 4, 38), "cycle →", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, dim)
 		for i in rows.size():
 			var r: Dictionary = rows[i]
 			var lbl := "%04X  %s" % [int(r["addr"]), str(r["text"])]
@@ -703,10 +703,10 @@ class PipeChart extends Control:
 			if e[0] == "D" and int(sch["depth"]) == 2:
 				continue
 			draw_rect(Rect2(lx, 5, 14, 14), cols[e[0]])
-			draw_string(font, Vector2(lx + 3, 16), e[2], HORIZONTAL_ALIGNMENT_LEFT, -1, 10, on)
-			draw_string(font, Vector2(lx + 18, 16), e[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Palette.c("muted"))
+			draw_string(font, Vector2(lx + 3, 16), e[2], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, on)
+			draw_string(font, Vector2(lx + 18, 16), e[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Palette.c("muted"))
 			lx += 74
-		draw_string(font, Vector2(lx, 16), "R refill  ✕ discarded  ? not timed", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Palette.c("muted"))
+		draw_string(font, Vector2(lx, 16), "R refill  ✕ discarded  ? not timed", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Palette.c("muted"))
 
 	func _cell_at(at: Vector2) -> Array:
 		if sch.is_empty() or at.x < xoff + LABEL_W:

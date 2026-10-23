@@ -635,12 +635,12 @@ class HeatGrid extends Control:
 			var row: Dictionary = drows[r[0]]
 			if row["group"] != group:
 				group = row["group"]
-				draw_string(font, Vector2(xoff + 6, r[1] - 4), group.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, dim)
+				draw_string(font, Vector2(xoff + 6, r[1] - 4), group.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, dim)
 			if ch >= 7.0:
 				draw_string(font, Vector2(xoff + 10, r[1] + ch - maxf(2.0, (ch - fs) / 2.0)), row["label"],
 					HORIZONTAL_ALIGNMENT_LEFT, LABEL_W - 16, fs, muted)
 		if ch < 7.0:
-			draw_string(font, Vector2(xoff + 6, HEAD - 8), "rows too short for labels: hover for names", HORIZONTAL_ALIGNMENT_LEFT, LABEL_W - 10, 10, dim)
+			draw_string(font, Vector2(xoff + 6, HEAD - 8), "rows too short for labels: hover for names", HORIZONTAL_ALIGNMENT_LEFT, LABEL_W - 10, 11, dim)
 
 	func _draw_header(j0: int, j1: int, cw: float, dim: Color) -> void:
 		var view: String = d.get("view")
@@ -658,9 +658,9 @@ class HeatGrid extends Control:
 				if c.get("os", false):
 					lbl = "OS " + lbl
 			draw_line(Vector2(x, HEAD - 6), Vector2(x, HEAD - 1), dim, 1.0)
-			draw_string(font, Vector2(x + 2, HEAD - 10), lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, dim)
+			draw_string(font, Vector2(x + 2, HEAD - 10), lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, dim)
 		draw_string(font, Vector2(xoff + 6, 12), "cycle →" if view == "timeline" else "program line →",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 10, dim)
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, dim)
 
 	func _draw_table(x0: float, ch: float, fs: int, text: Color, muted: Color) -> void:
 		var drows: Array = d["rows"]
@@ -668,7 +668,7 @@ class HeatGrid extends Control:
 		if diverge:
 			var heads := ["before", "after", "change", "change %"]
 			for k in 4:
-				draw_string(font, Vector2(x0 + k * 92 + 4, HEAD - 8), heads[k], HORIZONTAL_ALIGNMENT_LEFT, -1, 10, muted)
+				draw_string(font, Vector2(x0 + k * 92 + 4, HEAD - 8), heads[k], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, muted)
 			for r in rows:
 				var row: Dictionary = drows[r[0]]
 				draw_rect(Rect2(x0 + 2 * 92, r[1], 88, ch - gap), color_for(value(r[0], 0)))
@@ -681,7 +681,7 @@ class HeatGrid extends Control:
 						draw_string(mono, Vector2(x0 + k * 92 + 4, r[1] + ch - maxf(2.0, (ch - fs) / 2.0)), cells[k],
 							HORIZONTAL_ALIGNMENT_LEFT, 84, fs, col)
 			return
-		draw_string(font, Vector2(x0 + 4, HEAD - 8), "% of cycles" if o.get("percent", false) else "count", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, muted)
+		draw_string(font, Vector2(x0 + 4, HEAD - 8), "% of cycles" if o.get("percent", false) else "count", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, muted)
 		var cyc := float(d.get("cycles", 0))
 		for r in rows:
 			var v := value(r[0], 0)
@@ -822,7 +822,7 @@ class Legend extends Control:
 		var div: bool = info["diverge"]
 		var names := ["linear", "log", "percentile"]
 		draw_string(font, Vector2(4, 12), ("Change (blue = less, red = more), %s" if div else "Use, %s scale") % names[int(info["scale"])],
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, text)
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 12, text)
 		var steps := 64
 		for k in steps:
 			var t := float(k) / (steps - 1)
@@ -836,15 +836,15 @@ class Legend extends Control:
 		if int(info["scale"]) == 2:
 			a = "lowest"
 			b = "highest"
-		draw_string(font, Vector2(4, 48), a, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, dim)
-		var bw := font.get_string_size(b, HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x
-		draw_string(font, Vector2(4 + w - bw, 48), b, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, dim)
+		draw_string(font, Vector2(4, 48), a, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, dim)
+		var bw := font.get_string_size(b, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
+		draw_string(font, Vector2(4 + w - bw, 48), b, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, dim)
 		if div:
-			draw_string(font, Vector2(4 + w / 2 - 4, 48), "0", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, dim)
+			draw_string(font, Vector2(4 + w / 2 - 4, 48), "0", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, dim)
 		else:
 			draw_rect(Rect2(4, 56, 14, 12), Palette.c("panel_alt"))
 			var note := "not used" + (" / below the threshold" if float(info["threshold"]) > 0.0 else "")
-			draw_string(font, Vector2(24, 66), note, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, dim)
+			draw_string(font, Vector2(24, 66), note, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, dim)
 
 	static func _s(v: float) -> String:
 		if v >= 1000.0:
@@ -884,7 +884,7 @@ class RegTiles extends Control:
 		var y := 0.0
 		for part in [[":r", "Register reads"], [":w", "Register writes"]]:
 			var m := _max(part[0])
-			draw_string(font, Vector2(4, y + 13), part[1] + ("  (change)" if div else ""), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Palette.c("muted"))
+			draw_string(font, Vector2(4, y + 13), part[1] + ("  (change)" if div else ""), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Palette.c("muted"))
 			y += 18
 			var tw := (size.x - 8) / 4.0
 			for i in 16:
@@ -902,9 +902,9 @@ class RegTiles extends Control:
 					col = Palette.heat(maxf(0.04, v / m if m > 0 else 0.0))
 				draw_rect(r, col)
 				var ink := Color("0b0b0b") if col.get_luminance() > 0.5 else Color("f0efec")
-				draw_string(font, r.position + Vector2(4, 11), nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, ink)
+				draw_string(font, r.position + Vector2(4, 11), nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, ink)
 				var s := ("+" if div and v > 0 else "") + HeatTabNum.n(int(roundf(v)))
-				draw_string(mono, r.position + Vector2(4, 24), s, HORIZONTAL_ALIGNMENT_LEFT, tw - 8, 10, ink)
+				draw_string(mono, r.position + Vector2(4, 24), s, HORIZONTAL_ALIGNMENT_LEFT, tw - 8, 11, ink)
 			y += 4 * 30 + 4
 
 	func _get_tooltip(p: Vector2) -> String:

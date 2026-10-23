@@ -307,10 +307,10 @@ func _draw_silkscreen() -> void:
 	# pin numbers beside each through-hole
 	for num in range(1, 41):
 		var pos := _pin_pos(num)
-		_text(_p(pos.x, pos.y + (32 if num > 20 else -22)), str(num), 8, C_SILK, null, true)
+		_text(_p(pos.x, pos.y + (32 if num > 20 else -22)), str(num), 9, C_SILK, null, true)
 	# board name and year near the SWD end
-	_text(_p(772, 360), "Raspberry Pi Pico", 12, C_SILK, null, true)
-	_text(_p(772, 377), "© 2020", 9, C_SILK, null, true)
+	_text(_p(772, 360), "Raspberry Pi Pico", 13, C_SILK, null, true)
+	_text(_p(772, 377), "© 2020", 10, C_SILK, null, true)
 	# component outlines
 	_ci.draw_rect(_r(226, 240, 48, 52), C_SILK, false, 1.0 * _scale)
 
@@ -331,13 +331,13 @@ func _draw_components() -> void:
 	_box(_r(172, 196, 34, 28), C_CHIP, 2, Color("2c2e33"), 1, 3)
 	_text(_p(189, 214), "RT6150", 6.5, C_CHIP_TEXT, null, true)
 	_box(_r(220, 190, 42, 38), Color("3a3d42"), 5, Color("55595f"), 1.5, 3)
-	_text(_p(241, 214), "2R2", 8, Color("9aa0a8"), null, true)
+	_text(_p(241, 214), "2R2", 9, Color("9aa0a8"), null, true)
 
 	# BOOTSEL button: white housing with a round actuator
 	_box(_r(228, 242, 44, 48), Color("f1f1ee"), 4, Color("c9c9c4"), 1.5, 4)
 	_ci.draw_circle(_p(250, 266), 13 * _scale, Color("dcdcd7"))
 	_ci.draw_circle(_p(250, 266), 10 * _scale, Color("e9e9e4"))
-	_text(_p(250, 306), "BOOTSEL", 8, C_SILK, null, true)
+	_text(_p(250, 306), "BOOTSEL", 9, C_SILK, null, true)
 
 	# on-board LED (GP25), next to the USB connector
 	var led := _gpio(25)
@@ -346,7 +346,7 @@ func _draw_components() -> void:
 		_ci.draw_circle(_p(190, 352), 26 * _scale, Color(0.22, 0.95, 0.35, 0.18))
 		_ci.draw_circle(_p(190, 352), 15 * _scale, Color(0.22, 0.95, 0.35, 0.35))
 	_box(_r(182, 346, 16, 12), C_HIGH if lit else Color("e7dfc4"), 2, Color("9e977f"), 1)
-	_text(_p(190, 374), "LED", 8, C_SILK, null, true)
+	_text(_p(190, 374), "LED", 9, C_SILK, null, true)
 	if lit:
 		_text(_p(190, 339), "1", 13, C_HIGH, mono, true)
 
@@ -356,8 +356,8 @@ func _draw_components() -> void:
 		_ci.draw_rect(_r(356 + k * 16, 262, 6, 10), C_METAL)
 	_box(_r(348, 204, 70, 60), C_CHIP, 3, Color("2c2e33"), 1, 4)
 	_ci.draw_circle(_p(356, 213), 2.5 * _scale, Color("3a3c41"))
-	_text(_p(383, 232), "W25Q16JV", 8, Color("8c9098"), null, true)
-	_text(_p(383, 246), "IQ", 7, Color("6d7179"), null, true)
+	_text(_p(383, 232), "W25Q16JV", 9, Color("8c9098"), null, true)
+	_text(_p(383, 246), "IQ", 8, Color("6d7179"), null, true)
 
 	# RP2040 (7 × 7 mm QFN-56) with perimeter pads
 	var cx := 520.0
@@ -375,12 +375,12 @@ func _draw_components() -> void:
 	_ci.draw_circle(_p(x0 + 10, y0 + 10), 3 * _scale, Color("34363b"))
 	_draw_raspberry(Vector2(cx, y0 + 30), 0.9)
 	_text(_p(cx, y0 + 64), "RP2040", 13, Color("c7cad0"), null, true)
-	_text(_p(cx, y0 + 80), "RP2-B2", 8, Color("80848c"), null, true)
-	_text(_p(cx, y0 + 93), "Cortex-M0+", 7, Color("6d7179"), null, true)
+	_text(_p(cx, y0 + 80), "RP2-B2", 9, Color("80848c"), null, true)
+	_text(_p(cx, y0 + 93), "Cortex-M0+", 8, Color("6d7179"), null, true)
 
 	# 12 MHz crystal
 	_box(_r(634, 300, 54, 40), C_METAL, 5, C_METAL_DARK, 1.5, 3)
-	_text(_p(661, 324), "12.000", 8, Color("5a6068"), null, true)
+	_text(_p(661, 324), "12.000", 9, Color("5a6068"), null, true)
 
 	# SWD debug pads at the far end
 	var names := ["SWCLK", "GND", "SWDIO"]
@@ -388,8 +388,8 @@ func _draw_components() -> void:
 		var py := CY - 40 + k * 40
 		_ci.draw_circle(_p(866, py), 9 * _scale, C_GOLD)
 		_ci.draw_circle(_p(866, py), 4 * _scale, C_GOLD_DARK)
-		_text(_p(821, py + 4), names[k], 7, C_SILK)
-	_text(_p(866, CY - 58), "DEBUG", 7, C_SILK, null, true)
+		_text(_p(821, py + 4), names[k], 8, C_SILK)
+	_text(_p(866, CY - 58), "DEBUG", 8, C_SILK, null, true)
 
 
 func _draw_raspberry(c: Vector2, k: float) -> void:
@@ -437,17 +437,17 @@ func _draw_pin(num: int, changed: Dictionary) -> void:
 			col = Palette.c("gnd")
 		elif info.begins_with("3V3") or info.begins_with("V"):
 			col = Palette.c("red")
-		_text(_p(pos.x, label_y), info, 9.5, col, null, true)
+		_text(_p(pos.x, label_y), info, 10.5, col, null, true)
 		return
 
 	var gp: int = info
 	var g := _gpio(gp)
 	var level = g.get("level")
 	var is_out: bool = g.get("dir", "in") == "out"
-	_text(_p(pos.x, label_y), "GP%d" % gp, 10.5, C_TEXT if level != null else C_DIM, null, true)
+	_text(_p(pos.x, label_y), "GP%d" % gp, 11.5, C_TEXT if level != null else C_DIM, null, true)
 	var tag := "out" if is_out else ("in" if level != null else "")
 	if tag != "":
-		_text(_p(pos.x, label_y + (-12 if top else 13)), tag, 8, Palette.c("accent") if not is_out else C_DIM, null, true)
+		_text(_p(pos.x, label_y + (-12 if top else 13)), tag, 9, Palette.c("accent") if not is_out else C_DIM, null, true)
 
 	# live value badge on the pad
 	if level != null:
@@ -484,7 +484,7 @@ func _draw_io_caption() -> void:
 		parts.append("GP%d → %s" % [int(gp), "Z" if lv == null else str(int(lv))])
 	var y := 512.0
 	if text != "":
-		_text(_p(12, y), "Last I/O write:  " + text, 12, C_TEXT, mono)
+		_text(_p(12, y), "Last I/O write:  " + text, 13, C_TEXT, mono)
 		y += 20
 	if not parts.is_empty():
 		_text(_p(12, y), ("Just changed on the board:  " if _board() else "Changed by the last step:  ") +
@@ -496,7 +496,7 @@ func _draw_legend() -> void:
 	var x := 330.0
 	for item in [[C_HIGH, "output 1"], [Color("2a2f38"), "0"], [C_IN, "input 1"], [C_CHANGED, "just changed"]]:
 		_ci.draw_circle(_p(x, y - 4), 6 * _scale, item[0])
-		_text(_p(x + 11, y), item[1], 10, C_DIM)
+		_text(_p(x + 11, y), item[1], 11, C_DIM)
 		x += 95
 
 

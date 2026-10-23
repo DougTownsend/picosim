@@ -44,6 +44,8 @@ MAX_SPEED = 0            # cps value meaning "as fast as possible"
 FRAME = 1 / 30           # state broadcast interval while running
 IDLE_POLL = 0.02         # select() timeout while nothing is running
 HEX_DEFAULT = (0x3000, 256)
+STACK_SHOWN = 128        # bytes of the stack sent with each state (SP up to the top of RAM)
+RAM_TOP = 0x10000
 PICO_VID = 0x2E8A
 MACHINES = ('multicycle', 'm0plus')
 PIPE_SYNC = 256          # lay out the pipeline at least this often at max speed
@@ -149,6 +151,10 @@ class Server:
         self.explanation = None
         self.explain_due = False
         self.explain_id = 0
+        # Memory tab: what put each word on the stack, {word address: (value, note)};
+        # a note is shown only while the word still holds that value
+        self.mem_notes = {}
+        self._push_k = 0             # which register of the current PUSH is being written
 
     # ── transport ────────────────────────────────────────────────────────────
 
@@ -258,7 +264,6 @@ class Server:
                               'serial': self.serial.port if self.serial else None})
         pc = c.pc
         sp = c.sp
-        stack_lo = sp & ~3
         hx_addr, hx_len = self.hexview
         cur = c.insn_addr if c.in_insn else pc
         pins = self.gpio_pins()
@@ -288,7 +293,8 @@ class Server:
             'action': self.action,
             'mem_changed': sorted(self.mem_changed),
             'hexview': {'addr': hx_addr, 'data': self.mem_hex(hx_addr, hx_len)},
-            'stack': {'addr': stack_lo, 'data': self.mem_hex(stack_lo, 64)},
+            'stack': self.stack_view(),
+            'mem_access': [] if self.running else self.mem_accesses(),
             'gpio': pins,
             'gpio_changed': gpio_changed,
             'gpio_source': 'board' if self.board_live() else 'sim',
@@ -353,11 +359,38 @@ class Server:
                             'label': p.sym_map.get(addr, ''), 'line': line, 'source': tidy_source(src)})
         self.send({'type': 'program', 'path': p.path, 'main': p.main_addr,
                    'listing': listing, 'settings': prog_settings.describe(p.path),
+                   'regions': self.regions(),
                    'challenge': self.challenge and {'task': self.challenge['task'],
                                                     'checks': [t for t, _ in self.challenge['checks']]},
                    # every label, data ones too, for the Memory tab's Go to box
                    'labels': {**{name: addr for addr, name in p.sym_map.items()},
                               **p.label_map}})
+
+    def regions(self):
+        """Where things are in memory, for the Memory tab's map and colours:
+        the program's sections, the OS's code, and runs of instruction vs data
+        bytes ([start, end, 'insn' | 'lit']) in the code."""
+        p = self.prog
+        addrs = sorted(a for a in p.asm_map if a < RAM_TOP)
+        runs = []
+        for i, a in enumerate(addrs):
+            text = p.asm_map[a]
+            if i + 1 < len(addrs):
+                end = addrs[i + 1]
+            else:
+                end = a + 2
+            if not text.startswith('.'):
+                hw = self.core.read16(a)
+                end = min(end, a + (4 if self.core.is_32bit_thumb(hw) else 2))
+            kind = 'lit' if text.startswith('.') else 'insn'
+            if runs and runs[-1][2] == kind and runs[-1][1] == a:
+                runs[-1][1] = end
+            else:
+                runs.append([a, end, kind])
+        secs = {k: list(v) for k, v in p.sections.items()}
+        top = max([v[1] for v in secs.values()] + [0x3000])
+        return {'sections': secs, 'runs': runs, 'program_end': top,
+                'os_code_end': max([a + 2 for a in addrs if a < 0x3000] + [0])}
 
     # ── SVC handling for the GUI console ─────────────────────────────────────
 
@@ -398,13 +431,82 @@ class Server:
     def _record(self, info):
         if info['index'] == 0:
             self.history = []
+            self._push_k = 0
         self.history.append(info)
         for ch in info['changes']:
             if ch['kind'] == 'mem':
                 self.mem_changed.update(range(ch['addr'], ch['addr'] + ch['width']))
+                if ch['width'] == 4:
+                    self._note_write(info['insn_addr'], ch['addr'], ch['new'])
             else:
                 self.changed.add(ch['name'])
                 self.writer[ch['name']] = info['insn_addr']
+
+    def _note_write(self, insn, addr, value):
+        """Remember which instruction put a word in memory (the Memory tab's
+        stack picture says "LR saved by push {r7, lr} (line 20)")."""
+        text = ' '.join(self.prog.asm_map.get(insn, '?').split())
+        line, src = self.prog.source.get(insn, (0, ''))
+        code = ' '.join(src.split('@')[0].split('/*')[0].split()) or text
+        where = f" (line {line})" if line and insn >= 0x3000 else (" (built-in OS)" if insn < 0x3000 else '')
+        note = f"written by {code}{where}"
+        reg = ''
+        if text.startswith('push'):
+            regs = sorted(re.findall(r'r\d+|lr', text.split(None, 1)[1].lower()),
+                          key=lambda r: 14 if r == 'lr' else int(r[1:]))
+            if self._push_k < len(regs):
+                reg = regs[self._push_k].upper()
+                note = f"{reg} saved by {code}{where}"
+            self._push_k += 1
+        # the function the instruction is in: the nearest label at or before it
+        func = ''
+        for a in sorted((a for a in self.prog.sym_map if a <= insn), reverse=True):
+            name = self.prog.sym_map[a]
+            if not name.startswith(('.', '_end')) and not name[0].isdigit():
+                func = name
+                break
+        self.mem_notes[addr] = (value, {'note': note, 'reg': reg, 'func': func, 'insn': insn})
+
+    def mem_accesses(self):
+        """The data reads and writes the last instruction made, worked out
+        from its clock cycles: [{addr, size, kind, insn}].  Fetching the
+        instruction itself is not counted."""
+        out = []
+        mar = None
+        size = 4
+        for h in self.history:
+            sig = h['signals']
+            for sg in sig:
+                if sg.startswith('SIZE='):
+                    size = {'word': 4, 'halfword': 2, 'byte': 1}.get(sg[5:], 4)
+            if 'MEM.EN' in sig and h['phase'] != 'FETCH' and mar is not None:
+                ram = mar + size <= RAM_TOP
+                out.append({'addr': mar, 'size': size, 'insn': h['insn_addr'],
+                            'kind': 'write' if 'R/W=WRITE' in sig else 'read',
+                            # the bytes there now (for a read, what was read)
+                            'data': self.core.get_mem_slice(mar, size).hex() if ram else '',
+                            # an I/O register write: the value written
+                            'value': next((ch['new'] for ch in h['changes'] if ch['kind'] == 'io'), None)})
+            for ch in h['changes']:
+                if ch['name'] == 'MAR':
+                    mar = ch['new']
+        return out
+
+    def stack_view(self):
+        """The words from SP up to the top of RAM (at most STACK_SHOWN bytes),
+        with what put each one there, if the program wrote it while stepping."""
+        c = self.core
+        lo = c.sp & ~3
+        if lo >= RAM_TOP or lo < 0x3000:
+            return {'addr': lo, 'data': '', 'notes': {}}
+        n = min(STACK_SHOWN, RAM_TOP - lo)
+        data = c.get_mem_slice(lo, n)
+        notes = {}
+        for a in range(lo, lo + n, 4):
+            note = self.mem_notes.get(a)
+            if note and note[0] == int.from_bytes(data[a - lo:a - lo + 4], 'little'):
+                notes[str(a)] = note[1]
+        return {'addr': lo, 'data': data.hex(), 'notes': notes}
 
     def board_live(self):
         """True when the Pico board drawing should show a real board's pins."""
@@ -611,6 +713,7 @@ class Server:
         self.stop_at = None
         self.boot_steps = 0
         self.keys_used, self.journal, self.out_text = [], [], ''
+        self.mem_notes = {}
         self.challenge, self.check_results = None, None
         challenge_error = None
         try:
@@ -844,6 +947,8 @@ class Server:
         self.keys_used = used
         self.journal = [e for e in self.journal if e[0] <= target]
         self.out_text = printed
+        # words the replay put back are checked against their value before a
+        # note is shown, so notes from the undone step simply stop showing
         new.path = self.prog.path
         nc_cycles = new.cpu._core.cycles
         self.heat_overview.snaps = [x for x in self.heat_overview.snaps if x[0] <= nc_cycles]

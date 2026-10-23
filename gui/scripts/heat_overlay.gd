@@ -27,7 +27,7 @@ static func tint(c: CanvasItem, poly: PackedVector2Array, r: Rect2, t: float) ->
 static func pill(c: CanvasItem, r: Rect2, h: Dictionary, font: Font, scale: float) -> void:
 	var pct := float(h.get("pct", 0.0))
 	var s := ("%.0f%%" % pct) if pct >= 10.0 else ("%.1f%%" % pct)
-	var fs := maxi(8, int(round(9.0 * scale)))
+	var fs := maxi(8, int(round(10.0 * scale)))
 	var w := font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + 8 * scale
 	var hh := fs + 4 * scale
 	var box := Rect2(Vector2(r.end.x - w + 2 * scale, r.position.y - hh * 0.6), Vector2(w, hh))

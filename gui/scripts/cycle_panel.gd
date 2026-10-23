@@ -63,7 +63,7 @@ func _ready() -> void:
 	v.add_child(insn_label)
 	progress_label = Label.new()
 	progress_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	progress_label.add_theme_font_size_override("font_size", 13)
+	progress_label.add_theme_font_size_override("font_size", 14)
 	_dim_labels.append(progress_label)
 	v.add_child(progress_label)
 
@@ -91,7 +91,7 @@ func _ready() -> void:
 	list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	list.size_flags_stretch_ratio = 0.8
 	list.add_theme_font_override("font", font)
-	list.add_theme_font_size_override("font_size", 12)
+	list.add_theme_font_size_override("font_size", 13)
 	list.item_selected.connect(_on_item_selected)
 	v.add_child(list)
 
@@ -150,7 +150,7 @@ func _heading(parent: Control, text: String) -> void:
 	var l := Label.new()
 	l.text = text
 	_dim_labels.append(l)
-	l.add_theme_font_size_override("font_size", 12)
+	l.add_theme_font_size_override("font_size", 13)
 	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	parent.add_child(l)
 
@@ -164,7 +164,7 @@ func _rich(parent: Control, min_h: int) -> RichTextLabel:
 	r.custom_minimum_size.y = min_h
 	r.add_theme_font_override("mono_font", font)
 	r.add_theme_font_size_override("normal_font_size", 14)
-	r.add_theme_font_size_override("mono_font_size", 13)
+	r.add_theme_font_size_override("mono_font_size", 14)
 	r.selection_enabled = true
 	parent.add_child(r)
 	return r

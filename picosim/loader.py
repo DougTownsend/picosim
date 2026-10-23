@@ -28,13 +28,15 @@ class Program:
     source: dict = field(default_factory=dict)
     image: bytes = b''         # memory as loaded, for clone()
     os_entry: int = 0
+    # the program's sections: name ('text', 'data', 'bss') -> (start, end)
+    sections: dict = field(default_factory=dict)
 
     def clone(self):
         """A fresh copy of this program, exactly as it was just after loading
         (no assembling: Step back rebuilds the machine from this)."""
         cpu = _build_cpu(bytearray(self.image), self.os_entry, self.asm_map, self.sym_map)
         return Program(self.path, cpu, self.asm_map, self.sym_map, self.label_map,
-                       self.main_addr, self.source, self.image, self.os_entry)
+                       self.main_addr, self.source, self.image, self.os_entry, self.sections)
 
     def run_to_main(self, limit=64):
         """Run the built-in OS's start-up (_start up to the call of main), so
@@ -94,6 +96,23 @@ def _source_map(elf_path, s_path):
     except Exception:          # no line info: the listing just has no Source column
         return {}
     return {a: (n, text[n - 1].strip()) for a, n in lines.items() if 0 < n <= len(text)}
+
+
+def _sections(elf_path):
+    """{'text': (start, end), 'data': …, 'bss': …} of the program's own
+    sections (at 0x3000 and up), for the Memory tab's map."""
+    from elftools.elf.elffile import ELFFile
+    out = {}
+    try:
+        with open(elf_path, 'rb') as f:
+            for sec in ELFFile(f).iter_sections():
+                name = sec.name.lstrip('.')
+                a, n = sec['sh_addr'], sec['sh_size']
+                if name in ('text', 'data', 'bss') and n and 0x3000 <= a < MEM_SIZE:
+                    out[name] = (a, a + n)
+    except (OSError, ValueError):
+        pass
+    return out
 
 
 def load_program(path, trace=False, verbose=False):
@@ -167,7 +186,8 @@ def load_program(path, trace=False, verbose=False):
     if s_source:
         source.update(_source_map(input_file, s_source))
 
-    return Program(path, cpu, asm_map, sym_map, label_map, user_entry, source, image, os_entry)
+    return Program(path, cpu, asm_map, sym_map, label_map, user_entry, source, image, os_entry,
+                   _sections(input_file))
 
 
 def _build_cpu(memory, os_entry, asm_map, sym_map, trace=False):

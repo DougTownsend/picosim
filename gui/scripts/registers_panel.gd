@@ -64,7 +64,7 @@ func _ready() -> void:
 	format_select.focus_mode = Control.FOCUS_NONE
 	format_select.tooltip_text = "Show the registers as:\nHex — base 16, like 0x0000002A\nDecimal — an ordinary number, like 42\nSigned — decimal, where values from 0x80000000 up are negative"
 	format_select.item_selected.connect(_on_format)
-	_font(format_select, 13)
+	_font(format_select, 14)
 	top.add_child(format_select)
 
 	var grid := GridContainer.new()
@@ -120,7 +120,7 @@ func _ready() -> void:
 	change_label.custom_minimum_size.y = 36
 	change_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	change_label.add_theme_font_override("font", font)
-	_font(change_label, 13)
+	_font(change_label, 14)
 	v.add_child(change_label)
 
 	var dp := HBoxContainer.new()
@@ -130,7 +130,7 @@ func _ready() -> void:
 	for n in DP_NAMES:
 		var l := Label.new()
 		l.add_theme_font_override("font", font)
-		_font(l, 13)
+		_font(l, 14)
 		l.tooltip_text = {"MAR": "Memory Address Register", "MDR": "Memory Data Register",
 			"IR": "Instruction Register", "IR2": "Second instruction halfword (32-bit encodings)"}[n]
 		l.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -142,7 +142,7 @@ func _ready() -> void:
 	info_label.custom_minimum_size.y = 36
 	info_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	info_label.add_theme_font_override("font", font)
-	_font(info_label, 13)
+	_font(info_label, 14)
 	_dim_labels.append(info_label)
 	v.add_child(info_label)
 

@@ -100,8 +100,8 @@ func _ready() -> void:
 	var split := HSplitContainer.new()
 	bg.add_child(split)
 	topics = ItemList.new()
-	topics.custom_minimum_size.x = 210
-	_fonts.append([topics, "font_size", 14])
+	topics.custom_minimum_size.x = 240
+	_fonts.append([topics, "font_size", 16])
 	topics.item_selected.connect(_on_topic_clicked)
 	var cfg := ConfigFile.new()
 	if cfg.load(Level.SETTINGS) == OK:
@@ -114,9 +114,9 @@ func _ready() -> void:
 	body.selection_enabled = true
 	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	body.add_theme_font_override("mono_font", Backend.mono_font())
-	_fonts.append([body, "normal_font_size", 15])
-	_fonts.append([body, "bold_font_size", 15])
-	_fonts.append([body, "mono_font_size", 14])
+	_fonts.append([body, "normal_font_size", 18])
+	_fonts.append([body, "bold_font_size", 18])
+	_fonts.append([body, "mono_font_size", 17])
 	for f in _fonts:
 		f[0].add_theme_font_size_override(f[1], f[2])
 	body.meta_clicked.connect(_on_meta)
@@ -174,7 +174,7 @@ func _set_text_scale(s: float) -> void:
 	text_scale = s
 	for f in _fonts:
 		f[0].add_theme_font_size_override(f[1], roundi(f[2] * s))
-	topics.custom_minimum_size.x = 210 * s
+	topics.custom_minimum_size.x = 240 * s
 	_rebuild()   # headings have their size baked into the BBCode
 
 
@@ -452,7 +452,7 @@ static func _lists(bb: String) -> String:
 
 
 func _h(s: String) -> String:
-	return "[font_size=%d][b]%s[/b][/font_size]\n\n" % [roundi(22 * text_scale), s]
+	return "[font_size=%d][b]%s[/b][/font_size]\n\n" % [roundi(26 * text_scale), s]
 
 
 static func _sub(s: String) -> String:
@@ -675,7 +675,7 @@ func _add_topics() -> void:
 			["Raw", "[code]2048[/code]", "The instruction as the CPU stores it: 16 bits in hex ([code]bl[/code] has two groups). The assembler made this from your line."],
 			["Label", "[code]main[/code]", "The label at this address, if there is one."],
 			["Instruction", _asm("movs r0, #0x48"), "The instruction turned back into assembly from the raw bits, the way the CPU sees it."],
-			["Source", "[code]18  movs r0, #'H'  @ R0 = …[/code]", "The line of your file it came from: its line number, your code and your comment. Hover it to see the whole line."],
+			["Source", "[code]22  movs r0, #'H'  @ R0 = …[/code]", "The line of your file it came from: its line number, your code and your comment. Hover it to see the whole line."],
 		], 2) + \
 		"Compare the [b]Instruction[/b] and [b]Source[/b] columns to see what the assembler did with your line:\n" + \
 		"• Constants are shown in hex: [code]movs r0, #'H'[/code] becomes [code]movs r0, #0x48[/code], and [code]#10[/code] becomes [code]#0xa[/code].\n" + \
@@ -686,16 +686,18 @@ func _add_topics() -> void:
 		"Click the narrow first column of a row to put a red ● there; click again to remove it. " + _k("Run") + " stops when it reaches a breakpoint, [i]before[/i] running that instruction. Use one to run straight to the part you want to study, then step from there.\n"
 	if Level.at_least(2):
 		mem += _sub("Memory tab") + \
-			"The bytes in memory, 256 at a time (16 rows of 16). Each row starts with the address of its first byte; the 16 columns are the bytes at that address + 0, + 1, … + F, and the column on the right shows the same bytes as characters (a dot for a byte that is not a printable character). See " + _link("memmap", "Memory and addresses") + " for what is where.\n" + \
-			_grid(["Looks like", "Means"], [
-				["[color=%s][b]3C[/b][/color]" % _c("changed"), "Changed by the last step (a store or a push)."],
-				["[bgcolor=%s]3C[/bgcolor]" % _c("sp_bg"), "The byte at SP: the top of the stack."],
-				["[bgcolor=%s]3C[/bgcolor]" % _c("pc_bg"), "The instruction being run (2 bytes)."],
+			"Memory as a place you can look around in. It has five parts, and everything in it updates after each step.\n" + \
+			_grid(["Part", "What it shows"], [
+				["[b]The map[/b] (left)", "The whole of memory from low addresses (top) to high (bottom): the built-in OS, [b]your code[/b], [b]your data[/b], [b]free RAM[/b] and the [b]stack[/b], which grows down from the top of RAM, then the [b]I/O registers[/b], which are not RAM at all. [b]PC[/b] and [b]SP[/b] tags show where they point, an [b]R[/b] or [b]W[/b] tag marks the part the last step read or wrote, and the part you are looking at has a blue outline. Click a part to go there."],
+				["[b]The bytes[/b] (middle)", "256 bytes, 16 to a row; each row starts with the address of its first byte and the columns are + 0 … + F. Every byte is coloured by what it is: an instruction, a literal or string stored with the code, data, or the stack. [color=" + _c("label") + "]Labels[/color] sit above the bytes they name, and a register that holds an address is tagged where it points ([color=" + _c("accent") + "]R1 ↓[/color]): that register is a [b]pointer[/b]. The ▶ instruction is shaded, and the column on the right shows the same bytes as characters."],
+				["[b]Last step[/b] (above the bytes)", "What the last instruction did to memory, in words: [i]ldr r0, [lb]r1] read a word at 3024 (numbers): the bytes 0A 00 00 00, which backwards (lowest byte first) make 0x0000000A = 10, now in R0[/i]. The bytes it read are outlined in [color=" + _c("accent") + "]blue[/color], the ones it wrote in [color=" + _c("changed") + "]yellow[/color]. With [b]Follow loads and stores[/b] ticked, the view moves to them by itself."],
+				["[b]The stack[/b] (right)", "Each word from SP up to the top of RAM as a box, the newest at the bottom with the [b]◀ SP[/b] tag. Each box says what put it there, such as [i]LR saved by push {r7, lr} (line 20)[/i], or that it looks like a return address, and boxes are grouped by the function that pushed them. A word the last step popped is shown faded just below SP, with the register it went into."],
+				["[b]Inspector[/b] (bottom)", "Hover a byte to see everything about it: its address and label, what kind of byte it is, its value in hex, decimal and as a character, the word it belongs to (put together lowest byte first), and which registers point to it."],
 			], 1) + \
-			"• [b]Go to[/b] — type an address ([code]0x3000[/code]) or any label of your program, data labels included ([code]numbers[/code]), and press " + _k("Enter") + ". The dump starts at the row that contains it (a multiple of 16). " + _k("PC") + ", " + _k("SP") + " and " + _k("main") + " jump there, showing a few rows before it.\n" + \
-			"• [b]Reading a word[/b] — a word is 4 bytes in a row, lowest byte first ([i]little-endian[/i]): [code]64 00 00 00[/code] is [code]0x00000064[/code].\n" + \
-			"• [b]Write bytes at[/b] — type an address and hex bytes ([code]de ad be ef[/code]) and press " + _k("Write") + " to change memory, for example to try your program on different data without editing the file.\n" + \
-			"• [b]Stack (from SP)[/b] — up to 16 words from SP upward, already put together as words, with [code]SP→[/code] marking the top. Before anything is pushed it says the stack is empty. " + _link("stack", "The stack and functions") + " explains what you see.\n"
+			"• [b]Show[/b] — " + _k("Bytes") + " (every byte in hex), " + _k("Words") + " (4 bytes put together into one number, so [code]64 00 00 00[/code] shows as [code]00000064[/code]) or " + _k("Characters") + " (each byte as the character it codes, [code]\\0[/code] for the 0 that ends a string).\n" + \
+			"• [b]Go to[/b] — type an address ([code]0x3000[/code]) or any label of your program, data labels included ([code]numbers[/code]), and press " + _k("Enter") + ". " + _k("PC") + ", " + _k("SP") + " and " + _k("main") + " jump straight there. The mouse wheel scrolls the bytes.\n" + \
+			"• [b]Changing memory[/b] — click a byte to select it (an orange outline), type new bytes in hex on the right ([code]2a 00 00 00[/code]) and press " + _k("Enter") + ": a quick way to try your program on different data without editing the file. " + _k("◀ Step back") + " and " + _k("Reload") + " undo it.\n" + \
+			_note("Try this", "Open [b]Add up a list in memory[/b], tick Follow loads and stores and step through the loop. Each [code]ldr r0, [lb]r1][/code] outlines the next number, and the [b]R1 ↓[/b] tag moves 4 bytes along each pass: R1 is a pointer walking through the list.")
 	_topic("memory", "Disassembly" + (" & memory" if Level.at_least(2) else ""), mem)
 
 	_topic("pico", "Raspberry Pi Pico board", _h("Raspberry Pi Pico board") +
@@ -742,7 +744,7 @@ func _add_topics() -> void:
 	layout += "\nWhere each panel is, and what every toolbar button does, is in " + _link("tour", "The screen at a glance") + ". Which panels and buttons you see depends on the " + _k("Level") + " menu."
 	_topic("layout", "Layout and zoom", layout)
 
-	_section("Real hardware", 2)
+	_section("Hardware", 2)
 
 	_topic("hardware", "Running on a real Pico", _h("Running on a real Pico") +
 		"The same [code].s[/code] file that runs in the simulator can run on a real Raspberry Pi Pico (or any RP2040 board) plugged into your computer by USB. picosim turns it into a [code].uf2[/code] file, the format the Pico loads programs from, and copies it to the board. This is called [b]flashing[/b], because the program is stored in the board's flash memory and stays there after you unplug it.\n" +
@@ -971,7 +973,7 @@ func _add_topics() -> void:
 	_topic("keys", "Keyboard shortcuts", _h("Keyboard shortcuts") + "[table=2]" + keys + "[/table]\n\n" + note)
 
 	var tr := _h("Troubleshooting") + \
-		"[font_size=%d][b]While it runs[/b][/font_size]\n" % roundi(18 * text_scale) + \
+		"[font_size=%d][b]While it runs[/b][/font_size]\n" % roundi(21 * text_scale) + \
 		_sub("Nothing happens when I press Step or Run") + \
 		"The program has halted (the status text says [i]halted[/i]) — press " + _k("Reload") + ". Or no program is loaded" + (", or you are in Pico mode — switch to Simulator" if Level.at_least(2) else "") + ".\n" + \
 		(_sub("I pressed Step and ended up in code I did not write") + \
@@ -1006,7 +1008,7 @@ func _add_topics() -> void:
 			"The machine menu next to " + _k("Show CPU Diagram") + " picks it: " + _k("Multi-cycle") + " for the datapath with the cycle inspector, " + _k("2-stage pipeline") + " for the Pico's pipeline.\n" + \
 			_sub("The pipeline totals leave out some instructions") + \
 			"SVC (putchar, getchar) and BKPT are not timed on the pipelines: the RP2040 datasheet gives no fixed count for them. The Performance window says how many were left out, and its CPI is over the rest.\n"
-	tr += "\n[font_size=%d][b]When it will not load[/b][/font_size]\n" % roundi(18 * text_scale) + \
+	tr += "\n[font_size=%d][b]When it will not load[/b][/font_size]\n" % roundi(21 * text_scale) + \
 		"The [b]Could not load program[/b] box shows the assembler's message. The number after the file name is the line, for example [code]add.s:12: Error: …[/code] is line 12. Fix the file, save it and press " + _k("Reload") + ".\n" + \
 		_grid(["The message says", "What is usually wrong"], [
 			["[code]cannot honor width suffix[/code]", "A missing S ([code]add[/code] instead of [code]adds[/code], [code]mov r0, #1[/code] instead of [code]movs[/code]), or a register from R8 to R12. Use R0–R7. See " + _link("instructions", "Instructions") + "."],
@@ -1021,19 +1023,19 @@ func _add_topics() -> void:
 		_sub("\"Simulator backend disconnected\"") + \
 		"The Python backend stopped. Close picosim and start it again with [code]picosim --gui[/code].\n"
 	if Level.at_least(2):
-		tr += "\n[font_size=%d][b]Pins[/b][/font_size]\n" % roundi(18 * text_scale) + \
+		tr += "\n[font_size=%d][b]Pins[/b][/font_size]\n" % roundi(21 * text_scale) + \
 			_sub("A pin will not respond to clicks") + \
 			"Only input pins can be driven. If your program configured the pin as an output (via [code]GPIO_OE[/code]), it controls the pin.\n" + \
 			_sub("My program sets GPIO_OE and GPIO_OUT but the pin stays blank") + \
 			"The pin is not connected to the SIO yet: write 5 (function SIO) to its IO_BANK0 CTRL register at [code]0x40014004 + 8 × pin[/code] first. The real RP2040 needs this too. Hover the pin for a reminder. See " + _link("gpio", "GPIO: controlling pins") + ".\n" + \
-			"\n[font_size=%d][b]On a real Pico[/b][/font_size]\n" % roundi(18 * text_scale) + \
+			"\n[font_size=%d][b]On a real Pico[/b][/font_size]\n" % roundi(21 * text_scale) + \
 			_sub("There is no Flash button") + \
 			"Choose [b]Pico (USB serial)[/b] in the mode menu (it says [b]Simulator[/b]). Flash needs a loaded [code].s[/code] file.\n" + \
 			_sub("Flash failed") + \
 			"The console shows the reason; the table in " + _link("hardware", "Running on a real Pico") + " says what to do. Most often the board is not in BOOTSEL mode: unplug it, hold BOOTSEL, plug it in, let go, and Flash again.\n" + \
 			_sub("Nothing appears in the console after Flash") + \
 			"Check that a port marked [i](Pico)[/i] is chosen and that the button says [b]Disconnect[/b] (it is connected); if not, press " + _k("⟳") + " and " + _k("Connect") + ". A board waits only 5 seconds for the console before it starts, so a short program may have finished before you connected: Flash again.\n"
-	tr += "\n[font_size=%d][b]\"CPU fault: …\" in the console[/b][/font_size]\n" % roundi(18 * text_scale) + \
+	tr += "\n[font_size=%d][b]\"CPU fault: …\" in the console[/b][/font_size]\n" % roundi(21 * text_scale) + \
 		"Your program did something that would crash a real Pico, and the message says what and where. The most common ones:\n" + \
 		"• [b]Undefined instruction[/b] — not a Cortex-M0+ instruction (for example code written for a Cortex-M4), or the program ran into data.\n" + \
 		"• [b]Bus fault[/b] — the address is not RAM (0x0000–0xFFFF)" + (" or a simulated I/O register" if Level.at_least(2) else "") + ". The two most common causes at first: [code]main[/code] has no [code]pop {…, pc}[/code] at the end, so the CPU runs on through empty memory until it reaches [code]0x00010000[/code]; or [code]main[/code] pops without a matching [code]push {…, lr}[/code] at the start, so the pop reads past the top of RAM. Later on, a pointer that went wrong or a stack that grew too far (too many PUSHes without POPs) do the same.\n" + \
@@ -1099,7 +1101,7 @@ func _summaries() -> Dictionary:
 	d["registers"] = "The Registers panel (top left) shows the CPU's 16 registers: R0–R12 hold your values, [b]SP[/b] points at the stack, [b]LR[/b] holds a function's return address and [b]PC[/b] is the address of the next instruction. Whatever the last step changed turns [color=" + y + "]yellow[/color], and the line under the flags says which line of your file changed it.\n\n" + \
 		"The four check boxes are the flags N Z C V. The menu at the top right shows the values in " + _k("Hex") + ", " + _k("Decimal") + " or " + _k("Signed") + "; hover a register to see every form at once, or click one, type a new value and press " + _k("Enter") + " (" + _k("Reload") + " puts everything back)."
 	d["memory"] = "The Disassembly lists your program one instruction per row: its address, its bits ([b]Raw[/b]), its label, the instruction as the CPU sees it and the line of your file it came from ([b]Source[/b]). The row with ▶ runs next. Click a row's first column to put a [b]breakpoint[/b] (a red ●) there: " + _k("Run") + " stops just before that instruction." + \
-		("\n\nThe [b]Memory[/b] tab shows the bytes in memory, 16 per row. Type an address or a label in [b]Go to[/b] to jump there; the stack, from SP upward, is shown under the dump." if l2 else "")
+		("\n\nThe [b]Memory[/b] tab shows memory as a place: a map of where everything lives, the bytes coloured by what they are (with labels and pointer tags on them), the stack as boxes that say what put each word there, and, after each step, which bytes it read or wrote. Hover a byte to have it explained; click one to change it." if l2 else "")
 	d["pico"] = "The drawing of the Raspberry Pi Pico (bottom left) shows what your program does to the chip's pins. A pin your program drives high shows a green [b]1[/b], one driven low a dark [b]0[/b], and an input reading high a blue [b]1[/b]; a [color=" + y + "]yellow[/color] ring marks a pin the last step changed. Hover a pin for its numbers and state.\n\n" + \
 		"Click an [i]input[/i] pin to drive it like a switch: floating → 1 → 0 → floating. In [b]Pico (USB serial)[/b] mode, with a board you flashed connected, the drawing shows your real board's pins instead."
 	d["serial"] = "The serial console (bottom right) shows what your program prints with [code]putchar[/code]. When the program calls [code]getchar[/code] it waits for a key: click in the console and type (each key is sent at once), or type a line in the box underneath and press " + _k("Enter") + ". " + _k("Clear") + " empties it."
@@ -1425,19 +1427,19 @@ func _examples() -> String:
 		if Level.at_least(2):
 			return "%d instructions" % runs[k][0]
 		return "%d instructions, %d presses of Step" % [runs[k][0] - boot, runs[k][1]]
-	t += "\n[font_size=%d][b]1 · Say hello[/b][/font_size]   [color=%s]01_hello.s · %s[/color]\n" % [roundi(18 * text_scale), dim, count.call("01")]
+	t += "\n[font_size=%d][b]1 · Say hello[/b][/font_size]   [color=%s]01_hello.s · %s[/color]\n" % [roundi(21 * text_scale), dim, count.call("01")]
 	t += "Prints [code]Hi![/code] one letter at a time. Shows how [code]movs[/code] puts a character's code in R0 and how [code]bl putchar[/code] prints it.\n"
 	t += "• Before each [code]bl putchar[/code], R0 holds the code: [code]0x48[/code] H, [code]0x69[/code] i, [code]0x21[/code] !, [code]0x0A[/code] new line.\n"
 	t += "• Watch LR change on every [code]bl[/code] ([code]0x00003009[/code], [code]0x0000300F[/code], …): it is always the address of the next line, plus 1.\n"
 	t += "• " + _link("running", "How a program runs") + " goes through this example line by line.\n"
 	t += "[b]Try it:[/b] make it print your initials. Copy a [code]movs[/code] / [code]bl putchar[/code] pair for each letter, and use [code]#' '[/code] for a space.\n"
-	t += "\n[font_size=%d][b]2 · Add two numbers[/b][/font_size]   [color=%s]02_add.s · %s[/color]\n" % [roundi(18 * text_scale), dim, count.call("02")]
+	t += "\n[font_size=%d][b]2 · Add two numbers[/b][/font_size]   [color=%s]02_add.s · %s[/color]\n" % [roundi(21 * text_scale), dim, count.call("02")]
 	t += "Puts 3 and 4 in registers, adds and subtracts them, and prints the sum.\n"
 	t += "• R0 = 3, R1 = 4, then [code]adds r2, r0, r1[/code] makes R2 = 7 and [code]subs r3, r1, r0[/code] makes R3 = 1.\n"
 	t += "• The [code]subs[/code] turns the C flag on: 4 − 3 did not need to borrow.\n"
 	t += "• [code]adds r0, #'0'[/code] turns 7 into [code]0x37[/code], the character '7', which is printed. See " + _link("numbers", "Printing a number") + ".\n"
 	t += "[b]Try it:[/b] change 3 and 4 in the file (keep the sum under 10), save and press " + _k("Reload") + ". Or, without editing: when ▶ reaches [code]movs r0, r2[/code], click R2 in the Registers panel, type 5, press Enter, then Run. It prints 5.\n"
-	t += "\n[font_size=%d][b]3 · Count with a loop[/b][/font_size]   [color=%s]03_count_loop.s · %s[/color]\n" % [roundi(18 * text_scale), dim, count.call("03")]
+	t += "\n[font_size=%d][b]3 · Count with a loop[/b][/font_size]   [color=%s]03_count_loop.s · %s[/color]\n" % [roundi(21 * text_scale), dim, count.call("03")]
 	t += "Prints [b]12345[/b] with a loop: the same five lines run once for each digit.\n"
 	t += "• R4 is the counter. It is kept in R4, not R0–R3, because putchar may change those; that is why [code]main[/code] pushes R4.\n"
 	t += "• In the Disassembly, the row labelled [code]loop[/code] is where [code]bne loop[/code] jumps back to; it shows as [code]bne #0x3004[/code].\n"
@@ -1613,7 +1615,7 @@ func _memmap() -> String:
 	], 1)
 	t += _note("Real chip", "RAM here is 64 KB ([code]0x10000[/code] bytes) and starts at 0. The real RP2040 has 264 KB of RAM at [code]0x20000000[/code] and runs your program from flash at [code]0x10000000[/code]. So never type a fixed RAM address into a program: use labels, and the same file works in both places. The I/O addresses are the real chip's.")
 	t += _sub("Seeing it")
-	t += "Open the " + _link("memory", "Memory tab") + " next to Disassembly, type a label such as [code]numbers[/code] (or an address such as [code]0x3000[/code]) in [b]Go to[/b] and press " + _k("Enter") + ". Bytes that the last step changed turn [color=%s]yellow[/color].\n" % _c("changed")
+	t += "Open the " + _link("memory", "Memory tab") + " next to Disassembly, type a label such as [code]numbers[/code] (or an address such as [code]0x3000[/code]) in [b]Go to[/b] and press " + _k("Enter") + ". Its map shows the table above as a picture, with PC and SP marked; bytes the last step read are outlined in [color=%s]blue[/color] and bytes it wrote in [color=%s]yellow[/color].\n" % [_c("accent"), _c("changed")]
 	return t
 
 
@@ -1780,7 +1782,7 @@ func _examples2() -> String:
 	t += "Open each one from " + _k("Examples") + ". Every file starts with its own [i]What to watch[/i] comment. The values below are what picosim really shows.\n"
 	var dim := _c("dim")
 	var head := func(n: String, f: String, extra: String) -> String:
-		return "\n[font_size=%d][b]%s[/b][/font_size]   [color=%s]%s%s[/color]\n" % [roundi(18 * text_scale), n, dim, f, extra]
+		return "\n[font_size=%d][b]%s[/b][/font_size]   [color=%s]%s%s[/color]\n" % [roundi(21 * text_scale), n, dim, f, extra]
 	t += head.call("4 · Add up a list in memory", "04_memory.s", " · 32 instructions")
 	t += "Loads four numbers with [code]ldr[/code], adds them up, and stores the total with [code]str[/code].\n"
 	t += "• Open the Memory tab and Go to [code]numbers[/code]. The dump starts at the row [code]3020[/code]; its first 4 bytes are the end of the literal pool (the address of [code]total[/code]), and [code]numbers[/code] starts at [code]3024[/code]: [code]0A 00 00 00  14 00 00 00  1E 00 00 00  28 00 00 00[/code] are 10, 20, 30 and 40 as little-endian words. [code]total[/code] follows at [code]3034[/code], still 0.\n"
@@ -2165,7 +2167,7 @@ func _wt_heading(step: Dictionary, n_pass := 1, called := true) -> String:
 	if n_pass > 1:
 		note += " · pass %d" % n_pass
 	return "\n[font_size=%d][color=%s][b]%s[/b][/color][/font_size]   [color=%s]%s[/color]\n" % [
-		roundi(17 * text_scale), _c("label"), lab, _c("dim"), note]
+		roundi(20 * text_scale), _c("label"), lab, _c("dim"), note]
 
 
 func _wt_overview() -> String:
@@ -2217,7 +2219,7 @@ func _walk_table(pre: String, steps: Array, notes: Array) -> String:
 ## A big number with a caption under it, as a table cell.
 func _stat(big: String, what: String) -> String:
 	return "[cell bg=%s padding=14,8,28,8][font_size=%d][b]%s[/b][/font_size]\n[color=%s]%s[/color][/cell]" % [
-		_c("panel_alt"), roundi(22 * text_scale), big, _c("dim"), what]
+		_c("panel_alt"), roundi(26 * text_scale), big, _c("dim"), what]
 
 
 ## One instruction in the overview: number, instruction, what it does, and
@@ -2327,7 +2329,7 @@ func _wt_detail(i: int) -> void:
 	# the selected cycle
 	var phase := str(info["phase"])
 	body.append_text("\n[font_size=%d][b]Cycle %d of %d · %s[/b][/font_size]   [bgcolor=%s][color=%s] %s phase [/color][/bgcolor]\n" % [
-		roundi(18 * text_scale), k + 1, cycles.size(), str(info["state"]),
+		roundi(21 * text_scale), k + 1, cycles.size(), str(info["state"]),
 		_c(_phase_key(phase)), _c("on_stage"), phase.capitalize()])
 	body.append_text(_esc(str(cy.get("what", cy["text"]))) + "\n\n")
 	var w := clampf(body.size.x - 70.0, 360.0, 1400.0)
@@ -2447,7 +2449,7 @@ func _add_states() -> void:
 	t += "• [b]IOSEL=IO[/b] — a memory access to an address of 0x10000 or above goes to the Pico's I/O registers instead of RAM.\n"
 	for st in info.ORDER:
 		t += "\n[hr color=%s height=1]\n" % _c("edge")
-		t += info.entry_bbcode(st, roundi(17 * text_scale)) + "\n"
+		t += info.entry_bbcode(st, roundi(20 * text_scale)) + "\n"
 	_topic("states", "FSM states", t)
 
 
@@ -2461,7 +2463,7 @@ func _add_components() -> void:
 	var t := _h("Datapath components") + "Every block on the multi-cycle " + _link("diagram", "datapath diagram") + ", in the order data usually flows. Click a block on the diagram to see the same text next to it.\n"
 	for id in info.ORDER:
 		t += "\n[hr color=%s height=1]\n" % _c("edge")
-		t += info.bbcode(id, names, roundi(17 * text_scale)) + "\n"
+		t += info.bbcode(id, names, roundi(20 * text_scale)) + "\n"
 	_topic("components", "Datapath components", t)
 
 
@@ -2475,7 +2477,7 @@ func _add_pipe_components() -> void:
 	var t := _h("Pipeline components") + "Every block on the " + _link("pipeline", "pipeline diagram") + ", Fetch stage first, in the order an instruction meets them. Click a block on the diagram to see the same text next to it.\n"
 	for id in info.PIPE_ORDER:
 		t += "\n[hr color=%s height=1]\n" % _c("edge")
-		t += info.entry_bbcode(info.PIPE_INFO[id], names, roundi(17 * text_scale)) + "\n"
+		t += info.entry_bbcode(info.PIPE_INFO[id], names, roundi(20 * text_scale)) + "\n"
 	_topic("pipecomponents", "Pipeline components", t)
 
 
@@ -2655,7 +2657,7 @@ func _pw_detail(i: int) -> void:
 		elif ch[1] == "stage_d":
 			badge += " · refilling"
 	body.append_text("\n[font_size=%d][b]%s[/b][/font_size]   [bgcolor=%s][color=%s] %s [/color][/bgcolor]\n\n" % [
-		roundi(18 * text_scale), title, _c(ch[1]), _c("on_stage"), badge])
+		roundi(21 * text_scale), title, _c(ch[1]), _c("on_stage"), badge])
 	var w := clampf(body.size.x - 70.0, 360.0, 1400.0)
 	if k < shots.size() and shots[k] != null:
 		body.add_image(shots[k], int(w), int(w * float(SHOT_SIZE.y) / SHOT_SIZE.x))

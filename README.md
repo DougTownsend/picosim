@@ -164,7 +164,7 @@ goes on:
 | Level | Shows |
 |---|---|
 | 1 · Basics | Step instruction, Run, the registers and flags (in hex, decimal or signed), the disassembly, Explain this step and the serial console |
-| 2 · Memory & I/O | + the Memory tab and stack, the Pico board, Pico (USB serial) mode |
+| 2 · Memory & I/O | + the Memory tab (a map of memory, the bytes coloured by what they are, the stack as boxes, and what each step read or wrote), the Pico board, Pico (USB serial) mode |
 | 3 · Inside the CPU | + Step cycle, the CPU diagram and cycle inspector, MAR/MDR/IR, the program walkthrough |
 | 4 · Pipeline & performance | + the 2-stage pipeline and the Performance window (the whole app) |
 

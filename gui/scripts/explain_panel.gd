@@ -14,8 +14,13 @@ extends PanelContainer
 signal toggled_open(open: bool)
 
 const SETTINGS := "user://settings.cfg"
-const OPEN_HEIGHT := 190          # the panel's height when open (drag the bar for more)
-const DETAIL_HEIGHT := 300        # … and with More detail on
+## The panel's height when open (drag the bar for more):
+## [without the CPU diagram, with it] × [plain, More detail].
+const HEIGHT := [[260, 400], [190, 280]]
+## Without the diagram it also takes this share of the right column (the
+## stretch ratio against the console, which is 1): [plain, More detail].
+## With the diagram (Levels 3–4) it keeps to its height: the diagram gets the room.
+const SHARE := [0.55, 0.8]
 const PipelineView := preload("res://scripts/pipeline_view.gd")
 
 var is_open := true
@@ -24,6 +29,7 @@ var head_btn: Button
 var hint: Label
 var detail_box: CheckBox
 var body: RichTextLabel
+var diagram_shown := false        # main.gd: the CPU diagram is below, so keep small
 var _key = null                   # what the body was last built from
 var _st: Dictionary = {}
 
@@ -45,14 +51,14 @@ func _ready() -> void:
 	head_btn.flat = true
 	head_btn.focus_mode = Control.FOCUS_NONE
 	head_btn.tooltip_text = "Show or hide the explanation of each step"
-	head_btn.add_theme_font_size_override("font_size", 15)
+	head_btn.add_theme_font_size_override("font_size", 17)
 	head_btn.pressed.connect(func(): set_open(not is_open))
 	top.add_child(head_btn)
 	hint = Label.new()
 	hint.text = "what the last step did, and what happens next"
 	hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hint.clip_text = true
-	hint.add_theme_font_size_override("font_size", 12)
+	hint.add_theme_font_size_override("font_size", 15)
 	hint.mouse_filter = Control.MOUSE_FILTER_PASS
 	top.add_child(hint)
 	detail_box = CheckBox.new()
@@ -60,7 +66,7 @@ func _ready() -> void:
 	detail_box.focus_mode = Control.FOCUS_NONE
 	detail_box.button_pressed = detail
 	detail_box.tooltip_text = "Also show exactly what changed, how the instruction works and, from Level 3, its clock cycles"
-	detail_box.add_theme_font_size_override("font_size", 13)
+	detail_box.add_theme_font_size_override("font_size", 16)
 	detail_box.toggled.connect(_on_detail)
 	top.add_child(detail_box)
 	body = RichTextLabel.new()
@@ -70,9 +76,9 @@ func _ready() -> void:
 	body.fit_content = false
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_theme_font_override("mono_font", Backend.mono_font())
-	body.add_theme_font_size_override("normal_font_size", 14)
-	body.add_theme_font_size_override("bold_font_size", 14)
-	body.add_theme_font_size_override("mono_font_size", 13)
+	body.add_theme_font_size_override("normal_font_size", 17)
+	body.add_theme_font_size_override("bold_font_size", 17)
+	body.add_theme_font_size_override("mono_font_size", 17)
 	v.add_child(body)
 	Level.changed.connect(func(): _key = null; update_state(Backend.state))
 	Palette.changed.connect(_apply_palette)
@@ -95,7 +101,7 @@ func set_open(on: bool, save := true) -> void:
 	head_btn.text = ("▾  " if on else "▸  ") + "Explain this step"
 	body.visible = on
 	detail_box.visible = on
-	custom_minimum_size.y = (DETAIL_HEIGHT if detail else OPEN_HEIGHT) if on else 0
+	_fit()
 	if save:
 		_save("explain_open", on)
 	toggled_open.emit(on)
@@ -106,10 +112,22 @@ func set_open(on: bool, save := true) -> void:
 
 func _on_detail(on: bool) -> void:
 	detail = on
-	custom_minimum_size.y = DETAIL_HEIGHT if on else OPEN_HEIGHT
+	_fit()
 	_save("explain_detail", on)
 	_key = null
 	update_state(Backend.state)
+
+
+## Size the panel for open / closed, More detail and the diagram.
+func _fit() -> void:
+	custom_minimum_size.y = HEIGHT[int(diagram_shown)][int(detail)] if is_open else 0
+	size_flags_vertical = SIZE_EXPAND_FILL if is_open and not diagram_shown else SIZE_FILL
+	size_flags_stretch_ratio = SHARE[int(detail)]
+
+
+func set_diagram_shown(on: bool) -> void:
+	diagram_shown = on
+	_fit()
 
 
 func _save(key: String, value: Variant) -> void:

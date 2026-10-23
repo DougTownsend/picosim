@@ -199,7 +199,7 @@ func _build_card() -> void:
 	var hint := Label.new()
 	hint.text = "Component details"
 	hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	hint.add_theme_font_size_override("font_size", 12)
+	hint.add_theme_font_size_override("font_size", 13)
 	head.add_child(hint)
 	var close := Button.new()
 	close.text = "✕"
@@ -609,7 +609,7 @@ func _draw() -> void:
 		draw_rect(Rect2(_pv(rr.position), rr.size * _scale), edge, false, 1.0 * _scale)
 		var band := Rect2(_p(rr.position.x, rr.end.y - 22), Vector2(rr.size.x, 22) * _scale)
 		draw_rect(band, col)
-		_text(band.position + Vector2(8, 15) * _scale, r[2], 11, C_ON_STAGE)
+		_text(band.position + Vector2(8, 15) * _scale, r[2], 12, C_ON_STAGE)
 
 	var wires := _active_wires()
 	var boxes := _active_boxes(wires)
@@ -630,7 +630,7 @@ func _draw() -> void:
 				lp = _p(q[1][0], q[1][1]) + Vector2(-78, -4) * _scale   # clear of the title
 			elif w[0] == "flush":
 				lp = _p(q[2][0], q[2][1]) + Vector2(8, 12) * _scale   # below: the target wire runs above
-			_text(lp, w[2], 9, (C_FLUSH if red else C_TEXT) if on else C_DIM)
+			_text(lp, w[2], 10, (C_FLUSH if red else C_TEXT) if on else C_DIM)
 	if _animating():
 		for w in WIRES:
 			if wires.has(w[0]):
@@ -660,9 +660,9 @@ func _draw() -> void:
 			if tok != null:
 				_draw_token(tok, slot, _slot_pos(slot), _slot_w(slot), 1.0, false)
 	if pipe.get("F") == null:
-		_text(_p(SLOT_F.x - 120, SLOT_F.y + 4), "(empty: the program has ended)", 10, C_DIM)
+		_text(_p(SLOT_F.x - 120, SLOT_F.y + 4), "(empty: the program has ended)", 11, C_DIM)
 	if e == null:
-		_text(_p(SLOT_E.x - 190, SLOT_E.y + 4), "(empty: the first instruction is being fetched)", 10, C_DIM)
+		_text(_p(SLOT_E.x - 190, SLOT_E.y + 4), "(empty: the first instruction is being fetched)", 11, C_DIM)
 
 	_draw_strip()
 
@@ -692,7 +692,7 @@ func _draw_ctrl(id: String) -> void:
 	var col := C_CTRL if on else C_CTRL.lerp(C_BG, 0.55)
 	_arrow(PackedVector2Array([_p(c[0][0][0], c[0][0][1]), _p(c[0][1][0], c[0][1][1])]), col,
 		(2.2 if on else 1.2) * _scale, true)
-	_text(_p(c[1][0], c[1][1]), v if on else c[2], 8.5, C_CTRL if on else C_DIM, mono if on else font)
+	_text(_p(c[1][0], c[1][1]), v if on else c[2], 9.5, C_CTRL if on else C_DIM, mono if on else font)
 
 
 func _draw_pulse(q: Array, glow: Color) -> void:
@@ -743,18 +743,18 @@ func _draw_box(id: String, active: bool) -> void:
 	var regs: Array = st.get("regs", [])
 	match shape:
 		"reg":
-			_text(r.position + Vector2(6, 14) * _scale, b[4], 11, title_col)
+			_text(r.position + Vector2(6, 14) * _scale, b[4], 12, title_col)
 			var f = pipe.get("F")
 			if f != null:
 				_text(r.position + Vector2(6, 33) * _scale, Backend.hex32(int(f["addr"])), 13, C_TEXT, mono)
 		"pipereg":
 			var lbl: String = b[4]
 			for i in lbl.length():
-				_text(r.position + Vector2(0, 22 + i * 15) * _scale, lbl[i], 11, title_col, null, b[2])
+				_text(r.position + Vector2(0, 22 + i * 15) * _scale, lbl[i], 12, title_col, null, b[2])
 			if _redirecting():
 				_text(r.position + Vector2(0, r.size.y / _scale - 12) * _scale, "✕", 14, C_FLUSH, null, b[2])
 		"regfile":
-			_text(r.position + Vector2(8, 16) * _scale, b[4], 11, title_col)
+			_text(r.position + Vector2(8, 16) * _scale, b[4], 12, title_col)
 			var changed: Array = st.get("changed", [])
 			var names := ["R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7",
 				"R8", "R9", "R10", "R11", "R12", "SP", "LR"]
@@ -777,7 +777,7 @@ func _draw_box(id: String, active: bool) -> void:
 		"alu":
 			_text(r.position + Vector2(0, 36) * _scale, "ALU", 13, title_col, null, b[2])
 		_:
-			_text(r.position + Vector2(0, (20 if id != "p_imem" else 24)) * _scale, b[4], 11, title_col, null, b[2])
+			_text(r.position + Vector2(0, (20 if id != "p_imem" else 24)) * _scale, b[4], 12, title_col, null, b[2])
 			var sub := ""
 			match id:
 				"p_imem":
@@ -857,13 +857,13 @@ func _draw_strip() -> void:
 	var cw := (W - 20 - x0) / ncol
 	var top := STRIP_Y + 34
 	var rh := minf(22.0, (H - 16 - top) / maxf(1.0, trail.size()))
-	_text(_p(20, STRIP_Y + 12), "Instructions in flight  ·  last %d cycles" % ncol, 11, C_TEXT)
+	_text(_p(20, STRIP_Y + 12), "Instructions in flight  ·  last %d cycles" % ncol, 12, C_TEXT)
 	var lx := x0
 	for e in [[C_STAGE_F, "fetch"], [C_STAGE_E, "execute"]]:
 		draw_rect(Rect2(_p(lx, STRIP_Y + 2), Vector2(12, 12) * _scale), e[0])
-		_text(_p(lx + 16, STRIP_Y + 12), e[1], 9.5, C_MUTED)
+		_text(_p(lx + 16, STRIP_Y + 12), e[1], 10.5, C_MUTED)
 		lx += 70
-	_text(_p(lx, STRIP_Y + 12), "outlined: waiting in IF/EX, or refilling after a taken branch   ·   ✕ flushed", 9.5, C_MUTED)
+	_text(_p(lx, STRIP_Y + 12), "outlined: waiting in IF/EX, or refilling after a taken branch   ·   ✕ flushed", 10.5, C_MUTED)
 	# current cycle column
 	var cur := Rect2(_p(x0 + (t - first) * cw, top - 4), Vector2(cw, rh * trail.size() + 6) * _scale)
 	draw_rect(cur, C_BOX_ACTIVE)
