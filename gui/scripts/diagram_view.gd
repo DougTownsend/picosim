@@ -171,7 +171,7 @@ const ORIENT := {"inc": "right", "marinc": "left"}
 
 ## Tri-state buffers onto the bus: id → [wire it sits on, control signal,
 ## component that feeds it, side its control input enters (-1 left, +1 right)].
-## Each is named "gate" + the component that drives it.
+## Students see each one by its control signal's name (GatePC …), as in the textbook.
 const GATES := {
 	"gatePC": ["pc_bus", "GatePC", "pc", -1],
 	"gateAdder": ["adder_bus", "GateADDR", "adder", 1],
@@ -220,7 +220,6 @@ var _card_pos = null             # Vector2 once the user has dragged the card
 var _card_grab = null            # mouse offset into the card while dragging
 var still := false               # snapshot mode (user-guide pictures): no animation
 var heat := {}                   # View ▸ Heat overlay: id → {t, pct, count} (heat_overlay.gd)
-var sources: Dictionary = {}     # component id → its Python model (server "component_source")
 
 
 func _ready() -> void:
@@ -235,10 +234,6 @@ func _ready() -> void:
 	_build_card()
 	_load_colors()
 	Palette.changed.connect(_load_colors)
-	Backend.sources_received.connect(func(src): sources = src)
-	Backend.connected.connect(func(): Backend.send("component_source"))
-	if Backend.online:
-		Backend.send("component_source")
 
 
 func _load_colors() -> void:
@@ -321,24 +316,14 @@ func select_component(id: String) -> void:
 		for k in BOXES:
 			names[k] = BOXES[k][4]
 		for k in GATES:
-			names[k] = k
-		card_text.text = ComponentInfo.bbcode(id, names, roundi(17 * text_scale)) + _live_status(id) + _python(id)
+			names[k] = GATES[k][1]
+		card_text.text = ComponentInfo.bbcode(id, names, roundi(17 * text_scale)) + _live_status(id)
 		card_text.scroll_to_line(0)
 		_layout_card()
 		# the text's height is known once it has been laid out at the card's width
 		await get_tree().process_frame
 		_layout_card()
 	queue_redraw()
-
-
-## "How it works in Python" section: the component's model from components.py.
-## Only with --dev on the command line: it is about how picosim is built, not
-## course material.
-func _python(id: String) -> String:
-	if not sources.has(id) or not OS.get_cmdline_user_args().has("--dev"):
-		return ""
-	return "\n\n[color=%s][b]How it works in Python[/b][/color]\n[color=%s]From picosim/components.py. tests/test_datapath_model.py checks every cycle of every test program to prove this model does exactly what the simulator does.[/color]\n[code]%s[/code]" % [
-		Palette.hex("accent"), Palette.hex("dim"), str(sources[id]).replace("[", "[lb]")]
 
 
 ## "This cycle" section of a tri-state buffer's card: is its control signal
@@ -1101,7 +1086,7 @@ func _draw_box(id: String, active: bool, changes: Array) -> void:
 				_text(r.position + Vector2(0, 45) * _scale, line, 11, C_DIM, mono, bw)
 		"mem":
 			_text(r.position + Vector2(8, 18) * _scale, b[4], 13, title_col)
-			_text(r.position + Vector2(8, 36) * _scale, "64 KB RAM · I/O at ≥ 0x10000 (GPIO)", 11, C_DIM)
+			_text(r.position + Vector2(8, 36) * _scale, "64 KB RAM + I/O (simplified map)", 11, C_DIM)
 			var line := ""
 			if _has("R/W=READ"):
 				line = "read  M[%s]" % Backend.hex32(before.get("MAR", 0))

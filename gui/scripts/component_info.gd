@@ -21,7 +21,7 @@ const INFO := {
 		"title": "PC — Program Counter",
 		"kind": "Register (loads at the clock edge)",
 		"what": "Holds the address of the next instruction halfword to fetch. Every instruction starts by copying the PC to MAR.",
-		"how": "In FETCH_ADDR the PC drives the bus through gatePC (GatePC) so MAR can capture it; in the same cycle the +2 incrementer and PCMUX feed PC + 2 back and LD.PC loads it at the clock edge — so the box still shows the old PC during FETCH_ADDR and the new one from FETCH_MEMORY on. Later in the instruction a branch can load a new value through PCMUX. Because the PC register is stepped during fetch, it holds A + 2 after a 16-bit instruction at address A (A + 4 after BL); an instruction that reads the PC as an operand always gets A + 4, as ARMv6-M defines.",
+		"how": "In FETCH_ADDR the PC drives the bus through GatePC so MAR can capture it; in the same cycle the +2 incrementer and PCMUX feed PC + 2 back and LD.PC loads it at the clock edge — so the box still shows the old PC during FETCH_ADDR and the new one from FETCH_MEMORY on. Later in the instruction a branch can load a new value through PCMUX. Because the PC register is stepped during fetch, it holds A + 2 after a 16-bit instruction at address A (A + 4 after BL); an instruction that reads the PC as an operand always gets A + 4, as ARMv6-M defines.",
 		"links": [
 			["out", "gatePC", "GatePC", "to the bus, then MAR"],
 			["out", "inc", "PCINC=+2", "the +2 incrementer reads it"],
@@ -46,7 +46,7 @@ const INFO := {
 		"title": "PCMUX — next-PC selector",
 		"kind": "Multiplexer (select lines from the FSM)",
 		"what": "Chooses which value the PC loads next.",
-		"how": "Its three data inputs enter the long (top) side: PC+2 (sequential fetch), ADDER (a branch target computed by the address adder) and BUS through CLR THUMB (an address held in a register: BX, BLX, POP {PC}, MOV/ADD PC). The chosen value leaves the short (bottom) side toward the PC. The select lines enter the slanted side; the FSM sets them and asserts LD.PC in the same cycle. For a conditional branch that is not taken the FSM simply does not assert LD.PC, so the PC keeps the sequential value it loaded during fetch.",
+		"how": "It chooses between three inputs: PC+2 (sequential fetch), ADDER (a branch target computed by the address adder) and BUS through CLR THUMB (an address held in a register: BX, BLX, POP {PC}, MOV/ADD PC). The FSM sets the select and asserts LD.PC in the same cycle. For a conditional branch that is not taken the FSM simply does not assert LD.PC, so the PC keeps the sequential value it loaded during fetch.",
 		"links": [
 			["in", "inc", "PCMUX=PC+2", ""],
 			["in", "adder", "PCMUX=ADDER", "branch target"],
@@ -59,7 +59,7 @@ const INFO := {
 	"clrt": {
 		"title": "CLR THUMB — clear bit 0",
 		"kind": "Combinational logic",
-		"what": "Turns a Thumb 'interworking' address (bit 0 = 1) into a halfword-aligned fetch address.",
+		"what": "Clears the Thumb bit (bit 0) of a jump address, so the next fetch uses an even, halfword-aligned address.",
 		"how": "Addresses stored in LR or used by BX have bit 0 set to mean 'Thumb state'. When such a value goes from the bus into the PC, this block forces bit 0 to 0 (value & ~1) before it reaches PCMUX. The bus itself still carries the value with bit 0 set.",
 		"links": [
 			["in", "bus", "CLR THUMB BIT", "target address from a register"],
@@ -82,7 +82,7 @@ const INFO := {
 		"title": "ADDR1MUX — address base selector",
 		"kind": "Multiplexer",
 		"what": "Chooses the base (left) input of the address adder.",
-		"how": "Its inputs enter the long (top) side: PC or Align(PC,4) for PC-relative addressing, a register from the register file's SR1 port (LDR R2, [R0, #4]) or SP (LDR R2, [SP, #4], PUSH, POP). The chosen base leaves the short (bottom) side into the address adder. The select enters the slanted side; the FSM sets it in DECODE and holds it through the cycle that uses the adder.",
+		"how": "It chooses the base address for the address adder: PC or Align(PC,4) for PC-relative addressing, a register from the register file's SR1 port (LDR R2, [R0, #4]) or SP (LDR R2, [SP, #4], PUSH, POP). The FSM sets the select in DECODE and holds it through the cycle that uses the adder.",
 		"links": [
 			["in", "align", "ADDR1MUX=PC / Align", ""],
 			["in", "regfile", "ADDR1MUX=SR1 / SP", "shown as the 'SR1 / SP' stub"],
@@ -95,7 +95,7 @@ const INFO := {
 		"title": "ADDR2MUX — address offset selector",
 		"kind": "Multiplexer",
 		"what": "Chooses the offset (right) input of the address adder.",
-		"how": "Its inputs enter the long (top) side: a zero-extended immediate scaled by the access size (ZEXT(IR[10:6])×4 for a word), a sign-extended branch offset ×2 (SEXT), a second register (SR2) for [Rn, Rm] addressing, −4n / +4n for multi-register transfers (n = number of registers), or zero. The immediates come from IMM / OFFSET. The chosen offset leaves the short (bottom) side; the select enters the slanted side.",
+		"how": "It chooses the offset for the address adder: an immediate scaled by the access size (for LDR R2, [R0, #8] the instruction holds 2, and ×4 gives 8), a branch offset ×2 (sign-extended, so it can be negative), a second register (SR2) for [Rn, Rm] addressing, −4n or +4n for PUSH, POP, LDM and STM (n = how many registers), or zero. The immediates come from IMM / OFFSET.",
 		"links": [
 			["in", "ext", "ADDR2MUX=ZEXT / SEXT", "immediate or branch offset"],
 			["in", "regfile", "ADDR2MUX=SR2", "index register"],
@@ -108,7 +108,7 @@ const INFO := {
 		"title": "ADDRESS ADDER",
 		"kind": "Combinational adder (separate from the ALU)",
 		"what": "Adds base + offset to form an effective memory address or a branch target.",
-		"how": "Its two inputs (base from ADDR1MUX, offset from ADDR2MUX) enter the long (top) side; the sum leaves the short (bottom) side. It has no control input: it always adds, and the FSM decides who uses the sum. Because it is its own adder, address arithmetic never occupies the ALU. The sum either drives the bus through gateAdder (GateADDR) so MAR — or a register, for ADR and the SP update of PUSH/POP — can capture it, or goes straight to PCMUX as a branch target.",
+		"how": "It adds the base from ADDR1MUX and the offset from ADDR2MUX. It has no control input: it always adds, and the FSM decides who uses the sum. Because it is its own adder, address arithmetic never occupies the ALU. The sum either drives the bus through GateADDR so MAR — or a register, for ADR and the SP update of PUSH/POP — can capture it, or goes straight to PCMUX as a branch target.",
 		"links": [
 			["in", "addr1mux", "", "base"],
 			["in", "addr2mux", "", "offset"],
@@ -133,7 +133,7 @@ const INFO := {
 		"title": "IR2 — second instruction halfword",
 		"kind": "Register (16 bits)",
 		"what": "Holds the second halfword of a 32-bit encoding: BL, or the rarer MRS, MSR, DMB, DSB and ISB.",
-		"how": "When DECODE finds a 32-bit prefix in IR, the FSM runs a second fetch (FETCH2_ADDR → FETCH2_MEMORY → FETCH2_IR) that loads IR2. Its bits complete the branch offset in IMM / OFFSET.",
+		"how": "When DECODE finds a 32-bit prefix in IR, the FSM runs a second fetch (FETCH2_ADDR → FETCH2_MEMORY → FETCH2_IR) that loads IR2. For BL its bits complete the branch offset in IMM / OFFSET; for MRS, MSR and the barriers (DMB, DSB, ISB) they name the special register or option.",
 		"links": [
 			["in", "bus", "LD.IR2", ""],
 			["out", "ext", "", "rest of the offset"],
@@ -180,7 +180,7 @@ const INFO := {
 		"title": "VECTOR ADDR",
 		"kind": "Constant source",
 		"what": "Provides the exception vector address for a supervisor call.",
-		"how": "On SVC entry it supplies the SVCall vector address, 0x0000002C (SVCall is exception number 11, and each vector-table entry is 4 bytes), and gateVector puts it on the bus. A complete exception entry would read the handler's address from that vector and save a stack frame (Chapter 13). picosim simplifies this: it performs the call directly — for example putchar (SVC #2) and getchar (SVC #3) — and continues with the next instruction.",
+		"how": "On SVC entry it supplies the SVCall vector address, 0x0000002C (SVCall is exception number 11, and each vector-table entry is 4 bytes), and GateVEC puts it on the bus. A complete exception entry would read the handler's address from that vector and save a stack frame (Chapter 13). picosim simplifies this: it performs the call directly — for example putchar (SVC #2) and getchar (SVC #3) — and continues with the next instruction.",
 		"links": [["out", "gateVector", "GateVEC", "to the bus"]],
 		"when": "SVC_CALL (putchar, getchar).",
 	},
@@ -188,7 +188,7 @@ const INFO := {
 		"title": "BUS — shared 32-bit bus",
 		"kind": "Shared wires with tri-state gates",
 		"what": "The single path most values take between blocks.",
-		"how": "Five tri-state buffers (the triangles) can drive it: gatePC, gateAdder, gateALU, gateMDR and gateVector. In any cycle at most one is enabled; the others are high-impedance. Every block whose load signal is asserted (LD.MAR, LD.IR, LD.REG, …) captures the bus value at the clock edge. Because there is only one bus, moving two values needs two cycles — which is why instructions take several cycles. The value on the bus is shown above it.",
+		"how": "Five tri-state buffers (the triangles) can drive it: GatePC, GateADDR, GateALU, GateMDR and GateVEC. A tri-state buffer has a data input, a data output and one control input. While its control signal is 1 the output copies the input; while it is 0 the output is high impedance (Z): electrically disconnected, driving the wires neither high nor low. The FSM turns on at most one Gate signal per cycle, because two enabled buffers would fight over the same wires. A buffer stores nothing: the bus carries a value only during the cycle. Every block whose load signal is asserted (LD.MAR, LD.IR, LD.REG, …) captures the bus value at the clock edge. Because there is only one bus, moving two values needs two cycles — which is why instructions take several cycles. The value on the bus is shown above it.",
 		"links": [
 			["in", "gatePC", "GatePC", "the PC"], ["in", "gateAdder", "GateADDR", "address adder"],
 			["in", "gateALU", "GateALU", "ALU result"], ["in", "gateMDR", "GateMDR", "memory data"],
@@ -200,10 +200,10 @@ const INFO := {
 		"when": "Almost every cycle.",
 	},
 	"gatePC": {
-		"title": "gatePC — PC tri-state buffer",
+		"title": "GatePC — PC tri-state buffer",
 		"kind": "Tri-state buffer (control: GatePC)",
 		"what": "Connects the PC to the bus when GatePC is asserted, so the current fetch address (or a return address) can reach other registers.",
-		"how": "A tri-state buffer has a data input, a data output and one control input. While its control signal is 1 the output copies the input, so the PC's value appears on the bus. While it is 0 the output is in the high-impedance state (Z): electrically disconnected, so it neither drives the bus high nor low and another buffer can use the bus. The FSM asserts at most one Gate signal per cycle, because two enabled buffers would fight over the same wires. The buffer stores nothing: the bus carries the value only during the cycle, and whichever registers have their LD signal asserted capture it at the clock edge. In FETCH_ADDR the bus carries the PC to MAR; in the LINK state of BL / BLX it carries the return address to SET THUMB and LR.",
+		"how": "While GatePC is 1 the buffer copies the PC's value onto the bus; while it is 0 it is disconnected (high impedance, Z). The BUS card explains how the five buffers share the bus. In FETCH_ADDR the bus carries the PC to MAR; in the LINK state of BL / BLX it carries the return address to SET THUMB and LR.",
 		"links": [
 			["in", "pc", "", "the PC's value"],
 			["out", "bus", "", "drives the shared bus"],
@@ -212,10 +212,10 @@ const INFO := {
 		"when": "FETCH_ADDR and FETCH2_ADDR of every instruction; LINK of BL and BLX.",
 	},
 	"gateAdder": {
-		"title": "gateAdder — address-adder tri-state buffer",
+		"title": "GateADDR — address-adder tri-state buffer",
 		"kind": "Tri-state buffer (control: GateADDR)",
 		"what": "Connects the address adder's sum to the bus when GateADDR is asserted, so an effective address can be loaded into MAR or a computed address into a register.",
-		"how": "A tri-state buffer has a data input, a data output and one control input. While its control signal is 1 the output copies the input, so the address adder's value appears on the bus. While it is 0 the output is in the high-impedance state (Z): electrically disconnected, so it neither drives the bus high nor low and another buffer can use the bus. The FSM asserts at most one Gate signal per cycle, because two enabled buffers would fight over the same wires. The buffer stores nothing: the bus carries the value only during the cycle, and whichever registers have their LD signal asserted capture it at the clock edge. A branch target does not need it: it reaches PCMUX on its own wire.",
+		"how": "While GateADDR is 1 the buffer copies the address adder's value onto the bus; while it is 0 it is disconnected (high impedance, Z). The BUS card explains how the five buffers share the bus. A branch target does not need it: it reaches PCMUX on its own wire.",
 		"links": [
 			["in", "adder", "", "base + offset"],
 			["out", "bus", "", "to MAR (loads, stores) or a register (ADR, SP update)"],
@@ -224,10 +224,10 @@ const INFO := {
 		"when": "EVALUATE_ADDRESS of loads, stores, PUSH, POP, LDM, STM; STORE_RESULT of ADR; WRITEBACK of PUSH, POP, LDM, STM.",
 	},
 	"gateMDR": {
-		"title": "gateMDR — memory-data tri-state buffer",
+		"title": "GateMDR — memory-data tri-state buffer",
 		"kind": "Tri-state buffer (control: GateMDR)",
 		"what": "Connects the memory data (MDR, after LOAD EXT has selected and extended the right bytes) to the bus when GateMDR is asserted.",
-		"how": "A tri-state buffer has a data input, a data output and one control input. While its control signal is 1 the output copies the input, so LOAD EXT's value appears on the bus. While it is 0 the output is in the high-impedance state (Z): electrically disconnected, so it neither drives the bus high nor low and another buffer can use the bus. The FSM asserts at most one Gate signal per cycle, because two enabled buffers would fight over the same wires. The buffer stores nothing: the bus carries the value only during the cycle, and whichever registers have their LD signal asserted capture it at the clock edge. It is how a fetched instruction reaches IR, and how loaded data reaches a register or the PC.",
+		"how": "While GateMDR is 1 the buffer copies LOAD EXT's value onto the bus; while it is 0 it is disconnected (high impedance, Z). The BUS card explains how the five buffers share the bus. It is how a fetched instruction reaches IR, and how loaded data reaches a register or the PC.",
 		"links": [
 			["in", "loadext", "", "MDR, extended to 32 bits"],
 			["out", "bus", "", "to IR, IR2, a register or the PC"],
@@ -236,10 +236,10 @@ const INFO := {
 		"when": "FETCH_IR / FETCH2_IR of every instruction; STORE_RESULT of loads; each register of POP and LDM.",
 	},
 	"gateALU": {
-		"title": "gateALU — ALU tri-state buffer",
+		"title": "GateALU — ALU tri-state buffer",
 		"kind": "Tri-state buffer (control: GateALU)",
 		"what": "Connects the ALU's result to the bus when GateALU is asserted.",
-		"how": "A tri-state buffer has a data input, a data output and one control input. While its control signal is 1 the output copies the input, so the ALU's value appears on the bus. While it is 0 the output is in the high-impedance state (Z): electrically disconnected, so it neither drives the bus high nor low and another buffer can use the bus. The FSM asserts at most one Gate signal per cycle, because two enabled buffers would fight over the same wires. The buffer stores nothing: the bus carries the value only during the cycle, and whichever registers have their LD signal asserted capture it at the clock edge. The ALU's flag outputs do not use it: they go straight to the N Z C V register, which loads them when LD.CC is asserted.",
+		"how": "While GateALU is 1 the buffer copies the ALU's value onto the bus; while it is 0 it is disconnected (high impedance, Z). The BUS card explains how the five buffers share the bus. The ALU's flag outputs do not use it: they go straight to the N Z C V register, which loads them when LD.CC is asserted.",
 		"links": [
 			["in", "alu", "", "the ALU result"],
 			["out", "bus", "", "to a register, MDR (store data) or the PC (BX)"],
@@ -248,10 +248,10 @@ const INFO := {
 		"when": "EXECUTE_COMMIT of data-processing instructions that write a register; FETCH_OPERANDS of stores and PUSH/STM (ALU PASS); EXECUTE_PC of BX and BLX.",
 	},
 	"gateVector": {
-		"title": "gateVector — exception-vector tri-state buffer",
+		"title": "GateVEC — exception-vector tri-state buffer",
 		"kind": "Tri-state buffer (control: GateVEC)",
 		"what": "Connects VECTOR ADDR to the bus when GateVEC is asserted, at the start of exception entry.",
-		"how": "A tri-state buffer has a data input, a data output and one control input. While its control signal is 1 the output copies the input, so VECTOR ADDR's value appears on the bus. While it is 0 the output is in the high-impedance state (Z): electrically disconnected, so it neither drives the bus high nor low and another buffer can use the bus. The FSM asserts at most one Gate signal per cycle, because two enabled buffers would fight over the same wires. The buffer stores nothing: the bus carries the value only during the cycle, and whichever registers have their LD signal asserted capture it at the clock edge. For SVC it drives the SVCall vector address 0x0000002C.",
+		"how": "While GateVEC is 1 the buffer copies VECTOR ADDR's value onto the bus; while it is 0 it is disconnected (high impedance, Z). The BUS card explains how the five buffers share the bus. For SVC it drives the SVCall vector address 0x0000002C.",
 		"links": [
 			["in", "vec", "", "vector address"],
 			["out", "bus", "", "drives the shared bus"],
@@ -286,7 +286,7 @@ const INFO := {
 		"title": "MEMORY / I-O",
 		"kind": "Memory (64 KB RAM + memory-mapped I/O)",
 		"what": "Stores the program and its data, and connects to the Pico's GPIO peripherals.",
-		"how": "RAM covers 0x0000–0xFFFF: the OS at 0x0000, your code from 0x3000, the stack growing down from the top. Addresses 0x10000 and up are I/O registers (SIO at 0xD0000000, IO_BANK0 at 0x40014000, PADS_BANK0 at 0x4001C000); writing them changes the pins on the Pico board. An access takes a cycle of its own: with MEM.EN asserted, a read (R/W=READ, LD.MDR) puts M[MAR] into MDR at the clock edge, and a write (R/W=WRITE) stores MDR at M[MAR] at the clock edge.",
+		"how": "RAM covers 0x0000–0xFFFF: the OS at 0x0000, your code from 0x3000, the stack growing down from the top. (This is picosim's simplified map: on a real RP2040, flash starts at 0x10000000 and SRAM at 0x20000000.) Addresses 0x10000 and up are I/O registers (SIO at 0xD0000000, IO_BANK0 at 0x40014000, PADS_BANK0 at 0x4001C000); writing them changes the pins on the Pico board. An access takes a cycle of its own: with MEM.EN asserted, a read (R/W=READ, LD.MDR) puts M[MAR] into MDR at the clock edge, and a write (R/W=WRITE) stores MDR at M[MAR] at the clock edge.",
 		"links": [
 			["in", "mar", "MEM.EN", "address"],
 			["out", "mdr", "R/W=READ", "read data"],
@@ -298,7 +298,7 @@ const INFO := {
 		"title": "MDR — Memory Data Register",
 		"kind": "Register",
 		"what": "Buffers every value going to or coming from memory.",
-		"how": "On a read, memory loads MDR at the clock edge (LD.MDR); the next cycle LOAD EXT and gateMDR put it on the bus for IR or a register. On a write, the store data is first loaded into MDR from the bus (through STORE ALIGN), then memory copies it at M[MAR].",
+		"how": "On a read, memory loads MDR at the clock edge (LD.MDR); the next cycle LOAD EXT and GateMDR put it on the bus for IR or a register. On a write, the store data is first loaded into MDR from the bus (through STORE ALIGN), then memory copies it at M[MAR].",
 		"links": [
 			["in", "mem", "R/W=READ", ""],
 			["out", "mem", "R/W=WRITE", ""],
@@ -311,7 +311,7 @@ const INFO := {
 		"title": "LOAD EXT — load extender",
 		"kind": "Combinational logic",
 		"what": "Turns a byte or halfword read from memory into a full 32-bit value.",
-		"how": "It selects the right byte lanes from MDR and zero-extends (LDRB, LDRH, and the instruction halfword in FETCH_IR) or sign-extends (LDRSB, LDRSH) them. Words pass through unchanged. Its output reaches the bus through the gateMDR buffer when GateMDR is asserted.",
+		"how": "It selects the right byte lanes from MDR and zero-extends (LDRB, LDRH, and the instruction halfword in FETCH_IR) or sign-extends (LDRSB, LDRSH) them. Words pass through unchanged. Its output reaches the bus through the GateMDR buffer when GateMDR is asserted.",
 		"links": [
 			["in", "mdr", "", ""],
 			["out", "gateMDR", "GateMDR", "to the bus"],
@@ -323,7 +323,7 @@ const INFO := {
 		"title": "STORE ALIGN",
 		"kind": "Combinational logic",
 		"what": "Prepares store data for memory.",
-		"how": "It places the byte or halfword being stored into the correct byte lanes and sets the byte enables, so STRB / STRH only change the bytes they should. Data arrives from the register via the ALU (ALUK=PASS), gateALU and the bus, and goes into MDR (LD.MDR) at the clock edge.",
+		"how": "It places the byte or halfword being stored into the correct byte lanes and sets the byte enables, so STRB / STRH only change the bytes they should. Data arrives from the register via the ALU (ALUK=PASS), GateALU and the bus, and goes into MDR (LD.MDR) at the clock edge.",
 		"links": [
 			["in", "bus", "STORE ALIGN", "value from the ALU"],
 			["out", "mdr", "LD.MDR", ""],
@@ -348,7 +348,7 @@ const INFO := {
 		"title": "SET THUMB — set bit 0",
 		"kind": "Combinational logic",
 		"what": "Marks a return address as Thumb code before it is saved in LR.",
-		"how": "In the LINK state of BL and BLX the PC (already pointing at the next instruction) goes onto the bus through gatePC, this block sets bit 0 (value | 1) and LD.LR saves it in LR at the clock edge. The bus carries the PC itself; only LR gets the bit. Later BX LR or POP {PC} returns there, and CLR THUMB removes the bit again.",
+		"how": "In the LINK state of BL and BLX the PC (already pointing at the next instruction) goes onto the bus through GatePC, this block sets bit 0 (value | 1) and LD.LR saves it in LR at the clock edge. The bus carries the PC itself; only LR gets the bit. Later BX LR or POP {PC} returns there, and CLR THUMB removes the bit again.",
 		"links": [
 			["in", "bus", "SET THUMB BIT", "return address"],
 			["out", "regfile", "LD.LR", "into LR"],
@@ -359,7 +359,7 @@ const INFO := {
 		"title": "SR2MUX — ALU B selector",
 		"kind": "Multiplexer",
 		"what": "Chooses the ALU's second (B) operand.",
-		"how": "Both inputs enter the long (top) side: the register from read port SR2 (ADDS R2, R0, R1) or an immediate from IMM / OFFSET (ADDS R2, R0, #5). The FSM's select (slanted side) picks IMM or REG; the result leaves the short (bottom) side into the ALU's B input.",
+		"how": "It chooses the ALU's B input: the register from read port SR2 (ADDS R2, R0, R1) or an immediate from IMM / OFFSET (ADDS R2, R0, #5). The FSM's select picks REG or IMM.",
 		"links": [
 			["in", "regfile", "SR2", ""],
 			["in", "ext", "SR2MUX=IMM", ""],
@@ -372,7 +372,7 @@ const INFO := {
 		"title": "ALU — Arithmetic Logic Unit",
 		"kind": "Combinational unit with latched inputs",
 		"what": "Does the arithmetic and logic: ADD, SUB, ADC, SBC, RSB, AND, ORR, EOR, BIC, MVN, shifts (LSL, LSR, ASR, ROR), MUL, extends (SXTB, UXTH…), byte reverses (REV…), compare (CMP, CMN, TST) and PASS.",
-		"how": "Its two inputs (A from SR1, B from SR2MUX) enter the long (top) side; the result and the flags leave the short (bottom) side. ALUK, the operation select, enters the slanted side. In FETCH_OPERANDS the inputs are loaded into the ALU A / ALU B latches at the clock edge (LD.ALUA, LD.ALUB); in the next cycle (EXECUTE_COMMIT) the ALU computes the ALUK function from them. gateALU (GateALU) puts the result on the bus for the register file (or MDR, or the PC); LD.CC loads the N Z C V flags from it. PASS just forwards a register's value straight onto the bus (store data); for BX it forwards the latched target in A. CMP / CMN / TST set flags without writing a register.",
+		"how": "Its inputs are A (from SR1) and B (from SR2MUX); ALUK, the operation select, says what to do with them. In FETCH_OPERANDS the inputs are loaded into the ALU A / ALU B latches at the clock edge (LD.ALUA, LD.ALUB); in the next cycle (EXECUTE_COMMIT) the ALU computes the ALUK function from them. GateALU puts the result on the bus for the register file (or MDR, or the PC); LD.CC loads the N Z C V flags from it. PASS just forwards a register's value straight onto the bus (store data); for BX it forwards the latched target in A. CMP / CMN / TST set flags without writing a register.",
 		"links": [
 			["in", "regfile", "SR1", "A input"],
 			["in", "sr2mux", "", "B input"],
@@ -463,7 +463,7 @@ const PIPE_INFO := {
 		"title": "Decode",
 		"kind": "Combinational logic (Execute stage)",
 		"what": "Works out what the instruction in IF/EX does: its operation, the registers it reads and writes, and whether it can change the PC.",
-		"how": "The M0+ decodes in the first cycle of the Execute stage. That is why it has 2 stages and not 3: there is no separate Decode stage, so a taken branch only wastes the one instruction fetched behind it. The label under the box is the instruction's row in datasheet Table 81.",
+		"how": "In this model the M0+ decodes in the first cycle of the Execute stage (ARM describes the first stage as fetch plus a pre-decode; this simplifies that). That is why it has 2 stages and not 3: there is no separate Decode stage, so a taken branch only wastes the one instruction fetched behind it. The label under the box is the instruction's row in datasheet Table 81.",
 		"links": [
 			["in", "p_ifex", "", "instruction"],
 			["out", "p_regfile", "", "register numbers"],

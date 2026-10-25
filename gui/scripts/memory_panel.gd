@@ -9,8 +9,13 @@ extends PanelContainer
 var tabs: TabContainer
 var tree: Tree
 var follow: CheckBox
+var mem_hint: Button       # "this step wrote 0x3024 · see it in the Memory tab"
+var btn_main: Button       # Skip to main: run the OS's start-up (levels 2+)
 var items := {}          # addr -> TreeItem
 var cur_item: TreeItem = null
+var os_item: TreeItem = null   # folds the built-in OS rows: closed at level 1, open from level 2
+var _prog := {}
+var _text_scale := 1.0
 var font: Font
 
 const MemoryView := preload("res://scripts/memory_view.gd")
@@ -34,7 +39,9 @@ func _ready() -> void:
 	tabs.set_tab_tooltip(0, "Your program, one instruction per row")
 	tabs.set_tab_tooltip(1, "The bytes in memory, and the stack")
 	# the Memory tab is kept up to date only while it is open
-	tabs.tab_changed.connect(func(_t): if Backend.state.get("loaded", false): _update_memory(Backend.state))
+	tabs.tab_changed.connect(func(t):
+		mem_hint.visible = mem_hint.visible and t == 0
+		if Backend.state.get("loaded", false): _update_memory(Backend.state))
 	set_level(Level.current)
 	Level.changed.connect(func(): set_level(Level.current))
 	if OS.get_cmdline_user_args().has("--memory-tab"):   # screenshots
@@ -43,11 +50,16 @@ func _ready() -> void:
 	Palette.changed.connect(_apply_palette)
 
 
-## The Memory tab appears from level 2 (Memory & I/O).
+## The Memory tab, the Raw column and the OS rows appear from level 2
+## (Memory & I/O); level 1 shows only the student's own program.
 func set_level(n: int) -> void:
 	tabs.set_tab_hidden(1, n < 2)
 	if n < 2:
 		tabs.current_tab = 0
+	if tree != null:
+		_size_columns()
+		if not _prog.is_empty():
+			set_program(_prog)
 
 
 func _apply_palette() -> void:
@@ -61,8 +73,15 @@ func _apply_palette() -> void:
 
 func _on_text_scale(s: float) -> void:
 	mem_view.set_text_scale(s)
+	_text_scale = s
+	_size_columns()
+
+
+func _size_columns() -> void:
+	var raw := Level.at_least(2)
 	for c in COLUMNS:
-		tree.set_column_custom_minimum_width(c[0], roundi(c[2] * s))
+		tree.set_column_custom_minimum_width(c[0], roundi(c[2] * _text_scale) if raw or c[0] != 2 else 0)
+	tree.set_column_title(2, "Raw" if raw else "")
 
 
 func _color_row(it: TreeItem) -> void:
@@ -87,7 +106,24 @@ func _build_disasm() -> Control:
 	hint.text = "click ● to toggle a breakpoint"
 	_dim_labels.append(hint)
 	hint.add_theme_font_size_override("font_size", 13)
+	hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(hint)
+	mem_hint = Button.new()
+	mem_hint.flat = true
+	mem_hint.focus_mode = Control.FOCUS_NONE
+	mem_hint.visible = false
+	mem_hint.add_theme_font_size_override("font_size", 13)
+	mem_hint.tooltip_text = "Open the Memory tab to see the bytes this step used"
+	mem_hint.pressed.connect(func(): tabs.current_tab = 1)
+	top.add_child(mem_hint)
+	btn_main = Button.new()
+	btn_main.text = "Skip to main ▸"
+	btn_main.visible = false
+	btn_main.focus_mode = Control.FOCUS_NONE
+	btn_main.add_theme_font_size_override("font_size", 13)
+	btn_main.tooltip_text = "Run the built-in OS's start-up instructions and stop at the first line of your main"
+	btn_main.pressed.connect(func(): Backend.send("run_to_main"))
+	top.add_child(btn_main)
 
 	tree = Tree.new()
 	tree.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -99,9 +135,9 @@ func _build_disasm() -> Control:
 	tree.add_theme_font_size_override("font_size", 14)
 	for c in COLUMNS:
 		tree.set_column_title(c[0], c[1])
-		tree.set_column_custom_minimum_width(c[0], c[2])
 		tree.set_column_expand(c[0], c[3])
 		tree.set_column_clip_content(c[0], true)
+	_size_columns()
 	tree.cell_selected.connect(_on_cell_selected)
 	v.add_child(tree)
 	return v
@@ -115,18 +151,30 @@ func _build_hex() -> Control:
 # ── disassembly ─────────────────────────────────────────────────────────────
 
 func set_program(prog: Dictionary) -> void:
-	mem_view.set_program(prog)
+	if prog != _prog:
+		mem_view.set_program(prog)
+	_prog = prog
 	tree.clear()
 	items.clear()
 	cur_item = null
+	os_item = null
 	_bps_key = null
 	_cur_key = null
 	var root := tree.create_item()
+	var raw := Level.at_least(2)
+	var os_names: Array[String] = []
 	for row in prog["listing"]:
-		var it := tree.create_item(root)
+		if row.get("os", false) and os_item == null:
+			os_item = tree.create_item(root)
+			os_item.set_selectable(0, false)
+			os_item.set_tooltip_text(4, "picosim's built-in OS: it starts your main and provides putchar and getchar. Click the arrow to open it.")
+		var it := tree.create_item(os_item if row.get("os", false) else root)
 		var a := int(row["addr"])
+		if row.get("os", false) and str(row["label"]) not in ["", "_start"] and not str(row["label"]).begins_with("."):
+			os_names.append(str(row["label"]))
 		it.set_text(1, "%04X" % a)
-		it.set_text(2, row["raw"])
+		if raw:
+			it.set_text(2, row["raw"])
 		it.set_text(3, row["label"])
 		it.set_text(4, row.get("shown", row["text"]))
 		var line := int(row.get("line", 0))
@@ -138,6 +186,13 @@ func set_program(prog: Dictionary) -> void:
 		it.set_metadata(0, a)
 		it.set_tooltip_text(0, "Toggle breakpoint")
 		items[a] = it
+	if os_item != null:
+		os_item.set_text(3, "built-in OS")
+		os_item.set_text(4, ", ".join(os_names) if not os_names.is_empty() else "start-up code")
+		os_item.set_text(5, "" if Level.at_least(2) else "(hidden at Level 1 · click › to look inside)")
+		for col in [3, 4, 5]:
+			os_item.set_custom_color(col, Palette.c("dim"))
+		os_item.collapsed = not Level.at_least(2)
 	var st := Backend.state
 	if st.get("loaded", false):
 		update_state(st)
@@ -172,15 +227,32 @@ func update_state(st: Dictionary) -> void:
 		if cur_item != null:
 			for c in COLUMNS.size():
 				cur_item.clear_custom_bg_color(c)
-			cur_item.set_text(1, "%04X" % int(cur_item.get_metadata(0)))
+			cur_item.set_text(1, "" if cur_item == os_item else "%04X" % int(cur_item.get_metadata(0)))
 		cur_item = items.get(addr)
+		# inside the closed OS fold, mark the fold itself
+		if cur_item != null and cur_item.get_parent() == os_item and os_item.collapsed:
+			cur_item = os_item
 		if cur_item != null:
 			for c in COLUMNS.size():
 				cur_item.set_custom_bg_color(c, Palette.c("pc_row"))
 			cur_item.set_text(1, "▶%04X" % addr)
 	if cur_item != null and follow.button_pressed:
 		tree.scroll_to_item(cur_item, true)
+	_show_mem_hint(st)
+	btn_main.visible = Level.at_least(2) and st.get("at_boot", false) and not st.get("running", false)
 	_update_memory(st)
+
+
+## Point to the Memory tab when the last step read or wrote memory.
+func _show_mem_hint(st: Dictionary) -> void:
+	var acc: Array = st.get("mem_access", []).filter(func(a): return int(a["addr"]) < 0x40000000)   # not I/O registers
+	var on := Level.at_least(2) and tabs.current_tab == 0 and not acc.is_empty()
+	if on:
+		var a: Dictionary = acc[-1]
+		Backend.set_text(mem_hint, "this step %s 0x%04X · see it in the Memory tab ▸" % [
+			"wrote" if a["kind"] == "write" else "read", int(a["addr"])])
+		Backend.set_color(mem_hint, "font_color", Palette.c("accent"))
+	mem_hint.visible = on
 
 
 func _update_memory(st: Dictionary) -> void:

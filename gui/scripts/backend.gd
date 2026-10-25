@@ -22,13 +22,15 @@ signal perf_received(data: Dictionary)
 signal heat_received(data: Dictionary)          # heat map data (picosim/heat.py)
 signal heat_exported(data: Dictionary)
 signal heat_baseline_changed(exists: bool)
-signal sources_received(sources: Dictionary)
 signal settings_error(message: String)
+## Facts the teaching text quotes (picosim/teaching.py), e.g. cycle counts.
+signal facts_received
 
 var tcp := StreamPeerTCP.new()
 var port := 0
 var buf := PackedByteArray()
 var state: Dictionary = {}
+var facts: Dictionary = {}       # from picosim/teaching.py; empty until the server sends them
 var program: Dictionary = {}
 var online := false
 var _server_pid := -1
@@ -133,10 +135,11 @@ func _handle(msg: Variant) -> void:
 			heat_exported.emit(msg)
 		"heat_baseline":
 			heat_baseline_changed.emit(bool(msg.get("exists", false)))
-		"sources":
-			sources_received.emit(msg["sources"])
 		"settings_error":
 			settings_error.emit(msg["message"])
+		"facts":
+			facts = msg
+			facts_received.emit()
 
 
 func send(cmd: String, args: Dictionary = {}) -> void:

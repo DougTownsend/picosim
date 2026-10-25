@@ -12,6 +12,11 @@ extends Control
 ## The ⛶ button in the corner (or Esc to leave) toggles a full-window view.
 
 signal fullscreen_toggled(on: bool)
+signal opened                      # the student clicked the folded strip
+
+## Folded to a one-line strip while the program has not used any pins, so
+## the Memory and Disassembly views get the room.
+var compact := false
 
 const W := 1000.0
 const H := 545.0
@@ -127,11 +132,26 @@ func _load_colors() -> void:
 	_refresh()
 
 
+func set_compact(on: bool) -> void:
+	if on == compact:
+		return
+	compact = on
+	btn_full.visible = not on
+	custom_minimum_size.y = 34 if on else 250
+	size_flags_vertical = Control.SIZE_SHRINK_END if on else Control.SIZE_EXPAND_FILL
+	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if on else Control.CURSOR_ARROW
+	_key = null
+	_refresh()
+
+
 func set_fullscreen(on: bool) -> void:
 	btn_full.button_pressed = on
 
 
 func _on_full_toggled(on: bool) -> void:
+	if on and compact:
+		set_compact(false)
+		opened.emit()
 	btn_full.text = "✕ Close" if on else "⛶ Enlarge"
 	fullscreen_toggled.emit(on)
 
@@ -247,6 +267,14 @@ func _draw() -> void:
 
 func _paint() -> void:
 	_ci.draw_rect(Rect2(Vector2.ZERO, size), C_BG)
+	if compact:
+		var fs := 14
+		var y := (size.y + font.get_ascent(fs) - font.get_descent(fs)) / 2.0
+		_ci.draw_string(font, Vector2(10, y), "▸ Raspberry Pi Pico board", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, C_TEXT)
+		var w := font.get_string_size("▸ Raspberry Pi Pico board   ", HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		_ci.draw_string(font, Vector2(10 + w, y), "this program has not used any pins yet · click to show the board",
+			HORIZONTAL_ALIGNMENT_LEFT, size.x - w - 20, fs, C_DIM)
+		return
 	_scale = min(size.x / W, size.y / H)
 	_origin = (size - Vector2(W, H) * _scale) / 2.0
 
@@ -529,6 +557,10 @@ func _gui_input(event: InputEvent) -> void:
 	var mb := event as InputEventMouseButton
 	if mb == null or not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
 		return
+	if compact:
+		set_compact(false)
+		opened.emit()
+		return
 	var num := _hit_pin(mb.position)
 	if num < 0 or typeof(PINS[num]) != TYPE_INT:
 		return
@@ -546,6 +578,9 @@ func _gui_input(event: InputEvent) -> void:
 
 ## Simulate a click on header pin `num` (used by the --demo-click-pin test hook).
 func demo_click(num: int) -> void:
+	if compact:
+		set_compact(false)
+		opened.emit()
 	var ev := InputEventMouseButton.new()
 	ev.button_index = MOUSE_BUTTON_LEFT
 	ev.pressed = true
@@ -555,6 +590,8 @@ func demo_click(num: int) -> void:
 
 
 func _get_tooltip(at_position: Vector2) -> String:
+	if compact:
+		return "Show the Raspberry Pi Pico board and its pins. It opens by itself when your program uses a pin."
 	var num := _hit_pin(at_position)
 	if num < 0:
 		return ""

@@ -41,13 +41,12 @@ ALU_WORDS = {
     'SXTH': 'sign-extend the low halfword of B', 'UXTB': 'zero-extend the low byte of B',
     'UXTH': 'zero-extend the low halfword of B', 'REV': 'reverse the byte order of B',
     'REV16': 'reverse the bytes in each halfword of B', 'REVSH': 'reverse the low two bytes of B and sign-extend',
-    'MOVW': 'pass the 16-bit immediate through', 'MOVT': 'replace the top half of A with the immediate',
 }
 
-GATE_NAMES = {'GatePC': ('gatePC', 'the PC'), 'GateADDR': ('gateAdder', "the address adder's sum"),
-              'GateALU': ('gateALU', "the ALU's result"),
-              'GateMDR': ('gateMDR', 'the memory data in MDR (through LOAD EXT)'),
-              'GateVEC': ('gateVector', 'the exception-vector address')}
+GATE_NAMES = {'GatePC': ("the PC's", 'the PC'), 'GateADDR': ("the address adder's", "the address adder's sum"),
+              'GateALU': ("the ALU's", "the ALU's result"),
+              'GateMDR': ("MDR's", 'the memory data in MDR (through LOAD EXT)'),
+              'GateVEC': ("the vector block's", 'the exception-vector address')}
 
 
 def h32(v):
@@ -450,7 +449,7 @@ class Walkthrough:
         if gate:
             name, what = GATE_NAMES[gate]
             v = info['bus']
-            out.append(f"{gate} = 1 enables the {name} tri-state buffer, so {what}"
+            out.append(f"{gate} = 1 turns on {name} tri-state buffer, so {what}"
                        + (f", {h32(v)}," if v is not None else '') + " is driven onto the bus. "
                        "Every other buffer stays off (high impedance).")
         elif st != 'DECODE':

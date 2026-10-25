@@ -35,7 +35,7 @@ const STATES := {
 		"rtl": "MAR ← PC\nPC ← PC + 2",
 		"signals": "GatePC  LD.MAR  PCINC=+2  PCMUX=PC+2  LD.PC",
 		"uses": [["every instruction", "its first clock cycle"]],
-		"note": "The PC drives the bus through gatePC so MAR can capture the address. In the same cycle the +2 incrementer feeds PC + 2 through PCMUX, so after this cycle the PC already points past the halfword being fetched.",
+		"note": "The PC drives the bus through GatePC so MAR can capture the address. In the same cycle the +2 incrementer feeds PC + 2 through PCMUX, so after this cycle the PC already points past the halfword being fetched.",
 	},
 	"FETCH_MEMORY": {
 		"phase": "FETCH",
@@ -190,7 +190,7 @@ const STATES := {
 		"rtl": "(the CPU halts)",
 		"signals": "HALT",
 		"uses": [["BKPT", "the built-in OS runs BKPT when your main returns, so this is how every program ends"]],
-		"note": "After this the Registers panel shows Next state: HALTED. Press Reload to start again.",
+		"note": "After this the Registers panel shows Next state: HALTED. Press Reload to start again. On a real Pico, BKPT stops the CPU only when a debugger is attached; without one it causes a HardFault.",
 	},
 }
 

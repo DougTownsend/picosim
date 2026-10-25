@@ -58,6 +58,8 @@ var layout_root: VBoxContainer
 var right_split: VSplitContainer
 var pico_overlay: Control
 var pico_home: Control
+var _board_used := false         # the program has touched I/O, or the student opened the board
+var _board_path := ""            # the file _board_used is about
 var panels: Control              # everything under the toolbar except the welcome page
 var welcome: Control
 var level_bar: PanelContainer     # "New at Level N" strip, after raising the level
@@ -290,6 +292,7 @@ func _build_ui() -> void:
 	lower.add_child(pico_view)
 	pico_home = lower
 	pico_view.fullscreen_toggled.connect(_on_pico_fullscreen)
+	pico_view.opened.connect(func(): _board_used = true)
 
 	# right column: "Explain this step" on top (it folds away), then the
 	# diagram, then the cycle inspector + console underneath
@@ -1043,6 +1046,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 func _on_state(st: Dictionary) -> void:
 	regs_panel.update_state(st)
 	mem_panel.update_state(st)
+	if not _board_used and (not st.get("gpio_changed", []).is_empty() or st.get("gpio_source", "sim") == "board" \
+			or st.get("mem_access", []).any(func(a): return int(a["addr"]) >= 0x40000000)):
+		_board_used = true
+	pico_view.set_compact(not _board_used)
 	pico_view.update_state(st)
 	console_panel.update_state(st)
 	cycle_panel.update_state(st)
@@ -1092,6 +1099,11 @@ func _on_state(st: Dictionary) -> void:
 
 func _on_program(prog: Dictionary) -> void:
 	mem_panel.set_program(prog)
+	if str(prog["path"]) != _board_path:
+		_board_path = str(prog["path"])
+		_board_used = false
+	_board_used = _board_used or prog.get("uses_io", false)
+	pico_view.set_compact(not _board_used)
 	btn_settings.visible = not prog.get("settings", []).is_empty()
 	btn_settings.text = "⚙ Settings •" if settings_dialog.changed() else "⚙ Settings"
 	btn_settings.tooltip_text = "This program's settings, such as which pins your LED and button are on" + \

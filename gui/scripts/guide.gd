@@ -128,6 +128,7 @@ func _ready() -> void:
 	Backend.program_loaded.connect(func(_p): _wt_reset(); _pw_reset())
 	Backend.state_changed.connect(_on_state)
 	Level.changed.connect(_rebuild)
+	Backend.facts_received.connect(_rebuild)    # cycle counts quoted in the text
 
 	_apply_palette()
 	Palette.changed.connect(_apply_palette)
@@ -255,6 +256,19 @@ func _apply_palette() -> void:
 
 ## Rebuild every topic's text (colours and heading sizes are baked into it),
 ## keeping the shown topic and roughly the same scroll position.
+## A cycle count from the simulator's own cycle table (picosim/cycles.py),
+## by the row's name there; "?" until the server has sent the table.
+func _cyc(row: String) -> String:
+	var n = Backend.facts.get("cycles", {}).get(row)
+	return "?" if n == null else str(int(n))
+
+
+## "B 5, ADDS, MOVS and CMP 6, …", worked out by the simulator.
+func _typical_cycles() -> String:
+	return "B %s, ADDS, MOVS and CMP %s, LDR and STR %s, BL %s, and PUSH or POP of 2 registers %s" % [
+		_cyc("B label"), _cyc("ADDS R2, R0, R1"), _cyc("LDR R2, [R0, #4]"), _cyc("BL label"), _cyc("PUSH {R4, LR}")]
+
+
 func _rebuild() -> void:
 	var shown := _shown
 	var bar := body.get_v_scroll_bar()
@@ -786,7 +800,7 @@ func _add_topics() -> void:
 		"• [color=" + _c("accent") + "]Bright blue wires and boxes[/color] carry data in the cycle being shown.\n" +
 		"• [color=" + _c("purple") + "]Purple dashed arrows[/color] are control inputs from the FSM: the short stubs into the muxes (select), the ALU (ALUK), the +2 incrementer (PCINC) and each tri-state buffer (GatePC, GateADDR, …), plus BranchTaken. A bright stub is asserted this cycle and is labelled with the value it selects.\n" +
 		"• [color=" + _c("changed") + "]Yellow[/color] marks a value loaded at the clock edge that ends this cycle (old → new).\n" +
-		"• The triangles on the bus are tri-state buffers, named after the block that feeds them: gatePC, gateAdder, gateMDR, gateALU and gateVector. The lit one is driving the bus; the others are off (high impedance). The bus value is printed above the bus.\n" +
+		"• The triangles on the bus are tri-state buffers, each named after the control signal that turns it on: GatePC, GateADDR, GateMDR, GateALU and GateVEC. The lit one is driving the bus; the others are off (high impedance). The bus value is printed above the bus.\n" +
 		"• Every mux, the ALU and the adders take their inputs on the long side and send their result out of the short side; control comes in on a slanted side.\n" +
 		"When you step, a glowing pulse travels along the active wires in the order the data flows; a register's yellow caption appears when the pulse reaches it. Its speed follows the speed slider; at high speeds animation is skipped.\n" +
 		_sub("Learning the components") +
@@ -804,7 +818,7 @@ func _add_topics() -> void:
 		"• [b]Control signals asserted[/b] — what the FSM turns on. [code]GateX[/code] puts X on the bus, [code]LD.X[/code] makes X load at the clock edge, [code]XMUX=…[/code] picks a multiplexer input, [code]ALUK=…[/code] picks the ALU operation.\n" +
 		"• [b]What changes at the clock edge[/b] — every register, flag, memory byte or I/O register the cycle loads at the edge that ends it, old → new. On the diagram these are the yellow captions.\n" +
 		_sub("How many cycles?") +
-		"Every instruction starts with the same 3 fetch cycles (FETCH_ADDR → FETCH_MEMORY → FETCH_IR). Typical totals: B = 5, ADDS/MOVS/CMP = 6, LDR/STR = 7, BL = 9, PUSH/POP of 2 registers = 10. " + _link("states", "FSM states") + " explains every state and lists each instruction's sequence; the full table is also in [code]docs/cycles.md[/code].")
+		"Every instruction starts with the same 3 fetch cycles (FETCH_ADDR → FETCH_MEMORY → FETCH_IR). Typical totals: " + _typical_cycles() + ". " + _link("states", "FSM states") + " explains every state and lists each instruction's sequence; the full table is also in [code]docs/cycles.md[/code].")
 
 	_topic("tutorial", "Tutorial: one ADDS", _tutorial())
 
@@ -893,7 +907,7 @@ func _add_topics() -> void:
 		"1. Load a program and run it (to the end, or as far as you like). The window measures only what has run so far.\n" +
 		"2. Press " + _k("F2") + ". Read the [b]Metrics[/b] tab first, then try options on [b]Compare[/b], then look at the [b]Pipeline[/b] tab.\n" +
 		"3. Keep it open while you step: it updates as the program runs.\n" +
-		"If the formulas are new to you, read " + _link("perfmath", "Performance: the formulas") + " first.\n" +
+		"If the formulas are new to you, read " + _link("perfmath", "Performance formulas") + " first.\n" +
 		_sub("Metrics tab") +
 		"Cycles, CPI (cycles per instruction) and time at the RP2040's default 125 MHz for each machine; for the multi-cycle machine, the cycles spent in each phase and how often the bus, the ALU and memory are busy; the instruction mix; where data accesses went (RAM, the SIO, APB peripherals); branch statistics; and the instructions that cost the most cycles.\n" +
 		_sub("Heat map tab") +
@@ -914,7 +928,7 @@ func _add_topics() -> void:
 		_sub("What \"used\" means") + \
 		"On the [b]multi-cycle datapath[/b] a part is used in a clock cycle when the FSM asserts a control signal that makes it work — the same signals the " + _link("diagram", "CPU diagram") + " lights up — so these counts are [b]exact[/b]:\n" + \
 		_grid(["Part", "Used in a cycle when"], [
-			["MAR, MDR, IR, IR2, PC", "it is loaded ([code]LD.MAR[/code], [code]LD.MDR[/code], [code]LD.IR[/code], [code]LD.PC[/code]…) or drives what it holds (MAR addressing memory, MDR through gateMDR, PC through gatePC)"],
+			["MAR, MDR, IR, IR2, PC", "it is loaded ([code]LD.MAR[/code], [code]LD.MDR[/code], [code]LD.IR[/code], [code]LD.PC[/code]…) or drives what it holds (MAR addressing memory, MDR through GateMDR, PC through GatePC)"],
 			["Bus and its buffers", "a tri-state buffer drives the bus ([code]GatePC[/code], [code]GateADDR[/code], [code]GateMDR[/code], [code]GateALU[/code], [code]GateVEC[/code]); the Bus row counts cycles with any driver"],
 			["ALU, its A / B latches", "[code]ALUK[/code] selects an operation outside DECODE; the latches when [code]LD.ALUA[/code] / [code]LD.ALUB[/code] load them"],
 			["Muxes, adder, incrementers", "their select signal is set ([code]ADDR1MUX[/code], [code]ADDR2MUX[/code], [code]SR2MUX[/code], [code]PCMUX[/code], [code]PCINC[/code], [code]MAR+4[/code])"],
@@ -1038,9 +1052,9 @@ func _add_topics() -> void:
 	tr += "\n[font_size=%d][b]\"CPU fault: …\" in the console[/b][/font_size]\n" % roundi(21 * text_scale) + \
 		"Your program did something that would crash a real Pico, and the message says what and where. The most common ones:\n" + \
 		"• [b]Undefined instruction[/b] — not a Cortex-M0+ instruction (for example code written for a Cortex-M4), or the program ran into data.\n" + \
-		"• [b]Bus fault[/b] — the address is not RAM (0x0000–0xFFFF)" + (" or a simulated I/O register" if Level.at_least(2) else "") + ". The two most common causes at first: [code]main[/code] has no [code]pop {…, pc}[/code] at the end, so the CPU runs on through empty memory until it reaches [code]0x00010000[/code]; or [code]main[/code] pops without a matching [code]push {…, lr}[/code] at the start, so the pop reads past the top of RAM. Later on, a pointer that went wrong or a stack that grew too far (too many PUSHes without POPs) do the same.\n" + \
-		"• [b]… with bit 0 clear[/b] — BX, BLX or POP {PC} jumped to an even address. Put [code].thumb_func[/code] on the line before a label whose address you load with [code]ldr r0, =label[/code].\n"
+		"• [b]Bus fault[/b] — the address is not RAM (0x0000–0xFFFF)" + (" or a simulated I/O register" if Level.at_least(2) else "") + ". The two most common causes at first: [code]main[/code] has no [code]pop {…, pc}[/code] at the end, so the CPU runs on through empty memory until it reaches [code]0x00010000[/code]; or [code]main[/code] pops without a matching [code]push {…, lr}[/code] at the start, so the pop reads past the top of RAM. Later on, a pointer that went wrong or a stack that grew too far (too many PUSHes without POPs) do the same.\n"
 	if Level.at_least(2):
+		tr += "• [b]… with bit 0 clear[/b] — BX, BLX or POP {PC} jumped to an even address. Put [code].thumb_func[/code] on the line before a label whose address you load with [code]ldr r0, =label[/code].\n"
 		tr += "• [b]Unaligned access[/b] — LDR/STR need an address that is a multiple of 4, LDRH/STRH a multiple of 2. Use LDRB/STRB for single bytes, and put [code].align 2[/code] before word data.\n"
 	tr += "Press " + _k("Reload") + " to start again."
 	_topic("trouble", "Troubleshooting", tr)
@@ -1117,9 +1131,9 @@ func _summaries() -> Dictionary:
 	d["diagram"] = "The CPU diagram shows the multi-cycle datapath during the cycle that just ran. [color=" + _c("accent") + "]Bright blue[/color] wires and boxes carry data in this cycle, [color=" + _c("purple") + "]purple dashed[/color] stubs are control signals from the FSM (bright means on), and a [color=" + y + "]yellow[/color] [code]old → new[/code] caption marks a register that takes a new value at the clock edge. When you step, a glowing pulse follows the data along the wires.\n\n" + \
 		"Hover a block for a one-line summary, or click it for a card that explains what it does and when it is used."
 	d["cycles"] = "The cycle inspector under the diagram follows the current instruction one clock cycle at a time. The left side lists its cycles (click one to look at it again) with the phase chips F, D, EA, FO, EX and SR; the right side says what the cycle does, which control signals it turns on and what changes at the clock edge.\n\n" + \
-		"Every instruction starts with the same 3 fetch cycles. Typical totals: B 5, ADDS, MOVS and CMP 6, LDR and STR 7, BL 9, and PUSH or POP of 2 registers 10."
+		"Every instruction starts with the same 3 fetch cycles. Typical totals: " + _typical_cycles() + "."
 	d["tutorial"] = "This tutorial follows one instruction, [code]adds r2, r0, r1[/code] from [b]Add two numbers[/b], through its six clock cycles with the real values: three fetch cycles, DECODE, FETCH_OPERANDS (R0 and R1 go into the ALU) and EXECUTE_COMMIT (the sum goes into R2 and the flags). Set a breakpoint on it, press " + _k("Run") + ", then press " + _k("Step cycle") + " once for each row of the table."
-	d["kinds"] = "After the 3-cycle fetch, each kind of instruction uses its own states. A load or store works out its address (EVALUATE_ADDRESS) and then reads or writes memory: 7 cycles. A branch decides and changes the PC: 5 cycles. BL saves the return address in LR and jumps: 9 cycles, because it is 32 bits long and is fetched in two halves. PUSH and POP move one register every two cycles: 6 + 2 per register."
+	d["kinds"] = "After the 3-cycle fetch, each kind of instruction uses its own states. A load or store works out its address (EVALUATE_ADDRESS) and then reads or writes memory: " + _cyc("LDR R2, [R0, #4]") + " cycles. A branch decides and changes the PC: " + _cyc("B label") + " cycles. BL saves the return address in LR and jumps: " + _cyc("BL label") + " cycles, because it is 32 bits long and is fetched in two halves. PUSH and POP move one register every two cycles: 6 + 2 per register."
 	d["signals"] = "Control signals are how the FSM runs the datapath. Most follow a pattern: [code]GateX[/code] puts X on the bus, [code]LD.X[/code] makes X load a new value at the clock edge, [code]XMUX=…[/code] picks a mux input, [code]ALUK=…[/code] picks the ALU's operation, and [code]MEM.EN[/code] with [code]R/W=READ[/code] or [code]WRITE[/code] makes memory do an access. The details list every signal."
 	d["states"] = "The FSM is always in exactly one [b]state[/b], and each state is one clock cycle that turns on its own control signals. Every instruction starts with [code]FETCH_ADDR → FETCH_MEMORY → FETCH_IR[/code], then DECODE, then the states its kind needs: for example FETCH_OPERANDS → EXECUTE_COMMIT for an ADDS. The details list every state, what it does and which instructions use it."
 	d["components"] = "Every block on the multi-cycle datapath diagram, in the order data usually flows, with what it does, how it works and when it is used. The same card opens when you click a block on the diagram."
@@ -1352,7 +1366,9 @@ func _instructions() -> String:
 		[_asm("push {list}"), _asm("push {r4, lr}"), "Save the listed registers on the stack (SP goes down 4 bytes per register)."],
 		[_asm("pop {list}"), _asm("pop {r4, pc}"), "Load them back (SP goes up again). Popping into PC jumps to the saved address."],
 	], 2)
-	t += "Every example's [code]main[/code] begins with [code]push {r7, lr}[/code] (or [code]{r4, lr}[/code]) and ends with [code]pop {r7, pc}[/code]. The reason: [code]bl putchar[/code] overwrites LR, so the address [code]main[/code] must return to is saved first and popped straight into PC at the end. Registers are pushed in pairs because the ARM rules for calling functions keep the stack in steps of 8 bytes; R7 is there just to make the pair. If you use R4–R7, put them in the list too, so your program leaves them as it found them.\n"
+	t += "Every example's [code]main[/code] begins with [code]push {r7, lr}[/code] (or [code]{r4, lr}[/code]) and ends with [code]pop {r7, pc}[/code]. The reason: [code]bl putchar[/code] overwrites LR, so the address [code]main[/code] must return to is saved first and popped straight into PC at the end.\n"
+	if Level.at_least(2):
+		t += "Registers are pushed in pairs because the ARM rules for calling functions keep the stack in steps of 8 bytes; R7 is there just to make the pair. If you use R4–R7, put them in the list too, so your program leaves them as it found them.\n"
 	t += _sub("Other instructions you may meet")
 	t += _grid(["Form", "What it does"], [
 		[_asm("ands Rd, Rm") + "  " + _asm("orrs Rd, Rm") + "  " + _asm("eors Rd, Rm"), "Bitwise AND, OR and exclusive OR: Rd = Rd op Rm, bit by bit."],
@@ -1505,6 +1521,8 @@ func _glossary() -> String:
 			["Pointer", "A register (or word) holding an address: [code][lb]r1][/code] means the memory R1 points at."],
 			["Polling", "Reading an input over and over in a loop to see when it changes."],
 			["Pull-up / pull-down", "A weak resistor inside the chip that holds an input at 1 (up) or 0 (down) while nothing else drives it."],
+			["SIO", "Single-cycle I/O: the block at 0xD0000000 whose registers set, clear and read the GPIO pins in one clock cycle."],
+			["Thumb bit", "Bit 0 of an address you jump to with BX, BLX or POP {PC}. It must be 1, meaning \"Thumb code\"; the instruction itself is fetched from the even address."],
 			["UF2", "The file format the Pico loads programs from. Flash makes one from your [code].s[/code] file."],
 			["Word", "4 bytes, 32 bits: what one register holds."],
 		]
@@ -1517,18 +1535,25 @@ func _glossary() -> String:
 			["Control signal", "An on/off (or select) line from the control unit that tells one part what to do this cycle. See " + _link("signals", "Control signals") + "."],
 			["Control unit (FSM)", "The finite-state machine that turns control signals on and off, one state per cycle."],
 			["Datapath", "The parts that hold, move and compute data: registers, bus, ALU, adders, memory."],
+			["Condition codes (LD.CC)", "Another name for the N Z C V flags. LD.CC is the control signal that loads them at the clock edge."],
+			["Latch (ALU A / B)", "A register that holds an input steady for the next cycle. The ALU's A and B latches (LD.ALUA, LD.ALUB) keep its inputs fixed while it computes."],
 			["IR / IR2", "Instruction registers: hold the instruction (and the second half of a 32-bit one) while it runs."],
 			["MAR / MDR", "Memory address register and memory data register: the address memory uses, and the data read or to be written."],
 			["Multiplexer (mux)", "Picks one of several inputs to pass on, chosen by a select signal."],
 			["Phase", "One of the six parts of the instruction cycle: Fetch, Decode, Evaluate address, Fetch operands, Execute, Store result."],
-			["Register file", "The block that holds R0–R15, with ports to read two registers and write one."],
+			["Register file", "The block that holds R0–R12, SP and LR (the PC is a separate register), with ports to read two registers and write one."],
+			["Sign-extend (SEXT)", "Widen a number by copying its top bit into the new bits, so a negative number stays negative: 8-bit 0xFE (−2) becomes 0xFFFFFFFE."],
+			["Special registers", "Registers outside R0–R15 read with MRS and written with MSR: APSR (the flags), PRIMASK (turns interrupts off), CONTROL, and the two stack pointers MSP and PSP."],
 			["Sequential logic", "Parts that remember (registers): they change only at the clock edge."],
 			["State", "What the control unit is doing in one clock cycle, such as FETCH_ADDR. See " + _link("states", "FSM states") + "."],
 			["Tri-state buffer", "A switch between a part and the bus: on, the part drives the bus; off, it is disconnected."],
+			["Zero-extend (ZEXT)", "Widen a number by filling the new bits with 0: 8-bit 0xFE becomes 0x000000FE (254)."],
 		]
 	if Level.at_least(4):
 		rows += [
-			["CPI", "Cycles per instruction: total clock cycles ÷ instructions. See " + _link("perfmath", "Performance: the formulas") + "."],
+			["AHB-Lite", "The RP2040's main bus between the processor and memory. A transfer takes an address cycle, then a data cycle."],
+			["APB", "A slower bus behind AHB-Lite for simple peripherals; IO_BANK0 and PADS_BANK0 are on it."],
+			["CPI", "Cycles per instruction: total clock cycles ÷ instructions. See " + _link("perfmath", "Performance formulas") + "."],
 			["Clock frequency", "Clock cycles per second, in hertz. The RP2040 normally runs at 125 MHz."],
 			["Flush", "Throwing away an instruction a pipeline fetched from the wrong path, after a taken branch."],
 			["Hazard", "Something that stops a pipeline finishing one instruction per cycle, such as a taken branch."],
@@ -1538,6 +1563,8 @@ func _glossary() -> String:
 			["Speed-up", "Old time ÷ new time: how many times faster a change makes a program."],
 			["Stage", "One step of a pipeline, such as Fetch or Execute."],
 			["Throughput", "How many instructions finish per cycle (or per second)."],
+			["IOPORT", "The M0+'s private single-cycle port to the SIO block, so a GPIO access does not use AHB-Lite."],
+			["XIP", "Execute in place: the RP2040 runs code straight from external flash, through a cache."],
 			["Wait state", "An extra cycle a slow memory makes the processor wait."],
 		]
 	rows.sort_custom(func(a, b): return str(a[0]).to_lower() < str(b[0]).to_lower())
@@ -1855,9 +1882,9 @@ func _blocks() -> String:
 	var t := _h("Building blocks")
 	t += "The CPU diagram is made of a few kinds of part, used again and again. Learn these and you can read the whole drawing. Click any block on the diagram for a card about that particular one, or see " + _link("components", "Datapath components") + ".\n"
 	t += _grid(["Part", "What it does", "On the diagram", "Examples"], [
-		["[b]Register[/b]", "Stores one number. It takes a new value only at the clock edge, and only when its load signal ([code]LD.X[/code]) is on; otherwise it keeps what it has.", "A box showing its value.", "PC, IR, MAR, MDR, the register file (R0–R15), the N Z C V flags"],
+		["[b]Register[/b]", "Stores one number. It takes a new value only at the clock edge, and only when its load signal ([code]LD.X[/code]) is on; otherwise it keeps what it has.", "A box showing its value.", "PC, IR, MAR, MDR, the register file (R0–R12, SP, LR), the N Z C V flags"],
 		["[b]Bus[/b]", "Shared wires that carry one 32-bit value from one part to any others that want it.", "The long line across the middle; its value is printed above it.", "the bus"],
-		["[b]Tri-state buffer[/b]", "A switch between a part and the bus. When its [code]Gate[/code] signal is on, the part drives the bus; when off, the part is disconnected (\"high impedance\"). Only one may be on in a cycle.", "A small triangle on the bus; the lit one is driving.", "gatePC, gateMDR, gateALU, gateAdder, gateVector"],
+		["[b]Tri-state buffer[/b]", "A switch between a part and the bus. When its [code]Gate[/code] signal is on, the part drives the bus; when off, the part is disconnected (\"high impedance\"). Only one may be on in a cycle.", "A small triangle on the bus; the lit one is driving.", "gatePC, GateMDR, GateALU, GateADDR, gateVector"],
 		["[b]Multiplexer[/b] (mux)", "Picks one of its inputs and passes it through. Its [b]select[/b] signal says which.", "A trapezoid: inputs on the long side, output from the short side, select on a slanted side.", "PCMUX, ADDR1MUX, ADDR2MUX, SR2MUX"],
 		["[b]Adder[/b]", "Adds two numbers, all the time.", "A trapezoid.", "the +2 PC incrementer, the address adder, the +4 MAR incrementer"],
 		["[b]ALU[/b]", "Arithmetic Logic Unit: adds, subtracts, ANDs, shifts…, picked by the [code]ALUK[/code] signal. It also works out the N Z C V flags of its result.", "A trapezoid labelled ALU. It also shows the values held in its two input latches, A and B.", "the ALU"],
@@ -1926,7 +1953,7 @@ func _kinds() -> String:
 	t += "From [b]Add up a list in memory[/b], address [code]3008[/code], first pass (R1 = [code]0x3024[/code]):\n"
 	t += _grid(["State", "What happens", "At the clock edge"], [
 		["DECODE", "A word load into R0; the address will be R1 + 0. " + _sig("DR=R0 ADDR1MUX=SR1 ADDR2MUX=ZEXT(IR[lb]10:6])x4 SIZE=word"), "nothing"],
-		["EVALUATE_ADDRESS", "The address adder adds R1 and the offset (0) and drives the sum onto the bus through gateAdder. " + _sig("GateADDR LD.MAR"), "MAR ← [code]0x00003024[/code]"],
+		["EVALUATE_ADDRESS", "The address adder adds R1 and the offset (0) and drives the sum onto the bus through GateADDR. " + _sig("GateADDR LD.MAR"), "MAR ← [code]0x00003024[/code]"],
 		["FETCH_OPERANDS", "Memory reads the word at MAR. " + _sig("MEM.EN R/W=READ LD.MDR"), "MDR ← [code]0x0000000A[/code]"],
 		["STORE_RESULT", "MDR drives the bus through LOAD EXT (which would fill in the top bits for ldrb or ldrh) and R0 loads it. " + _sig("GateMDR DR=R0 LD.REG"), "R0 → [code]0x0000000A[/code]"],
 	], 1)
@@ -2002,6 +2029,7 @@ func _signals() -> String:
 ## "Pipelining: the big idea", with one pass of the 04_memory.s loop.
 func _pipe_intro() -> String:
 	var t := _h("Pipelining: the big idea")
+	t += "[i]Beyond the textbook: the course text stops at the multi-cycle datapath. This level is for going further.[/i]\n\n"
 	t += "On the multi-cycle datapath, one instruction has the whole CPU to itself until it is finished, and most parts sit idle most of the time. The real Pico's processor, the [b]Cortex-M0+[/b], does better by working on two instructions at once.\n"
 	t += _sub("The laundry idea")
 	t += "Washing and drying two loads of laundry one after the other takes wash + dry + wash + dry. But while the first load is drying, the washer is free: start the second load then. Each load still takes as long as before, but a load comes out of the dryer every [i]one[/i] step instead of every two. That is a [b]pipeline[/b].\n"

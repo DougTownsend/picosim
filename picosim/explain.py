@@ -115,7 +115,8 @@ ABOUT = {
     'svc': "SVC (supervisor call) asks the built-in OS for a service: #2 prints the character in "
            "R0 (putchar) and #3 reads a key into R0 (getchar).",
     'bkpt': "BKPT (breakpoint) stops the processor. picosim's built-in OS uses it when main has "
-            "returned.",
+            "returned. (On a real Pico with no debugger attached, BKPT causes a HardFault "
+            "instead.)",
     'nop': "NOP does nothing for one instruction.",
     'adr': "ADR puts the address of a label into a register.",
 }
@@ -131,7 +132,8 @@ FLAG_MEANING = {
           "second as unsigned numbers)",
           "C = 0: no carry (after CMP or SUBS: a borrow, so the first was < the second as unsigned "
           "numbers)"),
-    'V': ("V = 1: signed overflow: the true answer does not fit in 32 bits",
+    'V': ("V = 1: signed overflow: the true answer does not fit in a signed 32-bit number, so "
+          "the sign bit came out wrong",
           "V = 0: no signed overflow"),
 }
 COND_FLAGS = {'eq': 'Z', 'ne': 'Z', 'cs': 'C', 'hs': 'C', 'cc': 'C', 'lo': 'C', 'mi': 'N', 'pl': 'N',
@@ -484,7 +486,8 @@ class Explainer:
         if base in ('bl', 'blx'):
             tgt = pc1 & ~1
             return T(f"Called the function {self.where(tgt)}. LR = {h32(r1[14])}: the address of the "
-                     "next line plus 1 (the 1 marks Thumb code), so the function knows where to come back to.",
+                     "next line, plus 1 (a marker meaning \"Thumb instructions\", the only kind the Pico runs), so the "
+                     "function knows where to come back to.",
                      f"will call the function {self.where(tgt)}, saving the address of the next line "
                      f"(plus 1) in LR as {h32(r1[14])} so the function knows where to come back to.")
         if base == 'bx':
@@ -949,6 +952,8 @@ def _stop_reason(srv):
         return "because getchar is waiting for you to type a key"
     if not c.in_insn and c.pc in srv.breakpoints:
         return "at a breakpoint, just before this line runs"
+    if not c.in_insn and c.pc == srv.prog.main_addr:
+        return "at the first line of main"
     return "because you pressed Pause"
 
 

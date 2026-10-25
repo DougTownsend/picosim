@@ -5,7 +5,9 @@ extends PanelContainer
 ## Text grows with the panel: drag the splitters to give it more room and the
 ## fonts and fields scale up to fill it.
 ## Registers can be shown in hex, unsigned decimal or signed decimal (saved in
-## settings.cfg as [ui] reg_format). Under the flags, a line says what the
+## settings.cfg as [ui] reg_format; until the student picks one, level 1 shows
+## decimal and higher levels hex). SP, LR and PC hold addresses, so they stay
+## in hex like every other address in picosim. Under the flags, a line says what the
 ## last step changed and which line of the program did it.  Below level 3 the datapath registers and
 ## the FSM's next state are hidden: they belong to "Inside the CPU".
 
@@ -20,11 +22,13 @@ var _dim_labels: Array[Label] = []
 var flag_boxes := {}
 var dp_labels := {}
 var info_label: Label
+var title_label: Label
 var change_label: Label
 var _rows := {}                  # address -> Disassembly row, for "changed by"
 var dp_row: HBoxContainer
 var format_select: OptionButton
 var reg_format := 0              # index into FORMATS
+var _format_chosen := false      # the student picked one; otherwise it follows the level
 var font: Font
 var holder: Control
 var content: VBoxContainer
@@ -50,19 +54,29 @@ func _ready() -> void:
 	var top := HBoxContainer.new()
 	v.add_child(top)
 	var title := Label.new()
+	title_label = title
 	title.text = "Registers"
+	title.mouse_filter = Control.MOUSE_FILTER_PASS
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_font(title, 15)
 	top.add_child(title)
 	var cfg := ConfigFile.new()
-	if cfg.load(SETTINGS) == OK:
+	if cfg.load(SETTINGS) == OK and cfg.has_section_key("ui", "reg_format"):
 		reg_format = clampi(int(cfg.get_value("ui", "reg_format", 0)), 0, FORMATS.size() - 1)
+		_format_chosen = true
+	else:
+		reg_format = _level_format()
+	Level.changed.connect(func():
+		if not _format_chosen:
+			reg_format = _level_format()
+			format_select.select(reg_format)
+		update_state(Backend.state))
 	format_select = OptionButton.new()
 	for f in FORMATS:
 		format_select.add_item(f)
 	format_select.select(reg_format)
 	format_select.focus_mode = Control.FOCUS_NONE
-	format_select.tooltip_text = "Show the registers as:\nHex — base 16, like 0x0000002A\nDecimal — an ordinary number, like 42\nSigned — decimal, where values from 0x80000000 up are negative"
+	format_select.tooltip_text = "Show the registers as:\nHex — base 16, like 0x0000002A\nDecimal — an ordinary number, like 42\nSigned — decimal, where values from 0x80000000 up are negative\nSP, LR and PC hold addresses, so they are always in hex."
 	format_select.item_selected.connect(_on_format)
 	_font(format_select, 14)
 	top.add_child(format_select)
@@ -109,7 +123,7 @@ func _ready() -> void:
 			"N": "N — Negative: the last result was negative (its top bit, bit 31, is 1)",
 			"Z": "Z — Zero: the last result was zero",
 			"C": "C — Carry: an add carried out of bit 31, or a subtract (CMP) did not need to borrow",
-			"V": "V — Overflow: the last signed result was too big to fit in 32 bits"}[f] + \
+			"V": "V — Overflow: the last result, read as a signed number, did not fit in 32 bits (its sign came out wrong)"}[f] + \
 			"\nSet by instructions ending in S (ADDS, SUBS, MOVS…) and by CMP. Click to change it."
 		cb.toggled.connect(func(on): Backend.send("set_flag", {"flag": f, "value": 1 if on else 0}))
 		row.add_child(cb)
@@ -229,11 +243,19 @@ func _on_reg_submitted(text: String, i: int) -> void:
 func _refresh_reg(i: int) -> void:
 	var st := Backend.state
 	if st.get("loaded", false):
-		reg_edits[i].text = _fmt(int(st["regs"][i]))
+		reg_edits[i].text = _fmt(int(st["regs"][i]), i)
 
 
-## A register value in the chosen format.
-func _fmt(val: int) -> String:
+## Decimal at level 1, where the numbers are small; hex from level 2, where
+## addresses and memory come in.
+static func _level_format() -> int:
+	return 1 if Level.current < 2 else 0
+
+
+## Register `i`'s value in the chosen format (addresses: SP, LR, PC in hex).
+func _fmt(val: int, i := 0) -> String:
+	if i >= 13:
+		return Backend.hex32(val)
 	match reg_format:
 		1:
 			return str(val)
@@ -256,6 +278,7 @@ static func _binary(val: int) -> String:
 
 func _on_format(i: int) -> void:
 	reg_format = i
+	_format_chosen = true
 	var cfg := ConfigFile.new()
 	cfg.load(SETTINGS)
 	cfg.set_value("ui", "reg_format", i)
@@ -271,9 +294,11 @@ func update_state(st: Dictionary) -> void:
 		var e := reg_edits[i]
 		var val := int(st["regs"][i])
 		if not e.has_focus():
-			Backend.set_text(e, _fmt(val))
+			Backend.set_text(e, _fmt(val, i))
 		var hot := changed.has(NAMES[i])
-		Backend.set_color(e, "font_color", Palette.c("changed") if hot else Palette.c("text"))
+		# R8–R12: most Thumb instructions cannot use them, so they stay dim until they hold something
+		var idle := i >= 8 and i <= 12 and val == 0
+		Backend.set_color(e, "font_color", Palette.c("changed") if hot else Palette.c("dim") if idle else Palette.c("text"))
 		var cause := _cause(NAMES[i], st) if hot else ""
 		var key := [val, cause]
 		_tip_keys.resize(16)
@@ -299,14 +324,20 @@ func update_state(st: Dictionary) -> void:
 	var state_txt: String = st["next_state"]
 	var where := ""
 	if st["in_insn"]:
-		where = "cycle %d of %s" % [int(st["cycle_index"]), "?" if int(st["insn_total"]) < 0 else str(int(st["insn_total"]))]
+		where = ("cycle %d; the total is known after DECODE" % int(st["cycle_index"])) if int(st["insn_total"]) < 0 \
+			else "cycle %d of %d" % [int(st["cycle_index"]), int(st["insn_total"])]
 	else:
 		where = "at instruction boundary"
 	if Level.at_least(3):
 		Backend.set_text(info_label, "Next state: %s (%s)\nInstructions: %d   Cycles: %d" % [
 			state_txt, where, int(st["steps"]), int(st["cycles"])])
-	else:
-		Backend.set_text(info_label, "Instructions run so far: %d" % (int(st["steps"]) - int(st.get("boot_steps", 0))))
+	info_label.visible = Level.at_least(3)    # below that, the toolbar already counts instructions
+	# Partway through an instruction the CPU diagram shows each box's value
+	# during the cycle (old → new for what the edge loads); say that this
+	# panel is the "after" side, so the two never seem to disagree.
+	var mid: bool = Level.at_least(3) and st["in_insn"]
+	Backend.set_text(title_label, "Registers · after this cycle's clock edge" if mid else "Registers")
+	title_label.tooltip_text = "These are the values after the clock edge that ended the last cycle.\nThe CPU diagram shows what each box held during that cycle, and old → new for what the edge loaded." if mid else ""
 	info_label.tooltip_text = info_label.text
 
 

@@ -195,7 +195,7 @@ class ServerTest(unittest.TestCase):
         st, _ = c.until(lambda m: m['type'] == 'state')
         self.assertEqual(st['cycles'], 0)                              # the GUI's machine is untouched
 
-    def test_perf_and_sources(self):
+    def test_perf(self):
         c = start(os.path.join(ROOT, 'test_asm_files', 'gpio.s'))
         c.until(lambda m: m['type'] == 'state')
         c.send(cmd='step_insn')
@@ -207,10 +207,6 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(m['stock']['machines']['m0plus']['cycles'], 4)   # two LDRs: 2 + 2
         self.assertEqual(m['stock']['machines']['multicycle']['cycles'], 14)
         self.assertTrue(m['schedule']['rows'][-1]['pending'])          # the next instruction
-        c.send(cmd='component_source')
-        m, _ = c.until(lambda m: m['type'] == 'sources')
-        self.assertIn('class ALU', m['sources']['alu'])
-        self.assertIn('def tri_state', m['sources']['gatePC'])
 
     def test_pipeline_machine(self):
         """2-stage pipeline: the instruction behind the one executing is

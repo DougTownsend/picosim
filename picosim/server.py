@@ -35,12 +35,14 @@ from . import settings as prog_settings
 from . import challenge as challenges
 from . import heat
 from . import explain
+from . import teaching
 from .cpu import SimulatorError, svc_write_data
 from .pipeline import Pipeline
 
 REG_NAMES = ['R0', 'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7',
              'R8', 'R9', 'R10', 'R11', 'R12', 'SP', 'LR', 'PC']
 MAX_SPEED = 0            # cps value meaning "as fast as possible"
+BOOT_MAX = 16            # the OS's start-up is 3 instructions; Skip to main gives up after this many
 FRAME = 1 / 30           # state broadcast interval while running
 IDLE_POLL = 0.02         # select() timeout while nothing is running
 HEX_DEFAULT = (0x3000, 256)
@@ -177,6 +179,7 @@ class Server:
         # Blocking sends (a burst of updates must never look like a hang-up);
         # reads only happen after select() reports data, so they never block.
         self.conn.setblocking(True)
+        self.send(teaching.facts())
         if self.path:
             self.cmd_load({'path': self.path})
         else:
@@ -279,6 +282,7 @@ class Server:
             'datapath': c.datapath,
             'pc': pc, 'halted': c.halted, 'exit_code': self.exit_code, 'fault': self.fault,
             'steps': c.steps, 'cycles': c.cycles, 'boot_steps': self.boot_steps,
+            'at_boot': self.at_boot(),
             'can_back': self.mode == 'sim' and (c.in_insn or c.steps > (self.boot_steps if self.skip_boot else 0)),
             'in_insn': c.in_insn, 'next_state': c.next_state(),
             'cycle_index': c.cycle_index, 'insn_total': c.insn_total,
@@ -337,13 +341,16 @@ class Server:
         p = self.prog
         c = self.core
         listing = []
+        uses_io = False          # a literal of the program's own is a peripheral address
         addrs = sorted(p.asm_map)
         for i, addr in enumerate(addrs):
             text = p.asm_map[addr]
             if text.startswith('.'):               # data: .word / .hword / .byte / .ascii
                 size = {'.word': 4, '.hword': 2, '.byte': 1}.get(text.split()[0])
                 if size:
-                    raw = f"{int.from_bytes(c.get_mem_slice(addr, size), 'little'):0{2 * size}X}"
+                    value = int.from_bytes(c.get_mem_slice(addr, size), 'little')
+                    raw = f"{value:0{2 * size}X}"
+                    uses_io |= size == 4 and addr >= explain.OS_TOP and value >= 0x40000000
                 else:
                     n = (addrs[i + 1] if i + 1 < len(addrs) else addr + 16) - addr
                     raw = c.get_mem_slice(addr, min(n, 4)).hex(' ').upper() + ('…' if n > 4 else '')
@@ -356,10 +363,11 @@ class Server:
                 line, src = 0, ''          # a literal pool: not the ldr line that made it
             listing.append({'addr': addr, 'raw': raw, 'text': text,
                             'shown': symbolic(text, p.sym_map),
-                            'label': p.sym_map.get(addr, ''), 'line': line, 'source': tidy_source(src)})
+                            'label': p.sym_map.get(addr, ''), 'line': line, 'source': tidy_source(src),
+                            'os': addr < explain.OS_TOP})
         self.send({'type': 'program', 'path': p.path, 'main': p.main_addr,
                    'listing': listing, 'settings': prog_settings.describe(p.path),
-                   'regions': self.regions(),
+                   'regions': self.regions(), 'uses_io': uses_io,
                    'challenge': self.challenge and {'task': self.challenge['task'],
                                                     'checks': [t for t, _ in self.challenge['checks']]},
                    # every label, data ones too, for the Memory tab's Go to box
@@ -987,6 +995,33 @@ class Server:
                 return
         self.send_state()
 
+    def at_boot(self):
+        """The program has not reached main yet: only the built-in OS's
+        start-up has run."""
+        c = self.core
+        main = self.prog.main_addr if self.prog else None
+        return bool(c and main and not c.halted and c.steps < BOOT_MAX
+                    and (c.in_insn or c.pc != main) and (c.insn_addr if c.in_insn else c.pc) < explain.OS_TOP)
+
+    def cmd_run_to_main(self, msg):
+        """Run the OS's start-up to the first instruction of main, for real
+        (so the step and cycle counts stay honest)."""
+        self._settle()
+        c = self.core
+        if not self.at_boot():
+            return self.send_state()
+        self.running = False
+        self._begin_action(kind='run')
+        main = self.prog.main_addr
+        for _ in range(BOOT_MAX):
+            if c.halted or self.fault or (not c.in_insn and c.pc == main):
+                break
+            if self.machine == 'm0plus':
+                self.pipe_step_insn()
+            elif not self.one_insn(record=True):
+                break
+        self.send_state()
+
     def call_at_pc(self):
         """(return address, call target) if the next instruction is BL or
         BLX Rm, else None."""
@@ -1150,26 +1185,6 @@ class Server:
 
     def cmd_state(self, msg):
         self.send_state()
-
-    def cmd_component_source(self, msg):
-        """The Python model of every diagram block (picosim/components.py),
-        proven equal to the simulator by tests/test_datapath_model.py."""
-        import inspect
-        from . import components as C, datapath_model as D
-        objs = {
-            'pc': [C.Register], 'ir': [C.Register], 'ir2': [C.Register], 'mar': [C.Register],
-            'mdr': [C.Register], 'inc': [C.adder], 'marinc': [C.adder], 'adder': [C.adder],
-            'pcmux': [C.mux], 'addr1mux': [C.mux], 'addr2mux': [C.mux], 'sr2mux': [C.mux],
-            'clrt': [C.clr_thumb], 'sett': [C.set_thumb], 'align': [C.pc_read, C.align4],
-            'ext': [C.ImmExtract], 'cond': [C.cond_eval], 'bus': [C.bus],
-            'gatePC': [C.tri_state], 'gateAdder': [C.tri_state], 'gateMDR': [C.tri_state],
-            'gateALU': [C.tri_state], 'gateVector': [C.tri_state],
-            'mem': [C.Memory], 'loadext': [C.load_ext, C.sext], 'storealign': [C.store_align],
-            'regfile': [C.RegisterFile], 'alu': [C.ALU], 'flags': [C.Flags], 'fsm': [D.Datapath.cycle],
-        }
-        out = {k: '\n\n'.join(inspect.getsource(o).rstrip() for o in v) for k, v in objs.items()}
-        out['vec'] = 'VECTOR_SVCALL = 0x2C      # SVCall is exception 11, vector at 11 x 4'
-        self.send({'type': 'sources', 'sources': out})
 
     def cmd_perf(self, msg):
         """Performance report for the run so far (see picosim/timing.py).
