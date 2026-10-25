@@ -221,8 +221,27 @@ progress, panels skip updates that change nothing, the Pico board is drawn
 once into a texture, and while Run is on the diagram's pulse is redrawn at
 30 frames a second.
 
+**Ask picosim** (the toolbar's **Ask** button, or the `?` key) is a help
+chat. Students ask in their own words ("why did it stop?", "why is R0 72?",
+"what does LDR do?", "how do I set a breakpoint?") and get an answer built
+from the user guide and the program as it runs (`picosim/chat/`), with a
+link to the guide page and often a **Show me** button that outlines the
+control. It answers at the student's level, gives **hints only, never a
+finished solution** (there is no setting that changes this), and handles
+off-topic questions, personal data and wellbeing messages with fixed
+replies. It works offline. A teacher can optionally let questions it cannot
+answer go to Claude: `picosim --chat-setup` shows and creates the config
+file (`"ai": "on"`, the model, `max_ai_per_hour`, a `helpline`), which needs
+`pip install -e .[ai]` (Python 3.10+) and an `ANTHROPIC_API_KEY`; the
+student's question, a state summary and their program (personal data
+removed) are then sent to Anthropic, so check your school's rules first.
+`--teacher-config=PATH` uses another config file. Challenges can carry the
+teacher's own hints as `@ Hint:` lines. The guide's *Ask picosim* page has
+the details; `python -m picosim.chat.eval --heldout` runs the bot's
+evaluation set. GUI flags for screenshots: `--chat`, `--chat-ask "…"`.
+
 Raising the Level switches on what the new level adds (the Memory tab at 2,
-the CPU diagram at 3, the 2-stage pipeline at 4), shows a "New at Level N"
+the CPU diagram at 3 (with the heat overlay on it), the 2-stage pipeline at 4), shows a "New at Level N"
 strip with a link to the matching lesson, and outlines the new controls with
 a NEW tag for a few seconds (`gui/scripts/spotlight.gd`). Pass
 `--demo-level-up N` to see it without saving the level.

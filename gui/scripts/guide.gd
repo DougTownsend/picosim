@@ -58,6 +58,8 @@ var _collapsed := {}              # section name → true: its topics are folded
 var _sums := {}                   # topic id → its short version (see _summaries)
 var _unfolded := {}               # topic id → true: its full details are shown
 var _unfold_all := false          # --guide-details (screenshots): every page unfolded
+var _packing := false             # knowledge_pack(): topics are recorded, not listed
+var _pack: Array = []             # the topics knowledge_pack() has recorded at one level
 
 var _wt: Dictionary = {}          # the walkthrough message for the loaded program
 var _wt_waiting := false          # asked the backend, no answer yet
@@ -147,6 +149,26 @@ func _ready() -> void:
 	if fo >= 0 and fo + 1 < args.size():
 		get_tree().create_timer(0.5).timeout.connect(func():
 			topics.item_selected.emit(_ids.find("sec:" + args[fo + 1])))
+
+
+## Every topic as it reads at each level, with its short version and its
+## full details, for Ask picosim (picosim/chat/retrieve.py cuts them into
+## documents).  {"levels": {"1": [{id, name, level, sum, full}], …}}.  The
+## list and the page are rebuilt for the real level afterwards.
+func knowledge_pack() -> Dictionary:
+	var real := Level.current
+	var levels := {}
+	_packing = true
+	for n in range(1, Level.MAX + 1):
+		Level.current = n          # as if picked, without telling anyone
+		_pack = []
+		_add_topics()
+		levels[str(n)] = _pack
+	_packing = false
+	_pack = []
+	Level.current = real
+	_rebuild()
+	return {"levels": levels}
 
 
 ## Show the guide, optionally at a topic id.
@@ -374,6 +396,11 @@ func _select(id: String) -> void:
 
 ## Add a topic; it is listed only if its level (or its section's) is reached.
 func _topic(id: String, name: String, bb: String, lvl := 0) -> void:
+	if _packing:
+		if maxi(lvl, _sec_level) <= Level.current and bb != "":
+			_pack.append({"id": id, "name": name, "level": maxi(lvl, _sec_level),
+				"sum": _space_tables(_lists(str(_sums.get(id, "")))), "full": _space_tables(_lists(bb))})
+		return
 	_text[id] = _space_tables(_lists(bb))
 	if _sums.has(id):
 		_sums[id] = _space_tables(_lists(str(_sums[id])))
@@ -389,7 +416,7 @@ func _topic(id: String, name: String, bb: String, lvl := 0) -> void:
 func _section(name: String, lvl := 1) -> void:
 	_sec_level = lvl
 	_sec_name = name
-	if lvl > Level.current:
+	if lvl > Level.current or _packing:
 		return
 	if topics.item_count > 0:     # a gap between sections
 		_ids.append("")
@@ -598,6 +625,7 @@ func _add_topics() -> void:
 			["[code]@ Challenge: …[/code]", "The task the strip shows. Optional; without it, the strip lists the checks."],
 			["[code]@ Expect: output \"…\"[/code]", "Everything the program printed, from start to finish, must be exactly this text. Write it in quotes; [code]\\n[/code] is a new line (what [code]movs r0, #10[/code] + [code]bl putchar[/code] prints)."],
 			["[code]@ Expect: R2 = 7[/code]", "The register's value when the program finishes. R0–R12, SP and LR; the value may be decimal, hex ([code]0x64[/code]), negative ([code]-1[/code]) or a character ([code]'H'[/code])."],
+			["[code]@ Hint: …[/code]", "Your own hint for " + _link("ask", "Ask picosim") + ". When a student asks for help with the challenge, it gives these first, one per request, in order, before its own hints. Optional."],
 		], 1) + \
 		"Use as many Expect lines as you like; all must pass. Checks run only in the simulator, and not when the program stops with a CPU fault. A line picosim cannot read is reported in the console when the file loads, and the rest of the program still runs.\n"
 	_topic("challenges", "Challenges", chal)
@@ -802,6 +830,7 @@ func _add_topics() -> void:
 		"• [color=" + _c("changed") + "]Yellow[/color] marks a value loaded at the clock edge that ends this cycle (old → new).\n" +
 		"• The triangles on the bus are tri-state buffers, each named after the control signal that turns it on: GatePC, GateADDR, GateMDR, GateALU and GateVEC. The lit one is driving the bus; the others are off (high impedance). The bus value is printed above the bus.\n" +
 		"• Every mux, the ALU and the adders take their inputs on the long side and send their result out of the short side; control comes in on a slanted side.\n" +
+		"• The [b]heat tint[/b] behind each box, from cool to hot, shows how much of the run so far that part has been used, and its small label gives its share of all clock cycles. It is on from Level 3; " + _k("View") + " ▸ [b]Heat overlay on the CPU diagram[/b] turns it off and on." + (" The " + _link("heat", "Heat map") + " has the same numbers in full." if Level.at_least(4) else "") + "\n" +
 		"When you step, a glowing pulse travels along the active wires in the order the data flows; a register's yellow caption appears when the pulse reaches it. Its speed follows the speed slider; at high speeds animation is skipped.\n" +
 		_sub("Learning the components") +
 		"Hover a block for a one-line summary. [b]Click a block[/b], a tri-state buffer (▲ / ▼) or the bus to open a card explaining what it does, how it works, what it connects to and when it is used; the block and its wires are outlined in [color=" + _c("sel") + "]orange[/color]. Click it again, click empty space, press ✕ or " + _k("Esc") + " to close. The same descriptions are in " + _link("components", "Datapath components") + ".\n")
@@ -977,7 +1006,7 @@ func _add_topics() -> void:
 	keys += _row("Space  or  F5", "Run / Pause")
 	if Level.at_least(4):
 		keys += _row("F2", "open the Performance window")
-	keys += _row("F1", "open this guide") + \
+	keys += _row("F1", "open this guide") + _row("?", "open Ask picosim, the help chat") + \
 		_row("Ctrl/Cmd+O", "open a .s file") + _row("Ctrl/Cmd+R", "reload (start the program over)") + \
 		_row("Ctrl/Cmd + / −", "zoom in / out") + _row("Ctrl/Cmd 0", "reset zoom") + \
 		_row("Esc", "close this guide" + (", the enlarged Pico board or a component card" if Level.at_least(2) else ""))
@@ -1059,9 +1088,11 @@ func _add_topics() -> void:
 	tr += "Press " + _k("Reload") + " to start again."
 	_topic("trouble", "Troubleshooting", tr)
 
+	_topic("ask", "Ask picosim", _ask_page())
+
 	_topic("glossary", "Glossary", _glossary())
 
-	if Level.current < Level.MAX:
+	if Level.current < Level.MAX and not _packing:
 		_ids.append("")
 		var i := topics.add_item("More at higher levels…")
 		topics.set_item_selectable(i, false)
@@ -1129,7 +1160,7 @@ func _summaries() -> Dictionary:
 	d["blocks"] = "The CPU diagram is built from a few kinds of part. [b]Registers[/b] store a value and change only at the clock edge. The [b]bus[/b] carries one value at a time between parts, and [b]tri-state buffers[/b] decide which part drives it. [b]Multiplexers[/b] (muxes) pick one of their inputs, [b]adders[/b] and the [b]ALU[/b] compute, [b]memory[/b] reads or writes at the address in MAR, and the [b]FSM[/b] controls them all.\n\n" + \
 		"Muxes, adders and the ALU have no memory: their output follows their inputs straight away. Registers remember, which is why the diagram shows a register's new value as a [color=" + y + "]yellow[/color] [code]old → new[/code] caption until the next cycle starts."
 	d["diagram"] = "The CPU diagram shows the multi-cycle datapath during the cycle that just ran. [color=" + _c("accent") + "]Bright blue[/color] wires and boxes carry data in this cycle, [color=" + _c("purple") + "]purple dashed[/color] stubs are control signals from the FSM (bright means on), and a [color=" + y + "]yellow[/color] [code]old → new[/code] caption marks a register that takes a new value at the clock edge. When you step, a glowing pulse follows the data along the wires.\n\n" + \
-		"Hover a block for a one-line summary, or click it for a card that explains what it does and when it is used."
+		"The [b]heat tint[/b] behind each box shows how much of the run that part has been used so far (" + _k("View") + " ▸ [b]Heat overlay[/b] turns it off). Hover a block for a one-line summary, or click it for a card that explains what it does and when it is used."
 	d["cycles"] = "The cycle inspector under the diagram follows the current instruction one clock cycle at a time. The left side lists its cycles (click one to look at it again) with the phase chips F, D, EA, FO, EX and SR; the right side says what the cycle does, which control signals it turns on and what changes at the clock edge.\n\n" + \
 		"Every instruction starts with the same 3 fetch cycles. Typical totals: " + _typical_cycles() + "."
 	d["tutorial"] = "This tutorial follows one instruction, [code]adds r2, r0, r1[/code] from [b]Add two numbers[/b], through its six clock cycles with the real values: three fetch cycles, DECODE, FETCH_OPERANDS (R0 and R1 go into the ALU) and EXECUTE_COMMIT (the sum goes into R2 and the flags). Set a breakpoint on it, press " + _k("Run") + ", then press " + _k("Step cycle") + " once for each row of the table."
@@ -1157,8 +1188,34 @@ func _summaries() -> Dictionary:
 	d["keys"] = keys + ", " + _k("F1") + " opens this guide, " + _k("Ctrl/Cmd+O") + " opens a file and " + _k("Ctrl/Cmd+R") + " reloads it. Holding a step key repeats it. The keys work only in Simulator mode, and not while you are typing in a box or in the serial console."
 	d["trouble"] = "Most problems have a quick fix. If Step does nothing, the program has finished: press " + _k("Reload") + ". If it is waiting, type a key in the serial console. If Run is slow, move the " + _k("Speed") + " slider to the right. If the program will not load, the [b]Could not load program[/b] box gives the line number and what is wrong: fix that line and save.\n\n" + \
 		"A [b]CPU fault[/b] message in the console means the program did something that would crash a real Pico. The most common cause is a [code]main[/code] without [code]pop {…, pc}[/code] at its end. The details list every message you may see, with what to do."
+	d["ask"] = _k("Ask") + " (top right, or the " + _k("?") + " key) opens a chat where you can ask questions in your own words: [i]Why did my program stop?[/i], [i]Why is R0 72?[/i], [i]What does LDR do?[/i], [i]How do I set a breakpoint?[/i] It looks at your program as it runs and answers from this guide, with a link to the page and often a [b]Show me[/b] button that points at the control.\n\n" + \
+		"It gives [b]hints, never finished answers[/b]: ask it for the solution to a challenge and it gives the next small hint instead, up to three. If you need more help than that, ask your teacher, or look the topic up online. It only knows about picosim, ARM assembly and the Pico."
 	d["glossary"] = "Short meanings of the words used in picosim and in this guide, in alphabetical order. More words appear as you raise the Level."
 	return d
+
+
+## "Ask picosim": what the help chat does, the hints-only rule, and how a
+## teacher sets it up.
+func _ask_page() -> String:
+	var t := _h("Ask picosim")
+	t += "Click " + _k("Ask") + " in the toolbar, or press " + _k("?") + ", and type a question in your own words. Typos are fine. Some good ones:\n"
+	t += _grid(["Ask about", "For example"], [
+		["Your program right now", "[i]Why did it stop?[/i] · [i]What just happened?[/i] · [i]What happens next?[/i] · [i]Why is R0 72?[/i] · [i]Why is it waiting?[/i]"],
+		["Errors and crashes", "[i]What does this error mean?[/i] (or paste the error) · [i]Why did it crash?[/i]"],
+		["The buttons and panels", "[i]What does Step over do?[/i] · [i]How do I set a breakpoint?[/i] · [i]How do I see decimal?[/i]"],
+		["Assembly", "[i]What does LDR do?[/i] · [i]movs vs mov?[/i] · [i]What is the Z flag?[/i] · [i]What is 0x2A in decimal?[/i]"],
+		["Challenges", "[i]What is the challenge?[/i] · [i]Did I pass?[/i] · [i]Give me a hint[/i]"],
+	], 1)
+	t += "Follow-ups work too: [i]why?[/i], [i]tell me more[/i], [i]what about R1?[/i]. Chips under the conversation suggest questions that fit what is on screen, such as [i]Why did it crash?[/i] after a fault.\n"
+	t += _sub("Hints, not answers")
+	t += "It never writes your code or a challenge's solution, and nothing you type changes that. Ask for the answer and you get the next small hint: first the idea and the guide page, then where to look, then what kind of change to make. After three hints it stops: ask your teacher, or look the topic up online. Load errors and CPU faults are different: it tells you exactly what the assembler or the CPU complained about, because fixing those is not the exercise.\n"
+	t += _sub("Where answers come from")
+	t += "Each answer has a small tag. [b]built-in answer[/b] and [b]from the guide[/b] come from picosim itself: this guide and your program as it runs, so they match what you see. Above your Level it gives a short answer and says which Level covers it. 👍 and 👎 tell your teacher what helps; [b]Report[/b] saves the question and answer (without personal details) for them.\n"
+	t += "Please don't type personal details (phone numbers, addresses, passwords): the chat leaves them out. If something is really wrong, beyond picosim, talk to a teacher or another adult you trust.\n"
+	t += _sub("For teachers: AI help")
+	t += "By default everything works offline. A teacher can let questions the built-in answers cannot handle go to Claude, an AI made by Anthropic: run [code]picosim --chat-setup[/code] to see (and create) the config file, set [code]\"ai\": \"on\"[/code] there, install the extra with [code]pip install -e .[lb]ai][/code] (it needs Python 3.10 or newer) and set an Anthropic API key in [code]ANTHROPIC_API_KEY[/code]. The question, a summary of the machine and the student's program (personal data removed) are then sent to Anthropic, so check your school's rules first; the window shows a notice while AI is on. AI answers are tagged [b]AI answer[/b], follow the same hints-only rule, and are withdrawn if they show too much code. The config also sets the model, [code]max_ai_per_hour[/code] (20), a [code]helpline[/code] for the wellbeing reply and [code]log_unanswered[/code]. There is no setting for full answers.\n"
+	t += "Reports go to [code]chat_reports.jsonl[/code] and 👍 / 👎 counts to [code]chat_feedback.json[/code], next to the config. Write your own hints for a challenge with [code]@ Hint:[/code] lines (see " + _link("challenges", "Challenges") + ").\n"
+	return t
 
 
 # ── getting-started pages ───────────────────────────────────────────────────

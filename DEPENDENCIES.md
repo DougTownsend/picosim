@@ -24,6 +24,7 @@ commands for Linux, macOS and Windows are in [installation.md](installation.md).
 | git | `--uf2` / `--flash`: the Pico SDK is cloned to `~/pico-sdk` on first use (or set `PICO_SDK_PATH`) |
 | An ARM toolchain **with newlib** | `--uf2` / `--flash`: the Pico SDK links against the C library. The Arm GNU Toolchain has it (`brew install --cask gcc-arm-embedded` on macOS); Homebrew's plain `arm-none-eabi-gcc` formula does not, but it is fine for the simulator itself |
 | `picotool` | `--flash` and the GUI's Flash: uploads without holding BOOTSEL. Without it, picosim copies the `.uf2` to a mounted `RPI-RP2` drive instead |
+| `anthropic` (the `[ai]` extra: `pip install -e .[ai]`) | Ask picosim's optional AI help, when a teacher turns it on (`picosim --chat-setup`). Needs Python 3.10 or newer and an Anthropic API key in `ANTHROPIC_API_KEY`; without it the help chat works offline |
 
 ## Quick check
 

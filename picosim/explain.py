@@ -1049,7 +1049,7 @@ def build(srv):
             now['simple'] += " The OS then stopped the processor: the program is finished."
     if srv.fault:
         now = now or {'head': '', 'simple': '', 'detail': []}
-        now['fault'] = (f"The CPU stopped with a fault: {srv.fault}. A real Pico would crash here too. "
+        now['fault'] = (f"The CPU stopped with a fault: {srv.fault.rstrip('.')}. A real Pico would crash here too. "
                         "The console says what went wrong; fix the program, save it and press Reload.")
 
     # what comes next

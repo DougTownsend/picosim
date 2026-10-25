@@ -1,6 +1,6 @@
 extends Control
-## The first-run tour: the first time a program is loaded, six coach marks
-## point out Step, Explain this step, the Registers, the Disassembly, the Console and the Guide,
+## The first-run tour: the first time a program is loaded, seven coach marks
+## point out Step, Explain this step, the Registers, the Disassembly, the Console, the Guide and Ask,
 ## one at a time, each with Next and Skip.  The spotlight outlines the control
 ## being explained.  Finishing or skipping it is remembered in settings.cfg
 ## ([ui] tour_seen); View ▸ Show the tour again starts it over.
