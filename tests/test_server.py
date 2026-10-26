@@ -195,6 +195,102 @@ class ServerTest(unittest.TestCase):
         st, _ = c.until(lambda m: m['type'] == 'state')
         self.assertEqual(st['cycles'], 0)                              # the GUI's machine is untouched
 
+    def test_walkthrough_compact_and_keys(self):
+        """The walkthrough panel's form: no machine snapshots, and it follows
+        the keys typed so far instead of stopping at getchar."""
+        c = start(os.path.join(ROOT, 'test_asm_files', 'echo_test.s'))
+        c.until(lambda m: m['type'] == 'state')
+        c.send(cmd='walkthrough', compact=True)
+        m, _ = c.until(lambda m: m['type'] == 'walkthrough')
+        self.assertTrue(m['compact'])
+        self.assertEqual(m['keys'], 0)
+        self.assertIn('getchar', m['stopped'])
+        short = len(m['steps'])
+        cy = m['steps'][0]['cycles'][0]
+        self.assertEqual(set(cy), {'state', 'phase', 'what'})
+        self.assertEqual(cy['state'], 'FETCH_ADDR')
+
+        c.send(cmd='console_input', text='hq')        # typed before the program asks
+        st, _ = c.until(lambda m: m['type'] == 'state')
+        self.assertEqual(st['keys_typed'], 2)
+        c.send(cmd='walkthrough', compact=True)
+        m, _ = c.until(lambda m: m['type'] == 'walkthrough')
+        self.assertEqual(m['keys'], 2)
+        self.assertGreater(len(m['steps']), short)
+        self.assertNotIn('getchar', m['stopped'])      # it ran to the end
+        self.assertEqual(m['output'], 'h\n')
+
+        c.send(cmd='pipe_walkthrough', compact=True)
+        p, _ = c.until(lambda m: m['type'] == 'pipe_walkthrough')
+        self.assertEqual([s['addr'] for s in p['steps']], [s['addr'] for s in m['steps']])
+        self.assertEqual(p['steps'][0]['cycles'][0]['state'], 'first fetch')
+        self.assertTrue(all(cy['state'].startswith('Execute') for s in p['steps'][1:] for cy in s['cycles']))
+
+    def test_goto(self):
+        """Go here: forwards, backwards and partway into an instruction, on
+        the step the walkthrough lists, and stepping carries on from there."""
+        c = start(os.path.join(ROOT, 'examples', '03_count_loop.s'))
+        c.until(lambda m: m['type'] == 'state')
+        c.send(cmd='walkthrough', compact=True)
+        w, _ = c.until(lambda m: m['type'] == 'walkthrough')
+        steps = w['steps']
+        for n in (10, 3, 25):
+            c.send(cmd='goto', step=n)
+            st, _ = c.until(lambda m: m['type'] == 'state')
+            self.assertEqual((st['steps'], st['in_insn']), (n, False))
+            self.assertEqual(st['insn_addr'], steps[n]['addr'])
+            self.assertEqual(st['explain']['now']['head'], f"Jumped to step {n + 1}")
+
+        c.send(cmd='goto', step=7, cycle=2)
+        st, _ = c.until(lambda m: m['type'] == 'state')
+        self.assertTrue(st['in_insn'])
+        self.assertEqual((st['steps'] - 1, st['cycle_index']), (7, 2))
+        self.assertEqual(st['insn_addr'], steps[7]['addr'])
+        self.assertEqual([h['state'] for h in st['history']], [cy['state'] for cy in steps[7]['cycles'][:2]])
+        self.assertIn("2 clock cycles into it", st['explain']['now']['head'])
+
+        c.send(cmd='step_insn')                       # finishes step 7
+        st, _ = c.until(lambda m: m['type'] == 'state')
+        c.send(cmd='step_insn')
+        st, _ = c.until(lambda m: m['type'] == 'state')
+        self.assertEqual(st['insn_addr'], steps[9]['addr'])
+        c.send(cmd='step_back')
+        st, _ = c.until(lambda m: m['type'] == 'state')
+        self.assertEqual((st['steps'], st['insn_addr']), (8, steps[8]['addr']))
+
+        # the 2-stage pipeline: the step is next into Execute
+        c.send(cmd='set_machine', machine='m0plus')
+        c.until(lambda m: m['type'] == 'state')
+        c.send(cmd='goto', step=5, cycle=3)           # cycles are ignored on the pipeline
+        st, _ = c.until(lambda m: m['type'] == 'state')
+        self.assertEqual((st['steps'], st['insn_addr']), (5, steps[5]['addr']))
+        self.assertIsNone(st['pipe']['E'])
+        c.send(cmd='step_insn')
+        st, _ = c.until(lambda m: m['type'] == 'state')
+        self.assertEqual(st['pipe']['E']['addr'], steps[5]['addr'])
+
+    def test_goto_keeps_keys(self):
+        """Keys typed are typed again in order, going forwards or back."""
+        c = start(os.path.join(ROOT, 'test_asm_files', 'echo_test.s'))
+        c.until(lambda m: m['type'] == 'state')
+        c.send(cmd='console_input', text='abq')
+        c.until(lambda m: m['type'] == 'state')
+        c.send(cmd='walkthrough', compact=True)
+        w, _ = c.until(lambda m: m['type'] == 'walkthrough')
+        end = len(w['steps'])
+        c.send(cmd='goto', step=end)
+        reset, _ = c.until(lambda m: m['type'] == 'console_reset')
+        self.assertEqual(reset['text'], 'ab\n')
+        st, _ = c.until(lambda m: m['type'] == 'state')
+        self.assertEqual(st['keys_typed'], 3)
+        c.send(cmd='goto', step=0)
+        reset, _ = c.until(lambda m: m['type'] == 'console_reset')
+        self.assertEqual(reset['text'], '')
+        st, _ = c.until(lambda m: m['type'] == 'state')
+        self.assertEqual((st['steps'], st['keys_typed']), (0, 3))
+        c.send(cmd='run', cps=0)
+        st, _ = c.until(lambda m: m['type'] == 'state' and m['halted'])
+
     def test_perf(self):
         c = start(os.path.join(ROOT, 'test_asm_files', 'gpio.s'))
         c.until(lambda m: m['type'] == 'state')

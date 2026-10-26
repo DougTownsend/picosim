@@ -5,12 +5,16 @@ extends PanelContainer
 ##   Memory      — the memory explorer (memory_view.gd): a map of memory, the
 ##                 bytes coloured by what they are, the stack, and what the
 ##                 last step read or wrote.
+## At Levels 3 and 4, while the CPU diagram is shown, the Disassembly makes
+## way for the Memory tab: the walkthrough beside the diagram (walk_panel.gd)
+## lists the program then, with the ▶ marker, the breakpoints and Skip to main.
 
 var tabs: TabContainer
 var tree: Tree
 var follow: CheckBox
 var mem_hint: Button       # "this step wrote 0x3024 · see it in the Memory tab"
 var btn_main: Button       # Skip to main: run the OS's start-up (levels 2+)
+var disasm_hidden := false   # the walkthrough lists the program instead (set_disasm_hidden)
 var items := {}          # addr -> TreeItem
 var cur_item: TreeItem = null
 var os_item: TreeItem = null   # folds the built-in OS rows: closed at level 1, open from level 2
@@ -50,11 +54,23 @@ func _ready() -> void:
 	Palette.changed.connect(_apply_palette)
 
 
+## Hide the Disassembly tab and show the Memory tab (the CPU diagram is on
+## at Level 3 or 4, with the walkthrough beside it), or bring it back.
+func set_disasm_hidden(on: bool) -> void:
+	if on == disasm_hidden:
+		return
+	disasm_hidden = on
+	tabs.current_tab = 1 if on else 0
+	tabs.set_tab_hidden(0, on)
+	if not on and Backend.state.get("loaded", false):
+		update_state(Backend.state)
+
+
 ## The Memory tab, the Raw column and the OS rows appear from level 2
 ## (Memory & I/O); level 1 shows only the student's own program.
 func set_level(n: int) -> void:
 	tabs.set_tab_hidden(1, n < 2)
-	if n < 2:
+	if n < 2 and not disasm_hidden:
 		tabs.current_tab = 0
 	if tree != null:
 		_size_columns()

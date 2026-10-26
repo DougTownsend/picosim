@@ -25,9 +25,6 @@ signal heat_baseline_changed(exists: bool)
 signal settings_error(message: String)
 ## Facts the teaching text quotes (picosim/teaching.py), e.g. cycle counts.
 signal facts_received
-## Ask picosim (picosim/chat): every chat_* message — chat_reply, chat_delta,
-## chat_done, chat_replace, chat_status, chat_suggestions, chat_reported.
-signal chat_event(msg: Dictionary)
 
 var tcp := StreamPeerTCP.new()
 var port := 0
@@ -143,8 +140,6 @@ func _handle(msg: Variant) -> void:
 		"facts":
 			facts = msg
 			facts_received.emit()
-		var t when str(t).begins_with("chat_"):
-			chat_event.emit(msg)
 
 
 func send(cmd: String, args: Dictionary = {}) -> void:

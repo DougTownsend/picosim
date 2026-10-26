@@ -497,25 +497,6 @@ def run_gui(input_file):
     return proc.returncode
 
 
-def chat_setup():
-    """picosim --chat-setup: the teacher's view of Ask picosim's settings."""
-    from .chat import config
-    from .chat.claude import Assistant
-    path = config.write_template()
-    cfg = config.load()
-    status, why = Assistant(cfg).status()
-    print(f"Ask picosim config: {path}")
-    for k in ('ai', 'model', 'max_ai_per_hour', 'helpline', 'log_unanswered'):
-        print(f"  {k:16} {cfg[k]!r}")
-    print(f"AI help: {status}" + (f" ({why})" if why else ''))
-    print("The helper gives hints only; there is no setting for full answers.")
-    if cfg['ai'] != 'on':
-        print('To turn AI help on: set "ai": "on" in the file above, run pip install -e .[ai] '
-              '(Python 3.10+), and set ANTHROPIC_API_KEY. Questions and the student\'s program are '
-              'then sent to Anthropic: check your school\'s rules first.')
-    print(f"Reports and feedback counts are saved next to it: {config.data_file('chat_reports.jsonl')}")
-
-
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 def main():
@@ -540,18 +521,7 @@ def main():
                         help="open the graphical simulator (requires Godot 4)")
     parser.add_argument("--cycle-table", action="store_true",
                         help="print the per-instruction cycle table (Markdown) and exit")
-    parser.add_argument("--chat-setup", action="store_true",
-                        help="Ask picosim (the help chat): show where its teacher config is, create it, "
-                             "and say whether AI help can run")
-    parser.add_argument("--teacher-config", metavar="PATH",
-                        help="use this Ask picosim config file instead of the one in the user data folder")
     args = parser.parse_args()
-
-    if args.teacher_config:
-        os.environ['PICOSIM_TEACHER'] = os.path.abspath(os.path.expanduser(args.teacher_config))
-    if args.chat_setup:
-        chat_setup()
-        return
 
     if args.cycle_table:
         from .cycles import print_table

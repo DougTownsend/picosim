@@ -994,6 +994,13 @@ def build(srv):
                'simple': "Everything is back as it was before the last step: registers, flags, memory, pins "
                          "and the console. The instruction below runs again when you step.",
                'detail': [[1, "Values that went back:"]] + [[lv, "  • " + t] for lv, t in _changed_values(srv, before['snap'])]}
+    elif kind == 'goto':
+        n = c.steps - (1 if c.in_insn else 0) - (srv.boot_steps if srv.skip_boot else 0)
+        cyc = f", {c.cycle_index} clock cycle{'s' if c.cycle_index != 1 else ''} into it" if c.in_insn else ''
+        now = {'head': f"Jumped to step {n + 1}{cyc}",
+               'simple': "The program has run up to here exactly as if you had stepped it: registers, flags, memory "
+                         "and the console are what they would be. Step on from here (or Step back) to carry on.",
+               'detail': [[1, "Values that changed:"]] + [[lv, "  • " + t] for lv, t in _changed_values(srv, before['snap'])]}
     elif kind == 'edit':
         what = sorted(srv.changed)
         vals = []

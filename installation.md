@@ -67,8 +67,6 @@ This builds the C++ core, installs the `picosim` command and pulls in the requir
 
 On Linux you may need `pip3` instead of `pip`. If you change `picosim/picosim_core.cpp`, run the command again to rebuild the core.
 
-**Optional, for teachers: AI help in Ask picosim.** The help chat works offline. To let questions it cannot answer go to Claude, install the extra with `pip install -e .[ai]` (it needs Python 3.10 or newer), set an Anthropic API key in `ANTHROPIC_API_KEY` (a dedicated workspace key with a spending limit is best, since a key on a student machine can be copied), and run `picosim --chat-setup`: it shows where the config file is, creates it, and says whether AI help can run. Set `"ai": "on"` there. Questions, a summary of the program's state and the program itself (with personal data removed) are then sent to Anthropic, so check your school's privacy rules first.
-
 ---
 
 ## 4. Git

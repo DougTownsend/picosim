@@ -133,11 +133,12 @@ def _opnd(tok, regs):
 
 
 class Walkthrough:
-    def __init__(self, path, limit=DEFAULT_LIMIT):
+    def __init__(self, path, limit=DEFAULT_LIMIT, keys=()):
         self.prog = load_program(path)
         self.core = self.prog.cpu._core
         self.limit = limit
         self.output = ''
+        self.keys = list(keys)          # keys getchar returns, in order (the student's typing)
         self.core.svc_handler = self._svc
 
     @classmethod
@@ -157,7 +158,7 @@ class Walkthrough:
         elif num == 1:
             c.halted = True
         elif num == 3:
-            c.set_reg(0, 0xFFFFFFFF)   # never reached: build() stops before getchar
+            c.set_reg(0, self.keys.pop(0) if self.keys else 0xFFFFFFFF)   # build() stops before a getchar with no key
         else:
             raise SimulatorError(f"Unknown SVC #{num}")
 
@@ -183,7 +184,7 @@ class Walkthrough:
                            "the program itself keeps going when you run it.")
                 break
             pc = c.pc
-            if pc < 0x10000 and c.read16(pc) == 0xDF03:
+            if pc < 0x10000 and c.read16(pc) == 0xDF03 and not self.keys:
                 stopped = ("Next the program calls getchar (SVC #3), which waits for you to type a key in the "
                            "serial console. The walkthrough stops here because what happens next depends on "
                            "that key; run the program to continue.")
@@ -233,7 +234,7 @@ class Walkthrough:
                            "the program itself keeps going when you run it.")
                 break
             pc = c.pc
-            if pc < 0x10000 and c.read16(pc) == 0xDF03:
+            if pc < 0x10000 and c.read16(pc) == 0xDF03 and not self.keys:
                 stopped = ("Next the program calls getchar (SVC #3), which waits for you to type a key in the "
                            "serial console. The walkthrough stops here because what happens next depends on "
                            "that key; run the program to continue.")
@@ -553,19 +554,51 @@ class Walkthrough:
                 'text': ' '.join(out + [last])}
 
 
-def build(path, limit=DEFAULT_LIMIT):
-    """Walk through `path` from reset; returns the message the GUI shows."""
+def build(path, limit=DEFAULT_LIMIT, keys=()):
+    """Walk through `path` from reset; returns the message the GUI shows.
+    `keys` are what getchar reads, in order (the student's typing)."""
     try:
-        return Walkthrough(path, limit).build()
+        return Walkthrough(path, limit, keys).build()
     except LoadError as e:
         return {'type': 'walkthrough', 'path': path, 'steps': [], 'stopped': f"Could not load: {e}",
                 'output': '', 'limit': limit}
 
 
-def build_pipeline(path, limit=DEFAULT_LIMIT):
+def build_pipeline(path, limit=DEFAULT_LIMIT, keys=()):
     """Walk through `path` on the 2-stage pipeline; the GUI's message."""
     try:
-        return Walkthrough(path, limit).build_pipeline()
+        return Walkthrough(path, limit, keys).build_pipeline()
     except LoadError as e:
         return {'type': 'pipe_walkthrough', 'path': path, 'steps': [], 'stopped': f"Could not load: {e}",
                 'output': '', 'limit': limit}
+
+
+def compact(wt):
+    """The walkthrough without its machine snapshots, for the walkthrough
+    panel beside the CPU diagram: each step's instruction and explanation,
+    and per clock cycle a name, its phase and one sentence (a few kB per
+    step instead of tens)."""
+    pipe = wt.get('type') == 'pipe_walkthrough'
+    steps = []
+    for s in wt['steps']:
+        cycles = []
+        for cy in s['cycles']:
+            if pipe:
+                e = cy['view'].get('E')
+                if e is None:
+                    cycles.append({'state': 'first fetch', 'phase': 'FETCH', 'what': '', 'cycle': cy['view'].get('cycle')})
+                    continue
+                name = f"Execute {e['k']}/{e['cycles']}"
+                kind = 'EXECUTE'
+                if e.get('redirect'):
+                    name, kind = name + ' · taken', 'TAKEN'
+                elif e.get('refilling'):
+                    name, kind = name + ' · refill', 'DECODE'
+                cycles.append({'state': name, 'phase': kind, 'what': '', 'cycle': cy['view'].get('cycle')})
+            else:
+                cycles.append({'state': cy['info']['state'], 'phase': cy['info']['phase'], 'what': cy.get('what', '')})
+        step = {'addr': s['addr'], 'text': s['text'], 'label': s['label'], 'summary': s['summary'], 'cycles': cycles}
+        if pipe:
+            step.update(row=s.get('row', ''), flushes=s.get('flushes', False))
+        steps.append(step)
+    return dict(wt, steps=steps, compact=True)

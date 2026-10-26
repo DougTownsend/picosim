@@ -7,11 +7,9 @@ The server answers with events, also one JSON object per line:
     {"type": "state", ...}         full machine state after every change
     {"type": "program", ...}       disassembly listing after a load
     {"type": "console", "text"}    program (or Pico) output
-    {"type": "walkthrough", ...}   the user guide's program walkthrough
+    {"type": "walkthrough", ...}   the program walkthrough (the panel beside the CPU diagram)
     {"type": "pipe_walkthrough", ...}  the same on the 2-stage pipeline
     {"type": "perf", ...}          performance metrics, machine comparison, pipeline
-    {"type": "chat_reply", ...}    an answer from Ask picosim (picosim/chat); in AI
-                                   mode chat_delta / chat_done / chat_replace follow
     {"type": "error", "message"}
 
 All CPU access happens on the single server thread, so the GUI never races
@@ -159,14 +157,6 @@ class Server:
         # a note is shown only while the word still holds that value
         self.mem_notes = {}
         self._push_k = 0             # which register of the current PUSH is being written
-        # Ask picosim (picosim/chat): the engine, made when the GUI sends its knowledge
-        self.chat = None
-        self.chat_log = {}           # question id → (question, reply), for Report and 👍/👎
-        self.chat_ai_qid = None      # the question Claude is answering, if any
-        self.chat_ai_fallback = None # the built-in reply to show if Claude cannot answer
-        self.chat_ai_ctx = None      # what the student was looking at when they asked
-        self.last_writer = {}        # name → address of the instruction that last wrote it ('edit': typed in)
-        self.last_load_error = None  # the last failed load's message and errors, until a load works
 
     # ── transport ────────────────────────────────────────────────────────────
 
@@ -213,7 +203,6 @@ class Server:
                 self.poll_serial()
                 self.poll_flash()
                 self.poll_file()
-                self.poll_chat()
                 if busy:
                     self.run_slice()
                 if self.dirty:
@@ -300,6 +289,7 @@ class Server:
             'insn_addr': cur, 'insn_text': self.prog.asm_map.get(cur, '???'),
             'running': self.running, 'cps': self.cps,
             'waiting_input': self.waiting_input,
+            'keys_typed': len(self.keys_used) + len(self.inp),
             'breakpoints': sorted(self.breakpoints),
             'history': self.history,
             'changed': sorted(self.changed),
@@ -460,7 +450,6 @@ class Server:
             else:
                 self.changed.add(ch['name'])
                 self.writer[ch['name']] = info['insn_addr']
-                self.last_writer[ch['name']] = info['insn_addr']
 
     def _note_write(self, insn, addr, value):
         """Remember which instruction put a word in memory (the Memory tab's
@@ -658,8 +647,6 @@ class Server:
             ran = {REG_NAMES[i] for i in range(16) if before[i] != after[i]}
             ran |= {f for f, a, b in zip('NZCV', before_flags, (c.N, c.Z, c.C, c.V)) if a != b}
             self.changed |= ran
-            for name in ran:                  # written while running flat out: by an unknown line
-                self.last_writer.pop(name, None)
             self.unsent = True
         else:
             self.cycle_credit += (now - self.last_tick) * self.cps
@@ -718,9 +705,8 @@ class Server:
         except LoadError as e:
             from . import errors
             raw = str(e)
-            self.last_load_error = {'path': path, 'message': errors.clean(raw) or raw,
-                                    'errors': errors.explain(raw, src if src.endswith('.s') else path)}
-            self.send(dict(self.last_load_error, type='load_error'))
+            self.send({'type': 'load_error', 'path': path, 'message': errors.clean(raw) or raw,
+                       'errors': errors.explain(raw, src if src.endswith('.s') else path)})
             self.send_state()             # so the GUI's Reload can retry
             return
         except OSError as e:
@@ -740,10 +726,6 @@ class Server:
         self.boot_steps = 0
         self.keys_used, self.journal, self.out_text = [], [], ''
         self.mem_notes = {}
-        self.last_writer = {}
-        self.last_load_error = None
-        if self.chat is not None:
-            self.chat.program_loaded()
         self.challenge, self.check_results = None, None
         challenge_error = None
         try:
@@ -756,8 +738,6 @@ class Server:
         if self.skip_boot:
             prog.run_to_main()
             self.boot_steps = self.core.steps   # level 1 counts from main
-            # the OS's start-up set these (unrecorded): R0 = main's address, LR = where main returns
-            self.last_writer.update({n: 0 for i, n in enumerate(REG_NAMES[:15]) if i != 13 and self.core.regs[i]})
         self.pipe = Pipeline(self.core, prog.asm_map)
         self.explainer = explain.Explainer(prog)
         self._begin_action(kind='load')
@@ -899,13 +879,14 @@ class Server:
                 t -= 1
         return (t, 0) if t >= first else None
 
-    def _replay(self, target):
+    def _replay(self, target, keys=None):
         """A fresh copy of the program run to `target`; returns (program,
-        printed text, keys consumed)."""
+        printed text, keys consumed).  `keys` defaults to the keys getchar
+        has consumed so far."""
         new = self.prog.clone()
         nc = new.cpu._core
         nc.itrace_enable(heat.TRACE_CAP)
-        keys = iter(self.keys_used)
+        keys = iter(self.keys_used if keys is None else keys)
         used = []
         out = []
 
@@ -967,15 +948,25 @@ class Server:
         target = self._back_target()
         if target is None:
             return self.error("Already at the start of the program: there is nothing to step back to.")
+        if self._jump(target, 'back'):
+            self.send_state()
+
+    def _jump(self, target, kind):
+        """Put the machine at `target` (instructions done, cycles into the
+        next) by replaying a fresh copy, backwards or forwards: Step back,
+        and the walkthrough panel's Go here.  False if it could not."""
+        c = self.core
         before_regs = list(c.regs)
         before_flags = {f: getattr(c, f) for f in 'NZCV'}
         before_mem = c.get_memory()
-        self._begin_action('back')
+        self._begin_action('back', kind=kind)
+        keys = list(self.keys_used) + list(self.inp)      # forwards, queued keys are typed in order
         try:
-            new, printed, used = self._replay(target)
+            new, printed, used = self._replay(target, keys)
         except (RuntimeError, SimulatorError) as e:
-            return self.error(f"step back failed: {e}")
-        self.inp.extendleft(reversed(self.keys_used[len(used):]))   # those keys come again
+            self.error(f"{'step back' if kind == 'back' else 'going there'} failed: {e}")
+            return False
+        self.inp = deque(keys[len(used):])                 # keys not read yet come again
         self.keys_used = used
         self.journal = [e for e in self.journal if e[0] <= target]
         self.out_text = printed
@@ -986,7 +977,6 @@ class Server:
         self.heat_overview.snaps = [x for x in self.heat_overview.snaps if x[0] <= nc_cycles]
         self.prog = new
         self.core.svc_handler = self._svc
-        self.last_writer = {}             # the replay ran unrecorded: who wrote what is unknown
         self.fault = None
         self.exit_code = None
         self.waiting_input = False
@@ -1000,6 +990,30 @@ class Server:
             if after != before_mem else set()
         self.send({'type': 'console_reset',
                    'note': f"[loaded {os.path.basename(self.path)}]\n", 'text': printed})
+        return True
+
+    def cmd_goto(self, msg):
+        """The walkthrough panel's Go here: put the machine just before
+        instruction `step` (0 = the first one after reset, in the order the
+        program runs), then run `cycle` of its clock cycles, recorded as Step
+        cycle would, so the CPU diagram shows the last one.  The student
+        carries on stepping from there."""
+        c = self.core
+        if c is None or self.mode != 'sim':
+            return
+        self._settle()
+        self.running = False
+        self.stop_at = None
+        first = self.boot_steps if self.skip_boot else 0
+        n = max(first, int(msg.get('step', 0)))
+        k = 0 if self.machine == 'm0plus' else max(0, int(msg.get('cycle', 0)))
+        if self._pos() != (n, 0) and not self._jump((n, 0), 'goto'):
+            return self.send_state()
+        if self._pos() == (n, 0) and k == 0 and self.step_kind != 'goto':
+            self._begin_action('back', kind='goto')
+        for _ in range(k):
+            if not self.one_cycle() or not self.core.in_insn:
+                break
         self.send_state()
 
     # ── step over, and hiding the OS at level 1 ─────────────────────────────
@@ -1156,7 +1170,6 @@ class Server:
         self.journal.append((self._pos(), 'reg', (n, v)))
         self._begin_action('edit')
         self.changed.add(REG_NAMES[n & 15])
-        self.last_writer[REG_NAMES[n & 15]] = 'edit'
         self.send_state()
 
     def cmd_set_flag(self, msg):
@@ -1167,7 +1180,6 @@ class Server:
         self.journal.append((self._pos(), 'flag', (name, 1 if msg['value'] else 0)))
         self._begin_action('edit')
         self.changed.add(name)
-        self.last_writer[name] = 'edit'
         self.send_state()
 
     def cmd_write_mem(self, msg):
@@ -1325,212 +1337,35 @@ class Server:
         self.console(f"[heat map: saved {os.path.basename(path)}]\n", 'system')
         self.send({'type': 'heat_exported', 'ok': True, 'path': path})
 
-    def cmd_walkthrough(self, msg):
-        """Explain the loaded program step by step for the user guide.  Runs
-        on a fresh copy, so the machine the GUI shows is not changed."""
+    def _walk_msg(self, msg, pipe):
+        """The walkthrough of the loaded program (picosim/walkthrough.py), for
+        the walkthrough panel beside the CPU diagram.  It runs a fresh copy
+        with the keys the student has typed so far, so it follows the same
+        run; the machine the GUI shows is not changed.  `compact` leaves out
+        the machine snapshots the panel does not need."""
+        kind = 'pipe_walkthrough' if pipe else 'walkthrough'
         if not self.path:
-            return self.send({'type': 'walkthrough', 'path': '', 'steps': [],
-                              'stopped': 'No program is loaded.', 'output': '', 'limit': 0})
-        from .walkthrough import build, DEFAULT_LIMIT
-        wt = build(prog_settings.effective_source(self.path), int(msg.get('limit', DEFAULT_LIMIT)))
+            return self.send({'type': kind, 'path': '', 'steps': [], 'stopped': 'No program is loaded.',
+                              'output': '', 'limit': 0})
+        from . import walkthrough
+        limit = int(msg.get('limit', walkthrough.DEFAULT_LIMIT))
+        keys = list(self.keys_used) + list(self.inp)
+        src = prog_settings.effective_source(self.path)
+        wt = (walkthrough.build_pipeline if pipe else walkthrough.build)(src, limit, keys)
+        if msg.get('compact'):
+            wt = walkthrough.compact(wt)
         wt['path'] = self.path
+        wt['keys'] = len(keys)
+        wt['edited'] = bool(self.journal)        # values changed by hand: the live run may differ
         self.send(wt)
+
+    def cmd_walkthrough(self, msg):
+        """The walkthrough on the multi-cycle datapath (see _walk_msg)."""
+        self._walk_msg(msg, False)
 
     def cmd_pipe_walkthrough(self, msg):
-        """The walkthrough on the 2-stage pipeline (user guide)."""
-        if not self.path:
-            return self.send({'type': 'pipe_walkthrough', 'path': '', 'steps': [],
-                              'stopped': 'No program is loaded.', 'output': '', 'limit': 0})
-        from .walkthrough import build_pipeline, DEFAULT_LIMIT
-        wt = build_pipeline(prog_settings.effective_source(self.path), int(msg.get('limit', DEFAULT_LIMIT)))
-        wt['path'] = self.path
-        self.send(wt)
-
-    # ── Ask picosim (picosim/chat) ──────────────────────────────────────────
-
-    def _chat_engine(self):
-        if self.chat is None:
-            from .chat import Engine
-            from .chat.claude import Assistant
-            self.chat = Engine()
-            self.chat.ai = Assistant(self.chat.cfg)
-        return self.chat
-
-    def _chat_status(self):
-        st, why = self._chat_engine().ai.status()
-        return {'type': 'chat_status', 'ai': st, 'reason': why}
-
-    def cmd_chat_knowledge(self, msg):
-        """The GUI's knowledge pack (guide.gd's knowledge_pack, with main.gd's
-        controls, examples and levels): what the bot searches."""
-        self._chat_engine().set_pack(msg.get('pack') or {})
-        self.send(self._chat_status())
-
-    def cmd_chat(self, msg):
-        """A question for Ask picosim: {id, text, context, doc (a "did you
-        mean" choice), force_ai ("ask the AI helper instead")}."""
-        from .chat.reply import Reply
-        eng = self._chat_engine()
-        qid = msg.get('id', 0)
-        text = str(msg.get('text', ''))[:20000]
-        if self.chat_ai_qid is not None:          # a new question cancels the one in flight
-            eng.ai.cancel()
-            eng.ai.answered('(cancelled)')
-            self.chat_ai_qid = None
-        try:
-            r = eng.answer(self, text, msg.get('context') or {}, doc=msg.get('doc'))
-        except Exception as e:                     # the bot must never take the simulator down
-            r = Reply(f"Sorry, something went wrong on my side ({type(e).__name__}). Try asking another way, or "
-                      "look in the guide.", 'error', policy='abstain')
-        self.chat_log[qid] = (text, r)
-        while len(self.chat_log) > 200:
-            del self.chat_log[next(iter(self.chat_log))]
-        if r.feedback_bad:
-            self._chat_count(False, eng.conv.last_intent or '')
-        if msg.get('force_ai') and r.policy not in ('safety', 'off-topic'):
-            r.escalate = eng.ai_on()
-        if r.escalate and self._chat_ai(qid, text, r, msg):
-            return
-        if r.policy == 'abstain' and eng.cfg.get('log_unanswered'):
-            self._chat_append('chat_unanswered.jsonl', {'question': text})
-        self.send(r.to_msg(qid))
-
-    def _chat_ai(self, qid, text, fallback, msg):
-        """Hand the question to Claude (claude.py); False if it cannot be asked."""
-        from .chat import claude, policy, safety
-        from .chat.answers import level_name
-        from .chat.live import Ctx
-        eng = self.chat
-        ctx = Ctx(msg.get('context') or {})
-        q = eng._query(self, safety.redact(text))
-        risky = policy.solution_risk(q, self.challenge if self.prog else None) >= 0.6
-        note = (f"This student is at Level {ctx.level}. Hints only, as always: no finished solution, at most three "
-                "lines of assembly." + (" They are asking for the answer itself: give one small next hint, not the "
-                                         "answer, and say their teacher can help further." if risky else ''))
-        content = claude.turn_content(self, ctx, q.raw, level_name(eng.kb, ctx.level))
-        if not eng.ai.ask(qid, content, note, eng.kb, claude.challenge_patterns(self.challenge)):
-            fallback.text = claude.FAILURES['cap'] + "\n" + fallback.text
-            self.send(fallback.to_msg(qid))
-            return True
-        self.chat_ai_qid = qid
-        self.chat_ai_fallback = fallback
-        self.chat_ai_ctx = ctx
-        self.send({'type': 'chat_reply', 'id': qid, 'text': '', 'links': [], 'actions': [], 'suggestions': [],
-                   'source': 'ai', 'intent': 'ai', 'policy': 'answer', 'more': False, 'ai_offer': False,
-                   'pending': True})
-        return True
-
-    def poll_chat(self):
-        """Forward what the Claude worker thread has produced."""
-        if self.chat is None or self.chat.ai is None or self.chat_ai_qid is None:
-            return
-        from .chat import catalog, claude, policy
-        from .chat.reply import Reply
-        for kind, qid, data in self.chat.ai.poll():
-            if qid != self.chat_ai_qid:
-                continue
-            if kind == 'delta':
-                self.send({'type': 'chat_delta', 'id': qid, 'text': data})
-                continue
-            self.chat_ai_qid = None
-            if kind == 'done':
-                self.chat.ai.answered(data)
-                q, _ = self.chat_log.get(qid, ('', None))
-                self.chat_log[qid] = (q, Reply(data, 'ai', source='ai'))
-                self.send({'type': 'chat_done', 'id': qid})
-                continue
-            fb = self.chat_ai_fallback
-            if kind == 'leak':
-                self.chat.ai.withdrawn()
-                if self.challenge and self.core is not None:
-                    fb = policy.hint(self, self.chat.conv)
-                else:
-                    q, _ = self.chat_log.get(qid, ('', None))
-                    fb = policy.general_hint(self.chat.kb, self.chat._query(self, q), self.chat_ai_ctx)
-            elif kind == 'refused':
-                self.chat.ai.answered('(declined)')
-                fb = Reply(catalog.OFF_TOPIC, 'off_topic', policy='off-topic')
-            else:
-                self.chat.ai.answered('(no answer)')
-                fb.text = claude.FAILURES.get(data, claude.FAILURES['error']) + "\n" + fb.text
-            m = fb.to_msg(qid)
-            m['type'] = 'chat_replace'
-            self.send(m)
-
-    def cmd_chat_suggest(self, msg):
-        """Chips that fit what is on screen (a fault, a failed challenge, a
-        getchar wait, a fresh Level 1 program), for the Ask window."""
-        from .chat import suggestions_for
-        from .chat.live import Ctx
-        chips = suggestions_for(self, Ctx(msg.get('context') or {}))
-        self.send({'type': 'chat_suggestions', 'chips': [{'label': c, 'ask': c} for c in chips]})
-
-    def cmd_chat_reset(self, msg):
-        """The Ask window's Clear: forget the conversation (not the hint counts)."""
-        if self.chat is not None:
-            hints = self.chat.conv.hint_count
-            self.chat.conv.reset()
-            self.chat.conv.hint_count = hints
-            self.chat.ai.reset()
-            self.chat_ai_qid = None
-
-    def cmd_chat_feedback(self, msg):
-        """👍 / 👎 on an answer: counted locally, by kind of answer, for the teacher."""
-        _, r = self.chat_log.get(msg.get('id'), ('', None))
-        self._chat_count(bool(msg.get('good')), r.intent if r else '')
-
-    def cmd_chat_report(self, msg):
-        """Report this answer: save the question, the answer and a summary of
-        the machine (personal data removed) to a local file for the teacher."""
-        from .chat import safety
-        qid = msg.get('id')
-        q, r = self.chat_log.get(qid, ('', None))
-        if r is None:
-            return
-        c = self.core
-        state = {}
-        if c is not None:
-            pc = c.insn_addr if c.in_insn else c.pc
-            state = {'program': os.path.basename(self.prog.path or ''), 'pc': f"{pc:04X}",
-                     'line': self.prog.source.get(pc, (0, ''))[0], 'halted': bool(c.halted), 'fault': self.fault,
-                     'steps': c.steps}
-        path = self._chat_append('chat_reports.jsonl', {
-            'question': safety.redact(q), 'answer': safety.redact(r.text), 'intent': r.intent, 'source': r.source,
-            'level': (msg.get('context') or {}).get('level'), 'state': state})
-        self.send({'type': 'chat_reported', 'id': qid, 'path': path or ''})
-
-    def _chat_append(self, name, record):
-        from .chat import config, safety
-        record = dict(record, time=time.strftime('%Y-%m-%d %H:%M:%S'))
-        if 'question' in record:
-            record['question'] = safety.redact(record['question'])
-        path = config.data_file(name)
-        try:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, 'a', encoding='utf-8') as f:
-                f.write(json.dumps(record) + '\n')
-        except OSError:
-            return None
-        return path
-
-    def _chat_count(self, good, intent):
-        from .chat import config
-        path = config.data_file('chat_feedback.json')
-        try:
-            with open(path, encoding='utf-8') as f:
-                data = json.load(f)
-        except (OSError, ValueError):
-            data = {}
-        key = 'good' if good else 'bad'
-        data[key] = data.get(key, 0) + 1
-        by = data.setdefault('by_intent', {}).setdefault(intent or '?', {'good': 0, 'bad': 0})
-        by[key] += 1
-        try:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=1, sort_keys=True)
-        except OSError:
-            pass
+        """The walkthrough on the 2-stage pipeline (see _walk_msg)."""
+        self._walk_msg(msg, True)
 
     # ── real Pico over USB serial ────────────────────────────────────────────
 

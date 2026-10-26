@@ -8,15 +8,10 @@ extends Node
 ## and "FSM states" from state_info.gd.
 ##
 ## Topics are grouped under section headings in the list (see _section).
-## The "Pipeline components" topic is built the same way from PIPE_INFO, and
-## the "Pipeline walkthrough" works like the program walkthrough below, with
-## pictures of the pipeline drawn by pipeline_view.gd.
+## The "Pipeline components" topic is built the same way from PIPE_INFO.
 ##
-## The "Program walkthrough" topic explains the loaded program in words, one
-## instruction per step (the backend's walkthrough command runs a fresh copy
-## of it).  Clicking a step shows each of its clock cycles in detail, with a
-## picture of the CPU diagram during that cycle, drawn off-screen by the same
-## diagram_view.gd the main window uses.
+## The walkthroughs of the loaded program (every step, and where you are)
+## are not here: they sit beside the CPU diagram (walk_panel.gd).
 ##
 ## Making the window bigger than it opened at makes the text bigger with it
 ## (by the square root of the area, up to 3×); it never drops below normal.
@@ -32,14 +27,8 @@ extends Node
 
 const INFO_PATH := "res://scripts/component_info.gd"
 const STATES_PATH := "res://scripts/state_info.gd"
-const DIAGRAM_PATH := "res://scripts/diagram_view.gd"
-const PIPELINE_PATH := "res://scripts/pipeline_view.gd"
 const TEXT_SCALE_MAX := 3.0
-## Size the walkthrough's diagram pictures are drawn at (the diagram's 1000 × 640 shape).
-const SHOT_SIZE := Vector2i(1250, 800)
-const SHOT_CACHE := 3   # steps whose pictures are kept
 const ZWSP := "\u200b"
-const KEYS_HINT := "[color=%s]Keys: ← → cycle by cycle · Shift + ← → instruction by instruction · Backspace for the list[/color]\n"
 ## Base font sizes: [control, theme item, size at text scale 1].
 var _fonts: Array = []
 
@@ -58,30 +47,6 @@ var _collapsed := {}              # section name → true: its topics are folded
 var _sums := {}                   # topic id → its short version (see _summaries)
 var _unfolded := {}               # topic id → true: its full details are shown
 var _unfold_all := false          # --guide-details (screenshots): every page unfolded
-var _packing := false             # knowledge_pack(): topics are recorded, not listed
-var _pack: Array = []             # the topics knowledge_pack() has recorded at one level
-
-var _wt: Dictionary = {}          # the walkthrough message for the loaded program
-var _wt_waiting := false          # asked the backend, no answer yet
-var _wt_step := -1                # step on display (-1 = the list of all steps)
-var _wt_cycle := 0                # cycle of that step on display
-var _wt_list_scroll := 0.0        # where the list was scrolled to, for ☰ All instructions
-var _wt_gen := 0                  # bumps whenever a different page is requested
-var _wt_shots := {}               # step → [Texture2D per cycle]
-var _wt_order: Array = []         # cached steps, oldest first
-var _wt_demo := -1                # --guide-step N (screenshots)
-var _shot_vp: SubViewport
-var _shot_view: Control
-
-var _pw: Dictionary = {}          # the pipeline walkthrough message
-var _pw_waiting := false
-var _pw_step := -1
-var _pw_cycle := 0
-var _pw_list_scroll := 0.0
-var _pw_shots := {}               # step → [Texture2D per cycle]
-var _pw_order: Array = []
-var _pshot_vp: SubViewport
-var _pshot_view: Control
 
 
 func _ready() -> void:
@@ -122,22 +87,15 @@ func _ready() -> void:
 	for f in _fonts:
 		f[0].add_theme_font_size_override(f[1], f[2])
 	body.meta_clicked.connect(_on_meta)
-	body.meta_underlined = false   # _link underlines itself; walkthrough rows and buttons do not
+	body.meta_underlined = false   # _link underlines itself; buttons do not
 	split.add_child(body)
 
-	Backend.walkthrough_received.connect(_on_walkthrough)
-	Backend.pipe_walkthrough_received.connect(_on_pipewalk)
-	Backend.program_loaded.connect(func(_p): _wt_reset(); _pw_reset())
-	Backend.state_changed.connect(_on_state)
 	Level.changed.connect(_rebuild)
 	Backend.facts_received.connect(_rebuild)    # cycle counts quoted in the text
 
 	_apply_palette()
 	Palette.changed.connect(_apply_palette)
 	var args := OS.get_cmdline_user_args()
-	var j := args.find("--guide-step")
-	if j >= 0 and j + 1 < args.size():
-		_wt_demo = int(args[j + 1])
 	var i := args.find("--guide")
 	if i >= 0:
 		open.call_deferred(args[i + 1] if i + 1 < args.size() else "")
@@ -149,26 +107,6 @@ func _ready() -> void:
 	if fo >= 0 and fo + 1 < args.size():
 		get_tree().create_timer(0.5).timeout.connect(func():
 			topics.item_selected.emit(_ids.find("sec:" + args[fo + 1])))
-
-
-## Every topic as it reads at each level, with its short version and its
-## full details, for Ask picosim (picosim/chat/retrieve.py cuts them into
-## documents).  {"levels": {"1": [{id, name, level, sum, full}], …}}.  The
-## list and the page are rebuilt for the real level afterwards.
-func knowledge_pack() -> Dictionary:
-	var real := Level.current
-	var levels := {}
-	_packing = true
-	for n in range(1, Level.MAX + 1):
-		Level.current = n          # as if picked, without telling anyone
-		_pack = []
-		_add_topics()
-		levels[str(n)] = _pack
-	_packing = false
-	_pack = []
-	Level.current = real
-	_rebuild()
-	return {"levels": levels}
 
 
 ## Show the guide, optionally at a topic id.
@@ -214,46 +152,11 @@ func _on_window_input(event: InputEvent) -> void:
 	if k and k.pressed and not k.echo and k.keycode in [KEY_ESCAPE, KEY_F1]:
 		win.hide()
 		win.set_input_as_handled()
-	elif k and k.pressed and k.keycode in [KEY_LEFT, KEY_RIGHT, KEY_BACKSPACE]:
-		if _shown == "walkthrough" and _wt_step >= 0 and _wt_shots.has(_wt_step):
-			_walk_key(k, false)
-			win.set_input_as_handled()
-		elif _shown == "pipewalk" and _pw_step >= 0 and _pw_shots.has(_pw_step):
-			_walk_key(k, true)
-			win.set_input_as_handled()
-
-
-## ← → cycle by cycle (running on into the next instruction), Shift + ← →
-## instruction by instruction, Backspace back to the list.
-func _walk_key(k: InputEventKey, pipe: bool) -> void:
-	var step := _pw_step if pipe else _wt_step
-	var cyc := _pw_cycle if pipe else _wt_cycle
-	var n: int = (_pw if pipe else _wt)["steps"][step]["cycles"].size()
-	var goto := _pw_goto if pipe else _wt_goto
-	if k.keycode == KEY_BACKSPACE:
-		goto.call(-1)
-		return
-	var d := 1 if k.keycode == KEY_RIGHT else -1
-	if k.shift_pressed:
-		goto.call(maxi(0, step + d))
-	elif cyc + d >= 0 and cyc + d < n:
-		if pipe:
-			_pw_cycle += d
-			_show_pipewalk()
-		else:
-			_wt_cycle += d
-			_show_walkthrough()
-	elif step + d >= 0:
-		goto.call(step + d, d < 0)
 
 
 ## Restyle and rebuild the topics: their text has the scheme's colours baked in.
 func _apply_palette() -> void:
 	win.theme = Palette.ui_theme
-	_wt_shots.clear()   # the pictures have the old colours baked in
-	_wt_order.clear()
-	_pw_shots.clear()
-	_pw_order.clear()
 	bg.add_theme_stylebox_override("panel", Palette.panel_box("bg", 0, 10))
 	var bsb := Palette.panel_box("panel", 6, 12)
 	bsb.content_margin_left = 16
@@ -320,13 +223,6 @@ static func _c(key: String) -> String:
 
 func _show(id: String) -> void:
 	_shown = id
-	if id == "walkthrough":
-		_show_walkthrough()
-		return
-	if id == "pipewalk":
-		_show_pipewalk()
-		return
-	_wt_gen += 1
 	body.text = _page(id)
 	body.scroll_to_line(0)
 
@@ -367,20 +263,6 @@ func _on_meta(m: Variant) -> void:
 		body.text = _page(id)
 		# opening keeps the short version in view; closing goes back to the top
 		(func(): body.get_v_scroll_bar().value = keep if opening else 0.0).call_deferred()
-	elif s == "wt:all":
-		_wt_goto(-1)
-	elif s.begins_with("wt:"):
-		_wt_goto(int(s.substr(3)))
-	elif s.begins_with("wc:"):
-		_wt_cycle = int(s.substr(3))
-		_show_walkthrough()
-	elif s == "pw:all":
-		_pw_goto(-1)
-	elif s.begins_with("pw:"):
-		_pw_goto(int(s.substr(3)))
-	elif s.begins_with("pc:"):
-		_pw_cycle = int(s.substr(3))
-		_show_pipewalk()
 	else:
 		open(s)
 
@@ -396,11 +278,6 @@ func _select(id: String) -> void:
 
 ## Add a topic; it is listed only if its level (or its section's) is reached.
 func _topic(id: String, name: String, bb: String, lvl := 0) -> void:
-	if _packing:
-		if maxi(lvl, _sec_level) <= Level.current and bb != "":
-			_pack.append({"id": id, "name": name, "level": maxi(lvl, _sec_level),
-				"sum": _space_tables(_lists(str(_sums.get(id, "")))), "full": _space_tables(_lists(bb))})
-		return
 	_text[id] = _space_tables(_lists(bb))
 	if _sums.has(id):
 		_sums[id] = _space_tables(_lists(str(_sums[id])))
@@ -416,7 +293,7 @@ func _topic(id: String, name: String, bb: String, lvl := 0) -> void:
 func _section(name: String, lvl := 1) -> void:
 	_sec_level = lvl
 	_sec_name = name
-	if lvl > Level.current or _packing:
+	if lvl > Level.current:
 		return
 	if topics.item_count > 0:     # a gap between sections
 		_ids.append("")
@@ -625,7 +502,6 @@ func _add_topics() -> void:
 			["[code]@ Challenge: …[/code]", "The task the strip shows. Optional; without it, the strip lists the checks."],
 			["[code]@ Expect: output \"…\"[/code]", "Everything the program printed, from start to finish, must be exactly this text. Write it in quotes; [code]\\n[/code] is a new line (what [code]movs r0, #10[/code] + [code]bl putchar[/code] prints)."],
 			["[code]@ Expect: R2 = 7[/code]", "The register's value when the program finishes. R0–R12, SP and LR; the value may be decimal, hex ([code]0x64[/code]), negative ([code]-1[/code]) or a character ([code]'H'[/code])."],
-			["[code]@ Hint: …[/code]", "Your own hint for " + _link("ask", "Ask picosim") + ". When a student asks for help with the challenge, it gives these first, one per request, in order, before its own hints. Optional."],
 		], 1) + \
 		"Use as many Expect lines as you like; all must pass. Checks run only in the simulator, and not when the program stops with a CPU fault. A line picosim cannot read is reported in the console when the file loads, and the rest of the program still runs.\n"
 	_topic("challenges", "Challenges", chal)
@@ -669,7 +545,7 @@ func _add_topics() -> void:
 			["How this instruction works", "One or two sentences about the instruction itself: what [code]movs[/code] does, what the S means, when a [code]bne[/code] jumps."],
 			["What changed", "Every register and flag that changed, old → new, with what each flag means" + (", plus memory bytes and pins" if Level.at_least(2) else "") + ", and anything printed."],
 			["PC", "Where the PC moved: on by 2 (or 4) to the next instruction, or a jump."],
-		] + ([["In memory", "The instruction's bits, as the Raw column of the Disassembly shows them."]] if Level.at_least(2) else []) + \
+		] + ([["In memory", "The instruction's bits, as the Raw column of the Disassembly shows them" + (" (the Memory tab shows the same bytes, coloured as code)" if Level.at_least(3) else "") + "."]] if Level.at_least(2) else []) + \
 		([["Clock cycles", "How many cycles it takes on the teaching datapath, and the FSM states in order. With " + _k("Step cycle") + ", each cycle is explained on its own: what the datapath does, which tri-state buffer drives the bus, the control signals and what changes at the clock edge."]] if Level.at_least(3) else []) + \
 		([["RP2040 pipeline", "Its cycles on the Pico's own 2-stage pipeline, from datasheet Table 81."]] if Level.at_least(4) else []), 1) + \
 		_note("Try this", "Before you press Step, read [b]What happens next[/b] and work out the new values yourself. Then step and check them against [b]What just happened[/b] and the yellow registers.") + \
@@ -709,6 +585,7 @@ func _add_topics() -> void:
 	_topic("registers", "Registers", regs)
 
 	var mem := _h("Disassembly" + (" and Memory" if Level.at_least(2) else "")) + \
+		(("[b]At Levels 3 and 4, while the CPU diagram is shown,[/b] this panel shows only the Memory tab. Your program is listed by the " + _link("diagram", "Walkthrough") + " beside the diagram instead, in the order it runs, with ▶ on where you are, the ● breakpoint column and " + _k("Skip to main ▸") + ". " + _k("Hide CPU Diagram") + " brings the Disassembly tab back.\n") if Level.at_least(3) else "") + \
 		(_sub("Disassembly tab") if Level.at_least(2) else "") + \
 		"Below the Registers. Your program as the CPU sees it, one instruction per row. The row with ▶ is the instruction that runs next. With " + _k("Follow PC") + " ticked the list scrolls to it automatically.\n" + \
 		_grid(["Column", "Example", "Meaning"], [
@@ -833,7 +710,8 @@ func _add_topics() -> void:
 		"• The [b]heat tint[/b] behind each box, from cool to hot, shows how much of the run so far that part has been used, and its small label gives its share of all clock cycles. It is on from Level 3; " + _k("View") + " ▸ [b]Heat overlay on the CPU diagram[/b] turns it off and on." + (" The " + _link("heat", "Heat map") + " has the same numbers in full." if Level.at_least(4) else "") + "\n" +
 		"When you step, a glowing pulse travels along the active wires in the order the data flows; a register's yellow caption appears when the pulse reaches it. Its speed follows the speed slider; at high speeds animation is skipped.\n" +
 		_sub("Learning the components") +
-		"Hover a block for a one-line summary. [b]Click a block[/b], a tri-state buffer (▲ / ▼) or the bus to open a card explaining what it does, how it works, what it connects to and when it is used; the block and its wires are outlined in [color=" + _c("sel") + "]orange[/color]. Click it again, click empty space, press ✕ or " + _k("Esc") + " to close. The same descriptions are in " + _link("components", "Datapath components") + ".\n")
+		"Hover a block for a one-line summary. [b]Click a block[/b], a tri-state buffer (▲ / ▼) or the bus to open a card explaining what it does, how it works, what it connects to and when it is used; the block and its wires are outlined in [color=" + _c("sel") + "]orange[/color]. Click it again, click empty space, press ✕ or " + _k("Esc") + " to close. The same descriptions are in " + _link("components", "Datapath components") + ".\n" +
+		_walk_help(false))
 
 	_topic("cycles", "Cycle by cycle", _h("Cycle-by-cycle inspector") +
 		"Shown below the CPU diagram. It follows the instruction being executed one clock cycle at a time. " + _link("tutorial", "Tutorial: one ADDS") + " walks through it with an example.\n" +
@@ -858,8 +736,6 @@ func _add_topics() -> void:
 	_add_states()
 
 	_add_components()
-
-	_topic("walkthrough", "Program walkthrough", "")   # built in _show_walkthrough
 
 	_section("Pipeline (RP2040)", 4)
 
@@ -893,7 +769,8 @@ func _add_topics() -> void:
 		_sub("Registers") +
 		"The simulator executes each instruction as a whole, so the register file, the flags and the Registers panel show the state [i]after[/i] the instruction in Execute has finished. The datapath diagram is different: it shows values during the cycle.\n" +
 		_sub("Learning the components") +
-		"Hover a block for a one-line summary, or click it for a card explaining what it does, how it works and what it connects to. The same descriptions are in " + _link("pipecomponents", "Pipeline components") + ". " + _link("pipecycles", "Pipeline cycle by cycle") + " explains stepping, the instruction strip and where the pipeline loses cycles.")
+		"Hover a block for a one-line summary, or click it for a card explaining what it does, how it works and what it connects to. The same descriptions are in " + _link("pipecomponents", "Pipeline components") + ". " + _link("pipecycles", "Pipeline cycle by cycle") + " explains stepping, the instruction strip and where the pipeline loses cycles.\n" +
+		_walk_help(true))
 
 	_topic("pipecycles", "Pipeline cycle by cycle", _h("Pipeline cycle by cycle") +
 		_sub("Stepping") +
@@ -920,8 +797,6 @@ func _add_topics() -> void:
 		"Each pass round the loop pays one extra cycle for the taken branch. The " + _link("performance", "Performance window") + " totals these costs and compares them with a 3-stage pipeline, which loses 2 cycles per taken branch.")
 
 	_add_pipe_components()
-
-	_topic("pipewalk", "Pipeline walkthrough", "")   # built in _show_pipewalk
 
 	_section("Performance", 4)
 
@@ -1006,7 +881,7 @@ func _add_topics() -> void:
 	keys += _row("Space  or  F5", "Run / Pause")
 	if Level.at_least(4):
 		keys += _row("F2", "open the Performance window")
-	keys += _row("F1", "open this guide") + _row("?", "open Ask picosim, the help chat") + \
+	keys += _row("F1", "open this guide") + \
 		_row("Ctrl/Cmd+O", "open a .s file") + _row("Ctrl/Cmd+R", "reload (start the program over)") + \
 		_row("Ctrl/Cmd + / −", "zoom in / out") + _row("Ctrl/Cmd 0", "reset zoom") + \
 		_row("Esc", "close this guide" + (", the enlarged Pico board or a component card" if Level.at_least(2) else ""))
@@ -1088,11 +963,9 @@ func _add_topics() -> void:
 	tr += "Press " + _k("Reload") + " to start again."
 	_topic("trouble", "Troubleshooting", tr)
 
-	_topic("ask", "Ask picosim", _ask_page())
-
 	_topic("glossary", "Glossary", _glossary())
 
-	if Level.current < Level.MAX and not _packing:
+	if Level.current < Level.MAX:
 		_ids.append("")
 		var i := topics.add_item("More at higher levels…")
 		topics.set_item_selectable(i, false)
@@ -1117,12 +990,12 @@ func _summaries() -> Dictionary:
 	if l2:
 		panels += "; the [b]Pico board[/b] (bottom left) shows the chip's pins and the [b]Memory[/b] tab shows the bytes in memory"
 	if l3:
-		panels += "; " + _k("Show CPU Diagram") + " adds a drawing of the processor's insides"
+		panels += "; " + _k("Show CPU Diagram") + " adds a drawing of the processor's insides with the [b]Walkthrough[/b] beside it, which lists your program while the Disassembly makes way for the Memory tab"
 	d["tour"] = "Across the top is the toolbar: " + _k("Open…") + " and " + _k("Examples") + " load a program, " + _k("Reload") + " starts it over, " + _k("◀ Step back") + ", " + _k("Step instruction") + " and " + _k("Run") + " move through it, and " + _k("Speed") + " sets how fast Run goes. Below it, " + panels + ".\n\n" + \
 		"Hover any button for a reminder of what it does. A greyed-out button cannot be used right now: for example Step after the program has finished, until you press " + _k("Reload") + ". " + _k("View") + " ▸ [b]Show the tour again[/b] replays the short first-run tour."
 	d["running"] = "Every program runs the same way: picosim's small [b]built-in OS[/b] calls your [code]main[/code], the CPU runs one instruction at a time from top to bottom (unless a branch jumps somewhere else), the program calls functions such as [code]putchar[/code] to print, and [code]main[/code] ends with [code]pop {…, pc}[/code], which returns to the OS. The OS then stops the processor and the status text says [b]halted[/b]." + \
 		(" At Level 1 the OS's own instructions are hidden, so ▶ starts on [code]main[/code] and each [code]bl putchar[/code] is one step." if not l2 else " From Level 2 you also step through the OS's instructions: three at the start and two inside each putchar; " + _k("Step over") + " (" + _k("O") + ") runs a whole call in one step.") + "\n\n" + \
-		_k("Step instruction") + " runs one instruction. " + _k("Run") + " keeps going until the program ends, reaches a [b]breakpoint[/b] (click a row's first column in the Disassembly) or you press " + _k("Pause") + ". " + _k("◀ Step back") + " undoes a step, and " + _k("Reload") + " starts again. The full details walk through Say hello line by line, with the real values."
+		_k("Step instruction") + " runs one instruction. " + _k("Run") + " keeps going until the program ends, reaches a [b]breakpoint[/b] (" + _bp_click() + ") or you press " + _k("Pause") + ". " + _k("◀ Step back") + " undoes a step, and " + _k("Reload") + " starts again. The full details walk through Say hello line by line, with the real values."
 	d["programs"] = "A program is a plain text file whose name ends in [code].s[/code]. It starts with three lines ([code].syntax unified[/code], [code].cpu cortex-m0plus[/code], [code].thumb[/code]), then the label [code]main:[/code] and one instruction per line; anything after [code]@[/code] is a comment. [code]main[/code] begins with [code]push {r7, lr}[/code] and ends with [code]pop {r7, pc}[/code], and [code]bl putchar[/code] prints the character in R0.\n\n" + \
 		"Write and save the file in any text editor (VS Code, for example); picosim reloads it by itself when you save. " + _k("Open…") + " (" + _k("Ctrl/Cmd+O") + ") loads a file. If the assembler finds a mistake, a box lists each wrong line and what usually fixes it. The easiest start is a copy of an example."
 	d["challenges"] = "Some examples set a [b]challenge[/b]: a small change for you to make, shown in a strip under the toolbar. Change the file, save it and run the program to the end: the strip turns [color=" + _c("green") + "]green[/color] if your program did it, or lists what is still wrong. Teachers can add their own with [code]@ Challenge:[/code] and [code]@ Expect:[/code] comment lines (see the details)."
@@ -1145,7 +1018,7 @@ func _summaries() -> Dictionary:
 	d["examples2"] = "Five examples for Level 2: [b]Add up a list in memory[/b] ([code]ldr[/code] and [code]str[/code]), [b]Blink an LED[/b] (GPIO outputs), [b]Echo what you type[/b] ([code]getchar[/code]), [b]Call a function[/b] ([code]bl[/code], LR and the stack) and [b]Buttons and LEDs[/b] (GPIO inputs). Keep the Memory tab and the Pico board in view while you step: that is where these programs show what they do."
 	d["registers"] = "The Registers panel (top left) shows the CPU's 16 registers: R0–R12 hold your values, [b]SP[/b] points at the stack, [b]LR[/b] holds a function's return address and [b]PC[/b] is the address of the next instruction. Whatever the last step changed turns [color=" + y + "]yellow[/color], and the line under the flags says which line of your file changed it.\n\n" + \
 		"The four check boxes are the flags N Z C V. The menu at the top right shows the values in " + _k("Hex") + ", " + _k("Decimal") + " or " + _k("Signed") + "; hover a register to see every form at once, or click one, type a new value and press " + _k("Enter") + " (" + _k("Reload") + " puts everything back)."
-	d["memory"] = "The Disassembly lists your program one instruction per row: its address, its bits ([b]Raw[/b]), its label, the instruction as the CPU sees it and the line of your file it came from ([b]Source[/b]). The row with ▶ runs next. Click a row's first column to put a [b]breakpoint[/b] (a red ●) there: " + _k("Run") + " stops just before that instruction." + \
+	d["memory"] = ("From Level 3, while the CPU diagram is shown, this panel shows only the [b]Memory[/b] tab: the [b]Walkthrough[/b] beside the diagram lists your program and holds the breakpoints. " + _k("Hide CPU Diagram") + " brings the Disassembly back.\n\n" if l3 else "") + "The Disassembly lists your program one instruction per row: its address, its bits ([b]Raw[/b]), its label, the instruction as the CPU sees it and the line of your file it came from ([b]Source[/b]). The row with ▶ runs next. Click a row's first column to put a [b]breakpoint[/b] (a red ●) there: " + _k("Run") + " stops just before that instruction." + \
 		("\n\nThe [b]Memory[/b] tab shows memory as a place: a map of where everything lives, the bytes coloured by what they are (with labels and pointer tags on them), the stack as boxes that say what put each word there, and, after each step, which bytes it read or wrote. Hover a byte to have it explained; click one to change it." if l2 else "")
 	d["pico"] = "The drawing of the Raspberry Pi Pico (bottom left) shows what your program does to the chip's pins. A pin your program drives high shows a green [b]1[/b], one driven low a dark [b]0[/b], and an input reading high a blue [b]1[/b]; a [color=" + y + "]yellow[/color] ring marks a pin the last step changed. Hover a pin for its numbers and state.\n\n" + \
 		"Click an [i]input[/i] pin to drive it like a switch: floating → 1 → 0 → floating. In [b]Pico (USB serial)[/b] mode, with a board you flashed connected, the drawing shows your real board's pins instead."
@@ -1160,7 +1033,7 @@ func _summaries() -> Dictionary:
 	d["blocks"] = "The CPU diagram is built from a few kinds of part. [b]Registers[/b] store a value and change only at the clock edge. The [b]bus[/b] carries one value at a time between parts, and [b]tri-state buffers[/b] decide which part drives it. [b]Multiplexers[/b] (muxes) pick one of their inputs, [b]adders[/b] and the [b]ALU[/b] compute, [b]memory[/b] reads or writes at the address in MAR, and the [b]FSM[/b] controls them all.\n\n" + \
 		"Muxes, adders and the ALU have no memory: their output follows their inputs straight away. Registers remember, which is why the diagram shows a register's new value as a [color=" + y + "]yellow[/color] [code]old → new[/code] caption until the next cycle starts."
 	d["diagram"] = "The CPU diagram shows the multi-cycle datapath during the cycle that just ran. [color=" + _c("accent") + "]Bright blue[/color] wires and boxes carry data in this cycle, [color=" + _c("purple") + "]purple dashed[/color] stubs are control signals from the FSM (bright means on), and a [color=" + y + "]yellow[/color] [code]old → new[/code] caption marks a register that takes a new value at the clock edge. When you step, a glowing pulse follows the data along the wires.\n\n" + \
-		"The [b]heat tint[/b] behind each box shows how much of the run that part has been used so far (" + _k("View") + " ▸ [b]Heat overlay[/b] turns it off). Hover a block for a one-line summary, or click it for a card that explains what it does and when it is used."
+		"The [b]heat tint[/b] behind each box shows how much of the run that part has been used so far (" + _k("View") + " ▸ [b]Heat overlay[/b] turns it off). Hover a block for a one-line summary, or click it for a card that explains what it does and when it is used. The [b]Walkthrough[/b] beside the diagram lists every step of your program with ▶ on the one you are on: click a step to read what it does, and " + _k("Go here") + " jumps the CPU there."
 	d["cycles"] = "The cycle inspector under the diagram follows the current instruction one clock cycle at a time. The left side lists its cycles (click one to look at it again) with the phase chips F, D, EA, FO, EX and SR; the right side says what the cycle does, which control signals it turns on and what changes at the clock edge.\n\n" + \
 		"Every instruction starts with the same 3 fetch cycles. Typical totals: " + _typical_cycles() + "."
 	d["tutorial"] = "This tutorial follows one instruction, [code]adds r2, r0, r1[/code] from [b]Add two numbers[/b], through its six clock cycles with the real values: three fetch cycles, DECODE, FETCH_OPERANDS (R0 and R1 go into the ALU) and EXECUTE_COMMIT (the sum goes into R2 and the flags). Set a breakpoint on it, press " + _k("Run") + ", then press " + _k("Step cycle") + " once for each row of the table."
@@ -1170,7 +1043,8 @@ func _summaries() -> Dictionary:
 	d["components"] = "Every block on the multi-cycle datapath diagram, in the order data usually flows, with what it does, how it works and when it is used. The same card opens when you click a block on the diagram."
 	d["pipeintro"] = "The real Pico's processor, the Cortex-M0+, overlaps instructions in a [b]2-stage pipeline[/b]: while one instruction is decoded and executed, the next one is already being fetched. When nothing gets in the way, an instruction finishes every clock cycle (CPI = 1), instead of every 5 to 7 cycles as on the multi-cycle datapath.\n\n" + \
 		"Two things cost extra cycles: instructions that need Execute for more than one cycle (loads, stores, PUSH, POP and BL), and taken branches, where the instruction fetched behind the branch is thrown away ([b]flushed[/b]). Pipelining changes only [i]when[/i] things happen, never the results."
-	d["pipeline"] = "Pick [b]2-stage pipeline[/b] in the machine menu to see the Pico's own processor. The left stage is [color=" + _c("stage_f") + "]Fetch[/color] and the right one [color=" + _c("stage_e") + "]Decode + Execute[/color], joined by the IF/EX pipeline register. Each instruction in flight is a coloured token that moves across as you step, and FLUSH turns red when a taken branch throws away the wrong instruction. The registers show the state after the instruction in Execute has finished."
+	d["pipeline"] = "Pick [b]2-stage pipeline[/b] in the machine menu to see the Pico's own processor. The left stage is [color=" + _c("stage_f") + "]Fetch[/color] and the right one [color=" + _c("stage_e") + "]Decode + Execute[/color], joined by the IF/EX pipeline register. Each instruction in flight is a coloured token that moves across as you step, and FLUSH turns red when a taken branch throws away the wrong instruction. The registers show the state after the instruction in Execute has finished.\n\n" + \
+		"The [b]Walkthrough[/b] beside the diagram lists every instruction your program runs, with its pipeline cycles and ▶ on the one in Execute: click one to read why it takes the cycles it does, and " + _k("Go here") + " jumps the pipeline there."
 	d["pipecycles"] = _k("Step cycle") + " (" + _k("C") + " or " + _k("F11") + ") moves the pipeline one clock cycle; " + _k("Step instruction") + " (" + _k("S") + " or " + _k("F10") + ") jumps to the next instruction's first Execute cycle. Under the stages, the instruction strip shows the last 8 cycles as a staircase, and the panel under the diagram explains what each stage holds and why it waits, refills or is flushed.\n\n" + \
 		"A perfect 2-stage pipeline gets CPI = 1. Instructions that take several Execute cycles, and taken branches (1 extra cycle each on the M0+), are where cycles are lost. With only one Execute stage there are no data hazards."
 	d["pipecomponents"] = "Every block on the pipeline diagram, Fetch stage first, with what it does and how it connects. The same card opens when you click a block on the diagram."
@@ -1188,34 +1062,8 @@ func _summaries() -> Dictionary:
 	d["keys"] = keys + ", " + _k("F1") + " opens this guide, " + _k("Ctrl/Cmd+O") + " opens a file and " + _k("Ctrl/Cmd+R") + " reloads it. Holding a step key repeats it. The keys work only in Simulator mode, and not while you are typing in a box or in the serial console."
 	d["trouble"] = "Most problems have a quick fix. If Step does nothing, the program has finished: press " + _k("Reload") + ". If it is waiting, type a key in the serial console. If Run is slow, move the " + _k("Speed") + " slider to the right. If the program will not load, the [b]Could not load program[/b] box gives the line number and what is wrong: fix that line and save.\n\n" + \
 		"A [b]CPU fault[/b] message in the console means the program did something that would crash a real Pico. The most common cause is a [code]main[/code] without [code]pop {…, pc}[/code] at its end. The details list every message you may see, with what to do."
-	d["ask"] = _k("Ask") + " (top right, or the " + _k("?") + " key) opens a chat where you can ask questions in your own words: [i]Why did my program stop?[/i], [i]Why is R0 72?[/i], [i]What does LDR do?[/i], [i]How do I set a breakpoint?[/i] It looks at your program as it runs and answers from this guide, with a link to the page and often a [b]Show me[/b] button that points at the control.\n\n" + \
-		"It gives [b]hints, never finished answers[/b]: ask it for the solution to a challenge and it gives the next small hint instead, up to three. If you need more help than that, ask your teacher, or look the topic up online. It only knows about picosim, ARM assembly and the Pico."
 	d["glossary"] = "Short meanings of the words used in picosim and in this guide, in alphabetical order. More words appear as you raise the Level."
 	return d
-
-
-## "Ask picosim": what the help chat does, the hints-only rule, and how a
-## teacher sets it up.
-func _ask_page() -> String:
-	var t := _h("Ask picosim")
-	t += "Click " + _k("Ask") + " in the toolbar, or press " + _k("?") + ", and type a question in your own words. Typos are fine. Some good ones:\n"
-	t += _grid(["Ask about", "For example"], [
-		["Your program right now", "[i]Why did it stop?[/i] · [i]What just happened?[/i] · [i]What happens next?[/i] · [i]Why is R0 72?[/i] · [i]Why is it waiting?[/i]"],
-		["Errors and crashes", "[i]What does this error mean?[/i] (or paste the error) · [i]Why did it crash?[/i]"],
-		["The buttons and panels", "[i]What does Step over do?[/i] · [i]How do I set a breakpoint?[/i] · [i]How do I see decimal?[/i]"],
-		["Assembly", "[i]What does LDR do?[/i] · [i]movs vs mov?[/i] · [i]What is the Z flag?[/i] · [i]What is 0x2A in decimal?[/i]"],
-		["Challenges", "[i]What is the challenge?[/i] · [i]Did I pass?[/i] · [i]Give me a hint[/i]"],
-	], 1)
-	t += "Follow-ups work too: [i]why?[/i], [i]tell me more[/i], [i]what about R1?[/i]. Chips under the conversation suggest questions that fit what is on screen, such as [i]Why did it crash?[/i] after a fault.\n"
-	t += _sub("Hints, not answers")
-	t += "It never writes your code or a challenge's solution, and nothing you type changes that. Ask for the answer and you get the next small hint: first the idea and the guide page, then where to look, then what kind of change to make. After three hints it stops: ask your teacher, or look the topic up online. Load errors and CPU faults are different: it tells you exactly what the assembler or the CPU complained about, because fixing those is not the exercise.\n"
-	t += _sub("Where answers come from")
-	t += "Each answer has a small tag. [b]built-in answer[/b] and [b]from the guide[/b] come from picosim itself: this guide and your program as it runs, so they match what you see. Above your Level it gives a short answer and says which Level covers it. 👍 and 👎 tell your teacher what helps; [b]Report[/b] saves the question and answer (without personal details) for them.\n"
-	t += "Please don't type personal details (phone numbers, addresses, passwords): the chat leaves them out. If something is really wrong, beyond picosim, talk to a teacher or another adult you trust.\n"
-	t += _sub("For teachers: AI help")
-	t += "By default everything works offline. A teacher can let questions the built-in answers cannot handle go to Claude, an AI made by Anthropic: run [code]picosim --chat-setup[/code] to see (and create) the config file, set [code]\"ai\": \"on\"[/code] there, install the extra with [code]pip install -e .[lb]ai][/code] (it needs Python 3.10 or newer) and set an Anthropic API key in [code]ANTHROPIC_API_KEY[/code]. The question, a summary of the machine and the student's program (personal data removed) are then sent to Anthropic, so check your school's rules first; the window shows a notice while AI is on. AI answers are tagged [b]AI answer[/b], follow the same hints-only rule, and are withdrawn if they show too much code. The config also sets the model, [code]max_ai_per_hour[/code] (20), a [code]helpline[/code] for the wellbeing reply and [code]log_unanswered[/code]. There is no setting for full answers.\n"
-	t += "Reports go to [code]chat_reports.jsonl[/code] and 👍 / 👎 counts to [code]chat_feedback.json[/code], next to the config. Write your own hints for a challenge with [code]@ Hint:[/code] lines (see " + _link("challenges", "Challenges") + ").\n"
-	return t
 
 
 # ── getting-started pages ───────────────────────────────────────────────────
@@ -1253,7 +1101,9 @@ func _tour() -> String:
 	var right := "[b]Explain this step[/b]\n[color=%s]what the last step did, and what happens next[/color]\n\n" % _c("dim") + \
 		"[b]Serial console[/b]\n[color=%s]what your program prints, and the keys you type[/color]" % _c("dim")
 	if Level.at_least(3):
-		right = right.replace("\n\n[b]Serial", "\n\n[b]CPU diagram[/b] (when shown)\n[color=%s]the datapath, cycle by cycle[/color]\n\n[b]Serial" % _c("dim"))
+		right = right.replace("\n\n[b]Serial", "\n\n[b]CPU diagram[/b] (when shown)\n[color=%s]the datapath, cycle by cycle, with the Walkthrough beside it: your program, step by step[/color]\n\n[b]Serial" % _c("dim"))
+		left = left.replace("[b]Disassembly[/b]\n[color=%s]your program, one instruction per row" % _c("dim"),
+			"[b]Disassembly[/b], or [b]Memory[/b] with the diagram shown\n[color=%s]your program, one instruction per row, or the bytes in memory" % _c("dim"))
 	t += "[table=2][cell bg=%s border=%s padding=16,12,16,12 expand=1]%s[/cell][cell bg=%s border=%s padding=16,12,16,12 expand=1]%s[/cell][/table]\n" % [
 		_c("panel_alt"), _c("edge"), left, _c("panel_alt"), _c("edge"), right]
 	t += "Click a panel's name to read about it: " + _link("registers", "Registers") + ", " + _link("memory", "Disassembly") + ", " + _link("explain", "Explain this step") + ", " + _link("serial", "Serial console") + ". Drag the bars between panels to resize them.\n"
@@ -1289,7 +1139,7 @@ func _tour() -> String:
 	t += _grid(["Control", "What it does"], rows, 1)
 	t += "Buttons that cannot be used right now are greyed out: for example Step and Run after the program has halted, until you press " + _k("Reload") + ".\n"
 	t += _sub("The tour")
-	t += "The first time you load a program, a short tour points out Step, Explain this step, the Registers, the Disassembly, the console and this guide, one at a time. " + _k("Next ▶") + " moves on and " + _k("Skip tour") + " (or " + _k("Esc") + ") ends it. To see it again, choose " + _k("View") + " ▸ [b]Show the tour again[/b].\n"
+	t += "The first time you load a program, a short tour points out Step, Explain this step, the Registers, " + ("the Walkthrough (the Disassembly while the CPU diagram is hidden)" if Level.at_least(3) else "the Disassembly") + ", the console and this guide, one at a time. " + _k("Next ▶") + " moves on and " + _k("Skip tour") + " (or " + _k("Esc") + ") ends it. To see it again, choose " + _k("View") + " ▸ [b]Show the tour again[/b].\n"
 	return t
 
 
@@ -1336,7 +1186,7 @@ func _running() -> String:
 	else:
 		t += "• " + _k("Step instruction") + " (" + _k("S") + ") runs exactly one instruction, the OS's too; " + _k("Step over") + " (" + _k("O") + ") runs a whole [code]bl[/code] call.\n"
 	t += "• " + _k("Run") + " (" + _k("Space") + ") keeps going at the " + _link("tour", "Speed") + " you chose, until the program halts, reaches a breakpoint, or you press " + _k("Pause") + ". If the program is waiting for a key ([code]getchar[/code]), Run waits too and carries on once you type one in the console.\n"
-	t += "• A [b]breakpoint[/b] (click the first column of a Disassembly row) makes Run stop just before that instruction. Then you can Step from there.\n"
+	t += "• A [b]breakpoint[/b] (" + _bp_click() + ") makes Run stop just before that instruction. Then you can Step from there.\n"
 	t += "• " + _k("◀ Step back") + " (" + _k("B") + ") undoes the last step, so you can go back and watch a line again. Everything goes back with it, the console's text too. A key you typed for [code]getchar[/code] is handed to the program again when it gets there.\n"
 	t += "• You can mix them: Run to a breakpoint, Step a few lines, Run again.\n"
 	t += _sub("Starting again")
@@ -1535,7 +1385,7 @@ func _glossary() -> String:
 		["Assembly language", "Writing a program as the processor's own instructions, one per line, with names instead of bits."],
 		["Bit", "One binary digit, 0 or 1. A register has 32."],
 		["Branch", "An instruction that jumps to another place in the program, always ([code]b[/code]) or only if a condition holds ([code]bne[/code], …)."],
-		["Breakpoint", "A red ● on a Disassembly row: Run stops just before that instruction."],
+		["Breakpoint", "A red ● on a Disassembly row" + (" or a Walkthrough step" if Level.at_least(3) else "") + ": Run stops just before that instruction."],
 		["Built-in OS", "picosim's tiny operating system at addresses [code]0000[/code]–[code]2FFF[/code]. It starts your [code]main[/code] and provides [code]putchar[/code] and [code]getchar[/code]."],
 		["Byte", "8 bits: two hex digits, 0 to 255."],
 		["Clock cycle", "One tick of the CPU's clock. An instruction takes several." + (" See " + _link("cycles", "Cycle by cycle") + "." if Level.at_least(3) else " You will see them at Level 3.")],
@@ -1963,8 +1813,8 @@ func _tutorial() -> String:
 	t += "Follow one ADDS through the CPU, with the real values picosim shows. It is the instruction [code]adds r2, r0, r1[/code] at address [code]3006[/code] in the [b]Add two numbers[/b] example, where R0 = 3 and R1 = 4.\n"
 	t += _sub("Set it up")
 	t += "1. Open [b]Add two numbers[/b] from " + _k("Examples") + " and click " + _k("Show CPU Diagram") + ".\n"
-	t += "2. In the Disassembly, click the first column of the row [code]3006  adds r2, r0, r1[/code] to set a breakpoint (a red ●).\n"
-	t += "3. Press " + _k("Run") + ". It stops just before that instruction.\n"
+	t += "2. In the [b]Walkthrough[/b] beside the diagram, click the narrow first column of the step [code]3006  adds r2, r0, r1[/code] to set a breakpoint (a red ●).\n"
+	t += "3. Press " + _k("Run") + ". It stops just before that instruction. (Clicking the step and pressing " + _k("Go here") + " gets you to the same place.)\n"
 	t += "4. Press " + _k("Step cycle") + " (" + _k("F11") + ") once for each row of the table, and compare the diagram and the inspector with it.\n"
 	t += _sub("The six cycles")
 	t += _grid(["#", "State", "Control signals", "What happens", "At the clock edge"], [
@@ -2162,346 +2012,48 @@ func _perf_math() -> String:
 	return t
 
 
-# ── program walkthrough ─────────────────────────────────────────────────────
-
-func _wt_reset() -> void:
-	_wt = {}
-	_wt_waiting = false
-	_wt_step = -1
-	_wt_cycle = 0
-	_wt_shots.clear()
-	_wt_order.clear()
-	if win.visible and _shown == "walkthrough":
-		_show_walkthrough()
-
-
-## The walkthrough page may be open before the program has finished loading.
-func _on_state(st: Dictionary) -> void:
-	if win.visible and _shown == "walkthrough" and _wt.is_empty() and not _wt_waiting \
-			and st.get("loaded", false):
-		_show_walkthrough()
-	if win.visible and _shown == "pipewalk" and _pw.is_empty() and not _pw_waiting \
-			and st.get("loaded", false):
-		_show_pipewalk()
-
-
-func _on_walkthrough(data: Dictionary) -> void:
-	_wt_waiting = false
-	_wt = data
-	_wt_shots.clear()
-	_wt_order.clear()
-	if _wt_demo >= 0 and _shown == "walkthrough":
-		_wt_step = mini(_wt_demo, data["steps"].size() - 1)
-		_wt_demo = -1
-	if _shown == "walkthrough":
-		_show_walkthrough()
-
-
-## Show step i (-1: the list), at its first cycle, or its last with `at_end`.
-func _wt_goto(i: int, at_end := false) -> void:
-	if i >= _wt.get("steps", []).size() or (i < 0 and _wt_step < 0):
-		return
-	if _wt_step < 0:
-		var bar := body.get_v_scroll_bar()
-		_wt_list_scroll = bar.value / maxf(1.0, bar.max_value)
-	_wt_step = maxi(i, -1)
-	_wt_cycle = 999 if at_end else 0   # clamped to the last cycle when drawn
-	_show_walkthrough()
-	if _wt_step < 0:
-		_restore_scroll.call_deferred(_wt_list_scroll)
-
-
-func _show_walkthrough() -> void:
-	_wt_gen += 1
-	var st := Backend.state
-	var h := _h("Program walkthrough")
-	if not st.get("loaded", false):
-		body.text = h + "Load a program (" + _k("Open…") + ") and this page explains it step by step."
-		return
-	if _wt.is_empty() or str(_wt.get("path", "")) != str(st.get("path", "")):
-		if not _wt_waiting:
-			_wt_waiting = true
-			Backend.send("walkthrough")
-		body.text = h + "[color=%s]Working through %s…[/color]" % [_c("dim"), str(st.get("path", "")).get_file()]
-		return
-	var steps: Array = _wt["steps"]
-	if _wt_step < 0 or _wt_step >= steps.size():
-		_wt_step = -1
-		body.text = _wt_overview()
-		body.scroll_to_line(0)
-		(func(): body.scroll_to_line(0)).call_deferred()   # tables lay out a frame late
-	else:
-		_wt_detail(_wt_step)
-
-
-## Heading shown above a step that starts at a label; `n_pass` > 1 says the
-## code under it is running again (a loop going round).
-func _wt_heading(step: Dictionary, n_pass := 1, called := true) -> String:
-	var lab := str(step["label"])
-	if lab == "":
-		return ""
-	var a := int(step["addr"])
-	var note := ""
-	if a < 0x3000:
-		note = {"_start": "the built-in OS starts here and calls your main",
-			"putchar": "built-in OS: print a character", "getchar": "built-in OS: read a key"}.get(lab, "built-in OS")
-	elif called and not lab.begins_with("."):
-		note = "a function in your program"
-	else:
-		note = "a label in your program"
-	if n_pass > 1:
-		note += " · pass %d" % n_pass
-	return "\n[font_size=%d][color=%s][b]%s[/b][/color][/font_size]   [color=%s]%s[/color]\n" % [
-		roundi(20 * text_scale), _c("label"), lab, _c("dim"), note]
-
-
-func _wt_overview() -> String:
-	var steps: Array = _wt["steps"]
-	var total := 0
-	for st in steps:
-		total += st["cycles"].size()
-	var t := _h("Program walkthrough")
-	t += "[color=%s][code]%s[/code][/color]\n\n" % [_c("dim"), _esc(str(_wt["path"]).get_file())]
-	t += "Your program one instruction at a time, in the order the CPU runs it, with what each one does to the real values. [b]Click an instruction[/b] to watch its clock cycles on the CPU diagram.\n\n"
-	if steps.size() > 0:
-		t += "[table=3]" + _stat(str(steps.size()), "instructions") + _stat(str(total), "clock cycles") + \
-			_stat("%.1f" % (float(total) / steps.size()), "cycles per instruction") + "[/table]\n\n"
-	t += "[color=%s]This runs a separate copy of the program, so the main window is not changed. Values are hexadecimal.[/color]\n" % _c("dim")
-	var notes := []
-	for s in steps:
-		notes.append("%d cycles" % s["cycles"].size())
-	t += _walk_table("wt", steps, notes)
-	t += "\n" + _sub("Where it stops") + _esc(str(_wt["stopped"])) + "\n"
-	if str(_wt["output"]) != "":
-		t += "\nPrinted to the serial console so far: [code]%s[/code]\n" % _esc(str(_wt["output"]).c_escape())
-	return t
-
-
-## All the steps as one table, so the columns line up all the way down. A
-## label gets a heading row, and one seen before (a loop going round again)
-## says which pass this is.
-func _walk_table(pre: String, steps: Array, notes: Array) -> String:
-	var passes := {}
-	# a label is a function's name if the program got there with BL or BLX
-	var called := {}
-	for i in range(1, steps.size()):
-		if str(steps[i - 1]["text"]).strip_edges().get_slice(" ", 0).to_lower() in ["bl", "blx"]:
-			called[int(steps[i]["addr"])] = true
-	var t := "\n[table=4]"
-	for i in steps.size():
-		var s: Dictionary = steps[i]
-		var lab := str(s["label"])
-		if lab != "":
-			passes[lab] = passes.get(lab, 0) + 1
-			var hd := _wt_heading(s, passes[lab], called.has(int(s["addr"]))).strip_edges()
-			var top := 18 if i > 0 else 4
-			t += "[cell][/cell][cell padding=4,%d,8,4]%s[/cell][cell padding=4,%d,8,4]%s[/cell][cell][/cell]" % [
-				top, hd.get_slice("   ", 0), top, hd.get_slice("   ", 1)]
-		t += _walk_row(pre, i, s, notes[i])
-	return t + "[/table]\n"
-
-
-## A big number with a caption under it, as a table cell.
-func _stat(big: String, what: String) -> String:
-	return "[cell bg=%s padding=14,8,28,8][font_size=%d][b]%s[/b][/font_size]\n[color=%s]%s[/color][/cell]" % [
-		_c("panel_alt"), roundi(26 * text_scale), big, _c("dim"), what]
-
-
-## One instruction in the overview: number, instruction, what it does, and
-## `note` (its cycles). `pre` is the link prefix: "wt" or "pw".
-func _walk_row(pre: String, i: int, s: Dictionary, note: String) -> String:
-	var bg := "%s,%s" % [_c("panel"), _c("panel_alt")]
-	return ("[cell bg=%s padding=8,5,10,5][color=%s]%d[/color][/cell]" % [bg, _c("dim"), i + 1]) + \
-		("[cell bg=%s padding=4,5,14,5][url=%s:%d][code][color=%s]%04X[/color]  [color=%s]%s[/color][/code][/url][/cell]" % [
-			bg, pre, i, _c("dim"), int(s["addr"]), _c("accent"), _esc(_tidy(str(s["text"])))]) + \
-		("[cell bg=%s expand=1 padding=4,5,12,5]%s[/cell]" % [bg, _esc(str(s["summary"]))]) + \
-		("[cell bg=%s padding=4,5,10,5][color=%s]%s[/color][/cell]" % [bg, _c("dim"), note])
-
-
-## "push     {r7, lr}" → "push  {r7, lr}": the disassembler pads mnemonics wide.
-static func _tidy(insn: String) -> String:
-	var sp := insn.find(" ")
-	if sp < 0:
-		return insn
-	return insn.substr(0, sp).rpad(6) + insn.substr(sp).strip_edges()
-
-
 static func _esc(s: String) -> String:
 	return s.replace("[", "[lb]")
 
 
 ## A link drawn as a small button.
-func _button(meta: String, label: String, on := false) -> String:
-	if on:
-		return "[bgcolor=%s][color=%s] %s [/color][/bgcolor]" % [_c("accent"), _c("bg"), label]
+func _button(meta: String, label: String) -> String:
 	return "[url=%s][bgcolor=%s][color=%s] %s [/color][/bgcolor][/url]" % [meta, _c("sig_bg"), _c("accent"), label]
-
-
-func _walk_nav(pre: String, i: int, n: int) -> String:
-	var t := _button(pre + ":all", "☰ All instructions") + "      "
-	t += (_button("%s:%d" % [pre, i - 1], "◀ Previous") if i > 0 else "[color=%s] ◀ Previous [/color]" % _c("dim"))
-	t += "  [color=%s]Instruction %d of %d[/color]  " % [_c("dim"), i + 1, n]
-	t += (_button("%s:%d" % [pre, i + 1], "Next ▶") if i < n - 1 else "[color=%s] Next ▶ [/color]" % _c("dim"))
-	return t + "\n"
-
-
-## A row of clickable chips, one per cycle; `labels[j]` names cycle j and
-## `keys[j]` is its palette colour. Cycle `k` is the one on display.
-func _chips(link: String, labels: Array, keys: Array, k: int) -> String:
-	var strip := ""
-	for j in labels.size():
-		var lbl := str(labels[j]).replace(" ", "\u00a0")
-		if j == k:
-			strip += "[bgcolor=%s][color=%s][b] %s [/b][/color][/bgcolor]  " % [_c(keys[j]), _c("on_stage"), lbl]
-		else:
-			strip += "[url=%s:%d][bgcolor=%s][color=%s] %s [/color][/bgcolor][/url]  " % [
-				link, j, _c("sig_bg"), _c(keys[j]), lbl]
-	return strip + "\n"
-
-
-static func _phase_key(phase: String) -> String:
-	if phase == "FETCH":
-		return "stage_f"
-	if phase == "DECODE":
-		return "stage_d"
-	return "stage_e"
-
-
-## One step: what the instruction does, a strip of its cycles, then the
-## selected cycle in detail with its diagram picture.
-func _wt_detail(i: int) -> void:
-	var gen := _wt_gen
-	var steps: Array = _wt["steps"]
-	var s: Dictionary = steps[i]
-	if not _wt_shots.has(i):
-		body.text = _walk_nav("wt", i, steps.size()) + "\n" + _h("[code]%s[/code]" % _esc(_tidy(str(s["text"])))) + \
-			"[color=%s]Drawing the diagram for each cycle…[/color]" % _c("dim")
-		var rendered: Array = await _wt_render(s, gen)
-		if gen != _wt_gen:
-			return   # the user moved on meanwhile
-		_wt_shots[i] = rendered
-		_wt_order.append(i)
-		while _wt_order.size() > SHOT_CACHE:
-			_wt_shots.erase(_wt_order.pop_front())
-	var shots: Array = _wt_shots[i]
-	var cycles: Array = s["cycles"]
-	var k := clampi(_wt_cycle, 0, cycles.size() - 1)
-	_wt_cycle = k
-	var cy: Dictionary = cycles[k]
-	var info: Dictionary = cy["info"]
-	body.clear()
-	body.append_text(_walk_nav("wt", i, steps.size()) + "\n")
-
-	# the instruction
-	body.append_text(_h("[code]%s[/code]" % _esc(_tidy(str(s["text"])))).trim_suffix("\n"))
-	var where := "[color=%s]address %04X" % [_c("dim"), int(s["addr"])]
-	var lab := _walk_label_at(steps, i)
-	if lab != "":
-		where += " · in [color=%s]%s[/color]" % [_c("label"), lab]
-	body.append_text(where + "[/color]\n\n")
-	body.append_text("[table=1][cell bg=%s padding=14,10,14,10][b]What it does[/b]\n%s[/cell][/table]\n\n" % [
-		_c("panel_alt"), _esc(str(s["summary"]))])
-
-	# the cycle strip
-	body.append_text("[b]%d clock cycles[/b]  [color=%s]— click one, or use ← →[/color]\n" % [cycles.size(), _c("dim")])
-	var labels := []
-	var keys := []
-	for cyc in cycles:
-		labels.append("%d · %s" % [labels.size() + 1, str(cyc["info"]["state"])])
-		keys.append(_phase_key(str(cyc["info"]["phase"])))
-	body.append_text(_chips("wc", labels, keys, k))
-
-	# the selected cycle
-	var phase := str(info["phase"])
-	body.append_text("\n[font_size=%d][b]Cycle %d of %d · %s[/b][/font_size]   [bgcolor=%s][color=%s] %s phase [/color][/bgcolor]\n" % [
-		roundi(21 * text_scale), k + 1, cycles.size(), str(info["state"]),
-		_c(_phase_key(phase)), _c("on_stage"), phase.capitalize()])
-	body.append_text(_esc(str(cy.get("what", cy["text"]))) + "\n\n")
-	var w := clampf(body.size.x - 70.0, 360.0, 1400.0)
-	if k < shots.size() and shots[k] != null:
-		body.add_image(shots[k], int(w), int(w * float(SHOT_SIZE.y) / SHOT_SIZE.x))
-		body.append_text("\n[color=%s]The diagram [i]during[/i] this cycle: boxes still hold their old values, bright wires carry data, and yellow [code]old → new[/code] captions show what the clock edge loads.[/color]\n" % _c("dim"))
-
-	var how: Array = cy.get("how", [])
-	if not how.is_empty():
-		body.append_text(_sub("How the datapath does it"))
-		for sentence in how:
-			body.append_text("•  %s\n" % _esc(str(sentence)))
-	var edge: Array = cy.get("edge", [])
-	if not edge.is_empty():
-		body.append_text(_sub("At the clock edge"))
-		for e in edge:
-			body.append_text("•  %s\n" % _edge_bb(str(e)))
-	var sigs := ""
-	for sg in info["signals"]:
-		sigs += "[bgcolor=%s] [code]%s[/code] [/bgcolor]  " % [_c("sig_bg"), _esc(str(sg))]
-	body.append_text(_sub("Control signals"))
-	body.append_text((sigs if sigs != "" else "[color=%s](none)[/color]" % _c("dim")) + "\n\n")
-
-	# on to the next cycle / instruction
-	var nxt := ""
-	if k > 0:
-		nxt += _button("wc:%d" % (k - 1), "◀ Cycle %d" % k) + "  "
-	if k < cycles.size() - 1:
-		nxt += _button("wc:%d" % (k + 1), "Cycle %d ▶" % (k + 2))
-	elif i < steps.size() - 1:
-		nxt += _button("wt:%d" % (i + 1), "Next instruction: %s ▶" % _esc(_tidy(str(steps[i + 1]["text"]))))
-	body.append_text(nxt + "\n\n" + KEYS_HINT % _c("dim"))
-	body.scroll_to_line(0)
-
-
-## "PC 0x00003000 → 0x00003002": the new value in the "changed" colour.
-func _edge_bb(e: String) -> String:
-	var a := e.find(" → ")
-	if a < 0:
-		return _esc(e)
-	return "%s → [color=%s][b]%s[/b][/color]" % [_esc(e.substr(0, a)), _c("changed"), _esc(e.substr(a + 3))]
-
-
-## The label whose code step i is in (the nearest one at or before it).
-static func _walk_label_at(steps: Array, i: int) -> String:
-	for j in range(i, -1, -1):
-		if str(steps[j]["label"]) != "":
-			return str(steps[j]["label"])
-	return ""
-
-
-## Draw the diagram once per cycle of `step` and return the pictures.
-func _wt_render(step: Dictionary, gen: int) -> Array:
-	if _shot_vp == null:
-		_shot_vp = SubViewport.new()
-		_shot_vp.size = SHOT_SIZE
-		_shot_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
-		add_child(_shot_vp)
-		_shot_view = load(DIAGRAM_PATH).new()
-		_shot_view.still = true
-		_shot_view.size = Vector2(SHOT_SIZE)
-		_shot_vp.add_child(_shot_view)
-		await get_tree().process_frame
-	var out := []
-	var hist := []
-	for cy in step["cycles"]:
-		if gen != _wt_gen:
-			return out
-		var info: Dictionary = cy["info"]
-		hist.append(info)
-		var post: Dictionary = cy["post"]
-		var stx := {"loaded": true, "regs": post["regs"], "flags": post["flags"],
-			"datapath": post["datapath"], "history": hist.duplicate(), "running": false,
-			"next_state": "", "cps": 0}
-		_shot_view.st = stx
-		_shot_view.show_cycle(info)
-		_shot_view.queue_redraw()
-		_shot_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
-		await RenderingServer.frame_post_draw
-		await RenderingServer.frame_post_draw
-		var img := _shot_vp.get_texture().get_image()
-		out.append(ImageTexture.create_from_image(img) if img != null else null)
-	return out
 
 
 static func _row(k: String, what: String) -> String:
 	return "[cell][color=%s][code]%s[/code][/color]    [/cell][cell]%s[/cell]" % [_c("yellow"), k, what]
+
+
+## How to set a breakpoint, for a sentence: from Level 3 the walkthrough
+## beside the CPU diagram lists the program (the Disassembly makes way for
+## the Memory tab while the diagram is shown).
+func _bp_click() -> String:
+	if Level.at_least(3):
+		return "click a step's ● column in the Walkthrough beside the CPU diagram, or a row's first column in the Disassembly when the diagram is hidden"
+	return "click a row's first column in the Disassembly"
+
+
+## "The walkthrough beside the diagram" (walk_panel.gd), on the datapath
+## diagram's page and, with `pipe`, the pipeline diagram's.
+func _walk_help(pipe: bool) -> String:
+	var unit := "pipeline cycles" if pipe else "clock cycles"
+	var cpu := "the pipeline" if pipe else "the CPU"
+	var t := _sub("The walkthrough beside the diagram")
+	t += "While the diagram is shown, the walkthrough lists your program instead of the Disassembly, which makes way for the " + _link("memory", "Memory tab") + " under the Registers (" + _k("Hide CPU Diagram") + " brings the Disassembly back).\n"
+	t += "To the right of the diagram, the [b]Walkthrough[/b] lists every instruction your program runs, in the order " + cpu + " runs it, starting with the built-in OS's [code]_start[/code]. A heading marks where each function, label or piece of the built-in OS begins, and code that runs again (a loop going round) is listed again, with its pass number. Each row gives the step number, the address and instruction, and its " + unit + "; hover a row for what it does.\n"
+	t += "• [color=" + _c("changed") + "][b]▶[/b][/color] and a highlight mark the step " + cpu + (" is executing" if pipe else " is on") + ", and the list scrolls to keep it in view as you step. When something on the diagram is confusing, that row is the instruction it belongs to.\n"
+	if pipe:
+		t += "• Click a step to read it under the list: what it does, its row of RP2040 datasheet Table 81 and its pipeline cycles (Execute, a taken branch, a refill), with ✓ on the ones already run.\n"
+	else:
+		t += "• Click a step to read it under the list: what it does and each of its clock cycles with what that cycle does. ✓ marks the cycles already run and ▶ the one the diagram is showing.\n"
+	t += "• " + _k("◀ Previous") + " and " + _k("Next ▶") + " read the steps around it without moving " + cpu + "; " + _k("▶ back to where you are") + " returns to the marked step.\n"
+	t += "• " + _k("Go here") + " (or a double click on a step) puts " + cpu + " just before that instruction, as if you had stepped there from the start" + ("" if pipe else ", and clicking one of its cycles stops right after that cycle") + ". It replays the program the way " + _k("◀ Step back") + " does, so it works forwards and backwards, and keys you typed in the serial console are typed again. Then carry on stepping from there. It works in Simulator mode.\n"
+	t += "• [color=" + _c("bp") + "]●[/color] [b]Breakpoints[/b]: click the narrow first column of a step to put a red ● there, and again to remove it. " + _k("Run") + " stops just before that instruction, every time it comes round (a loop's instruction shows the ● on every pass).\n"
+	t += "• " + _k("Skip to main ▸") + " in its title bar runs the built-in OS's start-up and stops on the first line of your [code]main[/code]; it shows while the start-up is running.\n"
+	t += "• " + _k("▸") + " folds the walkthrough away to give the diagram more room; " + _k("◂") + " brings it back.\n"
+	t += "It stops after 500 steps, or at a [code]getchar[/code] waiting for a key you have not typed yet: type the key and the list carries on. If you change a register or memory by hand, your run can go a different way from the list; the panel says so, and " + _k("Reload") + " starts over.\n"
+	return t
 
 
 ## "FSM states": every state of the control unit, from state_info.gd.
@@ -2564,229 +2116,3 @@ func _add_pipe_components() -> void:
 		t += "\n[hr color=%s height=1]\n" % _c("edge")
 		t += info.entry_bbcode(info.PIPE_INFO[id], names, roundi(20 * text_scale)) + "\n"
 	_topic("pipecomponents", "Pipeline components", t)
-
-
-# ── pipeline walkthrough ────────────────────────────────────────────────────
-# The same idea as the program walkthrough, on the 2-stage pipeline: one
-# step per instruction, with a picture of the pipeline in every cycle the
-# instruction spends in Execute, drawn off-screen by pipeline_view.gd.
-
-func _pw_reset() -> void:
-	_pw = {}
-	_pw_waiting = false
-	_pw_step = -1
-	_pw_cycle = 0
-	_pw_shots.clear()
-	_pw_order.clear()
-	if win.visible and _shown == "pipewalk":
-		_show_pipewalk()
-
-
-func _on_pipewalk(data: Dictionary) -> void:
-	_pw_waiting = false
-	_pw = data
-	_pw_shots.clear()
-	_pw_order.clear()
-	if _wt_demo >= 0 and _shown == "pipewalk":
-		_pw_step = mini(_wt_demo, data["steps"].size() - 1)
-		_wt_demo = -1
-	if _shown == "pipewalk":
-		_show_pipewalk()
-
-
-func _show_pipewalk() -> void:
-	_wt_gen += 1
-	var st := Backend.state
-	var h := _h("Pipeline walkthrough")
-	if not st.get("loaded", false):
-		body.text = h + "Load a program (" + _k("Open…") + ") and this page shows it running on the 2-stage pipeline, step by step."
-		return
-	if _pw.is_empty() or str(_pw.get("path", "")) != str(st.get("path", "")):
-		if not _pw_waiting:
-			_pw_waiting = true
-			Backend.send("pipe_walkthrough")
-		body.text = h + "[color=%s]Working through %s…[/color]" % [_c("dim"), str(st.get("path", "")).get_file()]
-		return
-	var steps: Array = _pw["steps"]
-	if _pw_step < 0 or _pw_step >= steps.size():
-		_pw_step = -1
-		body.text = _pw_overview()
-		body.scroll_to_line(0)
-		(func(): body.scroll_to_line(0)).call_deferred()   # tables lay out a frame late
-	else:
-		_pw_detail(_pw_step)
-
-
-## Execute cycles of step i (the first step also shows the very first fetch).
-func _pw_exec(i: int) -> int:
-	return _pw["steps"][i]["cycles"].size() - (1 if i == 0 else 0)
-
-
-func _pw_overview() -> String:
-	var steps: Array = _pw["steps"]
-	var total := 0
-	var taken := 0
-	var notes := []
-	for i in steps.size():
-		var n := _pw_exec(i)
-		total += n
-		var note := "%d cycle%s" % [n, "" if n == 1 else "s"]
-		if bool(steps[i]["flushes"]):
-			taken += 1
-			note += " · [color=%s]flush[/color]" % _c("red")
-		notes.append(note)
-	var t := _h("Pipeline walkthrough")
-	t += "[color=%s][code]%s[/code][/color]\n\n" % [_c("dim"), _esc(str(_pw["path"]).get_file())]
-	t += "Your program on the Raspberry Pi Pico's 2-stage pipeline (see " + _link("pipeline", "Pipeline diagram") + "): while one instruction executes, the next is already being fetched. [b]Click an instruction[/b] to watch each cycle it spends in Execute.\n\n"
-	if steps.size() > 0:
-		t += "[table=4]" + _stat(str(steps.size()), "instructions") + _stat(str(total), "pipeline cycles") + \
-			_stat("%.2f" % (float(total) / steps.size()), "cycles per instruction") + \
-			_stat(str(taken), "pipeline flushes") + "[/table]\n\n"
-		t += "A perfect pipeline would take one cycle per instruction (CPI 1); the extra cycles come from instructions that need Execute for longer and from taken branches, which flush the pipeline. The " + _link("walkthrough", "Program walkthrough") + " runs the same instructions on the multi-cycle datapath.\n\n"
-	t += "[color=%s]This runs a separate copy of the program, so the main window is not changed. Values are hexadecimal.[/color]\n" % _c("dim")
-	t += _walk_table("pw", steps, notes)
-	t += "\n" + _sub("Where it stops") + _esc(str(_pw["stopped"])) + "\n"
-	return t
-
-
-## Show step i (-1: the list), at its first cycle, or its last with `at_end`.
-func _pw_goto(i: int, at_end := false) -> void:
-	if i >= _pw.get("steps", []).size() or (i < 0 and _pw_step < 0):
-		return
-	if _pw_step < 0:
-		var bar := body.get_v_scroll_bar()
-		_pw_list_scroll = bar.value / maxf(1.0, bar.max_value)
-	_pw_step = maxi(i, -1)
-	_pw_cycle = 999 if at_end else 0   # clamped to the last cycle when drawn
-	_show_pipewalk()
-	if _pw_step < 0:
-		_restore_scroll.call_deferred(_pw_list_scroll)
-
-
-## Chip label and colour for cycle k of step i.
-func _pw_chip(i: int, k: int, view: Dictionary) -> Array:
-	var e = view.get("E")
-	if e == null:
-		return ["cycle %d · first fetch" % int(view["cycle"]), "stage_f"]
-	var lbl := "cycle %d · Execute %d/%d" % [int(view["cycle"]), int(e["k"]), int(e["cycles"])]
-	if bool(e["redirect"]):
-		return [lbl + " · taken", "red"]
-	if bool(e["refilling"]):
-		return [lbl + " · refill", "stage_d"]
-	return [lbl, "stage_e"]
-
-
-## One step: what the instruction does and why it takes the cycles it does,
-## a strip of its cycles, then the selected cycle with its pipeline picture.
-func _pw_detail(i: int) -> void:
-	var gen := _wt_gen
-	var steps: Array = _pw["steps"]
-	var s: Dictionary = steps[i]
-	if not _pw_shots.has(i):
-		body.text = _walk_nav("pw", i, steps.size()) + "\n" + _h("[code]%s[/code]" % _esc(_tidy(str(s["text"])))) + \
-			"[color=%s]Drawing the pipeline for each cycle…[/color]" % _c("dim")
-		var rendered: Array = await _pw_render(s, gen)
-		if gen != _wt_gen:
-			return
-		_pw_shots[i] = rendered
-		_pw_order.append(i)
-		while _pw_order.size() > SHOT_CACHE:
-			_pw_shots.erase(_pw_order.pop_front())
-	var shots: Array = _pw_shots[i]
-	var cycles: Array = s["cycles"]
-	var n := _pw_exec(i)
-	var k := clampi(_pw_cycle, 0, cycles.size() - 1)
-	_pw_cycle = k
-	var view: Dictionary = cycles[k]["view"]
-	var PV = load(PIPELINE_PATH)
-	body.clear()
-	body.append_text(_walk_nav("pw", i, steps.size()) + "\n")
-
-	# the instruction
-	body.append_text(_h("[code]%s[/code]" % _esc(_tidy(str(s["text"])))).trim_suffix("\n"))
-	var where := "[color=%s]address %04X" % [_c("dim"), int(s["addr"])]
-	var lab := _walk_label_at(steps, i)
-	if lab != "":
-		where += " · in [color=%s]%s[/color]" % [_c("label"), lab]
-	body.append_text(where + "[/color]\n\n")
-	var how := "[b]%d cycle%s in Execute[/b] (RP2040 datasheet Table 81, row [i]%s[/i])" % [
-		n, "" if n == 1 else "s", _esc(str(s["row"]))]
-	if bool(s["flushes"]):
-		how += ". It changes the PC, so the instruction fetched behind it is [color=%s]flushed[/color], and its last cycle refills the pipeline from the new address." % _c("red")
-	elif n > 1:
-		how += ", so the instruction behind it waits in IF/EX."
-	else:
-		how += ": the pipeline keeps finishing one instruction per cycle."
-	body.append_text("[table=1][cell bg=%s padding=14,10,14,10][b]What it does[/b]\n%s\n\n[b]On the pipeline[/b]\n%s[/cell][/table]\n\n" % [
-		_c("panel_alt"), _esc(str(s["summary"])), how])
-
-	# the cycle strip
-	var labels := []
-	var keys := []
-	for j in cycles.size():
-		var ch := _pw_chip(i, j, cycles[j]["view"])
-		labels.append(ch[0])
-		keys.append(ch[1])
-	body.append_text("[b]%d cycle%s[/b]  [color=%s]— click one, or use ← →[/color]\n" % [
-		cycles.size(), "" if cycles.size() == 1 else "s", _c("dim")])
-	body.append_text(_chips("pc", labels, keys, k))
-
-	# the selected cycle
-	var ch := _pw_chip(i, k, view)
-	var title := "Pipeline cycle %d" % int(view["cycle"])
-	var badge := "before the first instruction executes"
-	if view.get("E") != null:
-		badge = "Execute %d of %d" % [int(view["E"]["k"]), int(view["E"]["cycles"])]
-		if ch[1] == "red":
-			badge += " · branch taken"
-		elif ch[1] == "stage_d":
-			badge += " · refilling"
-	body.append_text("\n[font_size=%d][b]%s[/b][/font_size]   [bgcolor=%s][color=%s] %s [/color][/bgcolor]\n\n" % [
-		roundi(21 * text_scale), title, _c(ch[1]), _c("on_stage"), badge])
-	var w := clampf(body.size.x - 70.0, 360.0, 1400.0)
-	if k < shots.size() and shots[k] != null:
-		body.add_image(shots[k], int(w), int(w * float(SHOT_SIZE.y) / SHOT_SIZE.x))
-		body.append_text("\n")
-	var st: Dictionary = PV.stage_text(view)
-	body.append_text("[table=2][cell bg=%s padding=12,8,12,10 expand=1][color=%s][b]Fetch[/b][/color]\n%s[/cell][cell bg=%s padding=12,8,12,10 expand=1][color=%s][b]Decode + Execute[/b][/color]\n%s[/cell][/table]\n" % [
-		_c("panel_alt"), _c("stage_f"), st["F"], _c("panel_alt"), _c("stage_e"), st["E"]])
-	body.append_text("[color=%s]The simulator runs each instruction as a whole, so the registers in the picture show the state after this instruction has finished.[/color]\n\n" % _c("dim"))
-
-	# on to the next cycle / instruction
-	var nxt := ""
-	if k > 0:
-		nxt += _button("pc:%d" % (k - 1), "◀ Previous cycle") + "  "
-	if k < cycles.size() - 1:
-		nxt += _button("pc:%d" % (k + 1), "Next cycle ▶")
-	elif i < steps.size() - 1:
-		nxt += _button("pw:%d" % (i + 1), "Next instruction: %s ▶" % _esc(_tidy(str(steps[i + 1]["text"]))))
-	body.append_text(nxt + "\n\n" + KEYS_HINT % _c("dim"))
-	body.scroll_to_line(0)
-
-
-## Draw the pipeline once per cycle of `step` and return the pictures.
-func _pw_render(step: Dictionary, gen: int) -> Array:
-	if _pshot_vp == null:
-		_pshot_vp = SubViewport.new()
-		_pshot_vp.size = SHOT_SIZE
-		_pshot_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
-		add_child(_pshot_vp)
-		_pshot_view = load(PIPELINE_PATH).new()
-		_pshot_view.still = true
-		_pshot_view.size = Vector2(SHOT_SIZE)
-		_pshot_vp.add_child(_pshot_view)
-		await get_tree().process_frame
-	var out := []
-	for cy in step["cycles"]:
-		if gen != _wt_gen:
-			return out
-		var post: Dictionary = cy["post"]
-		_pshot_view.update_state({"loaded": true, "regs": post["regs"], "flags": post["flags"],
-			"pipe": cy["view"], "running": false, "changed": [], "cps": 0})
-		_pshot_view.queue_redraw()
-		_pshot_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
-		await RenderingServer.frame_post_draw
-		await RenderingServer.frame_post_draw
-		var img := _pshot_vp.get_texture().get_image()
-		out.append(ImageTexture.create_from_image(img) if img != null else null)
-	return out

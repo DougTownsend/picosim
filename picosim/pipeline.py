@@ -10,7 +10,7 @@ instruction laid out runs the next one, so the registers show the state
 after the instruction in Execute has finished.
 
 Used by the server (the main window's pipeline view) and by the walkthrough
-(the user guide's pipeline walkthrough).
+(the pipeline walkthrough beside the diagram).
 """
 
 from . import timing

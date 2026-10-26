@@ -19,6 +19,7 @@ const Spotlight := preload("res://scripts/spotlight.gd")
 const Tour := preload("res://scripts/tour.gd")
 const ChallengeBar := preload("res://scripts/challenge_bar.gd")
 const ExplainPanel := preload("res://scripts/explain_panel.gd")
+const WalkPanel := preload("res://scripts/walk_panel.gd")
 const MACHINES := ["multicycle", "m0plus"]
 
 ## Clock-speed presets (cycles per second); 0 = as fast as possible.
@@ -32,8 +33,6 @@ const HeatOverlay := preload("res://scripts/heat_overlay.gd")
 const SPEEDS := [1, 2, 4, 8, 16, 50, 200, 1000, 10000, 100000, 0]
 ## Optional user guide: if this file is deleted the Guide button just disappears.
 const GUIDE := "res://scripts/guide.gd"
-## Optional help chatbot (Ask picosim): likewise, deleting it removes the Ask button.
-const CHAT := "res://scripts/chat_panel.gd"
 ## Text in a panel grows when the user drags a splitter to enlarge it.
 const TEXT_SCALE_MAX := 3.0
 ## Theme font-size items that set a control's text size.
@@ -56,6 +55,8 @@ var perf_window
 var zoom := 1.0
 var zoom_label: Button
 var diagram_area: Control
+var diagram_split: HSplitContainer   # the diagram, with the walkthrough beside it
+var walk_panel                       # every step of the program, and where you are (walk_panel.gd)
 var layout_root: VBoxContainer
 var right_split: VSplitContainer
 var pico_overlay: Control
@@ -76,9 +77,6 @@ var _heat_key := ""
 var research := false             # --research (or --dev): the heat map at any level
 var _shown_level := 1             # the level the window is laid out for
 var guide: Node
-var chat: Node                    # Ask picosim (chat_panel.gd), if present
-var btn_ask: Button
-var _dump_pack := ""              # --dump-pack PATH: write the knowledge pack there and quit
 
 var btn_open: Button
 var btn_reload: Button
@@ -119,6 +117,7 @@ var _demo_click_pin := 0
 var _demo_component := ""
 var _demo_click_gate := ""        # --demo-click-gate ID: click that buffer with a real mouse event
 var _demo_machine := ""          # --machine=m0plus: start on that machine
+var _demo_goto := ""             # --demo-goto STEP[:CYCLE]: the walkthrough's Go here, once it has loaded
 var _demo_settings := false      # --settings: open the program's settings form
 var _demo_level := 0             # --demo-level-up N: raise the level to N (not saved)
 var _text_panels: Array = []     # [{panel, fonts, growth, size, scale}] — see _setup_text_scaling
@@ -139,7 +138,6 @@ func _ready() -> void:
 	Backend.connected.connect(func():
 		_set_status("Connected to simulator", false)
 		_send_options())
-	Backend.facts_received.connect(_send_knowledge)   # once the guide can quote cycle counts
 	Backend.disconnected.connect(func(): _set_status("Simulator backend disconnected", true))
 	_set_status("Connecting to simulator…", false)
 	Palette.changed.connect(_on_palette)
@@ -171,6 +169,8 @@ func _ready() -> void:
 			_demo_click_pin = int(args[i + 1])
 		if args[i] == "--demo-click-gate" and i + 1 < args.size():
 			_demo_click_gate = args[i + 1]
+		if args[i] == "--demo-goto" and i + 1 < args.size():
+			_demo_goto = args[i + 1]
 		if args[i].begins_with("--machine="):
 			_demo_machine = args[i].substr(10)
 		if args[i] == "--settings":
@@ -188,8 +188,6 @@ func _ready() -> void:
 			_tour_step = int(args[i + 1])
 		if args[i] == "--demo-level-up" and i + 1 < args.size():
 			_demo_level = int(args[i + 1])
-		if args[i] == "--dump-pack" and i + 1 < args.size():
-			_dump_pack = args[i + 1]
 	if research:
 		btn_perf.visible = true
 
@@ -217,6 +215,9 @@ func _process(_delta: float) -> void:
 			Backend.send("step_back")
 		_demo_steps = 0
 		_demo_back = 0
+	if _demo_goto != "" and walk_panel._items.size() > 0:
+		walk_panel._goto(int(_demo_goto.get_slice(":", 0)), int(_demo_goto.get_slice(":", 1)))
+		_demo_goto = ""
 	if _demo_run >= 0 and Backend.state.get("loaded", false):
 		var cps := _demo_run
 		_demo_run = -1
@@ -243,6 +244,7 @@ func _process(_delta: float) -> void:
 	if _screenshot_path != "" and (Backend.state.has("loaded") or error_dialog.visible):
 		_screenshot_frames += 1
 		if _screenshot_frames == _screenshot_wait:
+			RenderingServer.force_draw()    # macOS may skip frames for a window in the background
 			get_viewport().get_texture().get_image().save_png(_screenshot_path)
 			get_tree().quit()
 
@@ -319,11 +321,18 @@ func _build_ui() -> void:
 	explain_panel.toggled_open.connect(func(on): explain_split.collapsed = not on)
 
 	# the multi-cycle datapath and the 2-stage pipeline share one area
+	# … with the walkthrough beside it (walk_panel.gd)
+	diagram_split = HSplitContainer.new()
+	diagram_split.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	diagram_split.size_flags_stretch_ratio = 2.2
+	right_split.add_child(diagram_split)
 	diagram_area = MarginContainer.new()   # stacks its children, full size
 	diagram_area.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	diagram_area.size_flags_stretch_ratio = 2.2
+	diagram_area.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	diagram_area.custom_minimum_size = Vector2(500, 300)
-	right_split.add_child(diagram_area)
+	diagram_split.add_child(diagram_area)
+	walk_panel = WalkPanel.new()
+	diagram_split.add_child(walk_panel)
 	diagram = DiagramView.new()
 	diagram.set_speed(SPEEDS[int(speed_slider.value)])
 	diagram_area.add_child(diagram)
@@ -358,6 +367,7 @@ func _build_ui() -> void:
 	console_panel.custom_minimum_size.x = 280
 	bottom.add_child(console_panel)
 	diagram_area.visible = false
+	diagram_split.visible = false
 	cycle_area.visible = false
 
 	# Full-window host for the Pico board; pico_view is moved in here on demand.
@@ -549,18 +559,14 @@ func _build_toolbar() -> Control:
 		add_child(guide)
 		btn_guide = _button("Guide", "How to use picosim (F1)", func(): guide.open())
 		bar.add_child(btn_guide)
-	if ResourceLoader.exists(CHAT):
-		chat = load(CHAT).new()
-		chat.host = self
-		add_child(chat)
-		btn_ask = _button("Ask", "Ask picosim a question about your program, the app or assembly (?)", func(): chat.open())
-		bar.add_child(btn_ask)
 	return bar
 
 
-## The seven coach marks of the first-run tour (tour.gd).
+## The six coach marks of the first-run tour (tour.gd).
 func _start_tour() -> void:
 	level_bar.visible = false
+	if mem_panel.disasm_hidden and not walk_panel.is_open:
+		walk_panel.set_open(true, false)        # "Your program" points at it
 	tour.start([
 		[btn_insn, "Step through your program",
 			"Press [b]Step instruction[/b] (or the [b]S[/b] key) to run one line of your program, then look at what changed. [b]◀ Step back[/b] ([b]B[/b]) undoes a step, so try things freely. [b]Run[/b] ([b]Space[/b]) lets the program go by itself."],
@@ -568,14 +574,14 @@ func _start_tour() -> void:
 			"After every step this panel says in plain words what the processor just did, and what the next step will do: where the program goes next and why. Tick [b]More detail[/b] to see exactly what changed. Click its title to fold it away."],
 		[regs_panel, "Registers",
 			"The CPU's 16 registers, the numbers it is working on. Whatever the last step changed turns [color={yellow}]yellow[/color], and the line under the flags says which line of your file changed it."],
-		[mem_panel, "Your program",
+		[walk_panel, "Your program",
+			"Every instruction your program runs, in order, with what it does. The ▶ row is where you are; click any step to read it, and [b]Go here[/b] jumps there. Click a step's ● column to set a breakpoint, where Run stops. The [b]Memory[/b] tab under the Registers shows the bytes in memory."]
+		if mem_panel.disasm_hidden else [mem_panel, "Your program",
 			"Each row is one instruction: its address, its bits, and the line of your file it came from. The highlighted row runs next. Click a row's first column to set a breakpoint, where Run stops."],
 		[console_panel, "Serial console",
 			"What your program prints appears here. When it waits for a key ([code]getchar[/code]), click here and type."],
 		[btn_guide, "The guide",
 			"The guide explains each panel and walks you through the first programs. Open it here or with [b]F1[/b]. To see this tour again, use [b]View ▸ Show the tour again[/b]."],
-		[btn_ask, "Ask picosim",
-			"Stuck? Ask a question in plain words, such as [i]Why did my program stop?[/i] or [i]What does LDR do?[/i], here or with the [b]?[/b] key. It explains and gives hints; it never writes your code for you."],
 	])
 
 
@@ -627,7 +633,7 @@ func _style_level_bar() -> void:
 ## What each level adds, for the strip: [title, what is new, guide topic].
 const LEVEL_NEWS := {
 	2: ["Level 2 · Memory & I/O", "every instruction is shown now, the built-in OS's too ([b]Step over[/b] skips a whole bl call), the [b]Memory[/b] tab (the bytes in memory and the stack), the [b]Raspberry Pi Pico[/b] board under it (the chip's pins) and the [b]Simulator[/b] menu (run your program on a real Pico).", "memmap"],
-	3: ["Level 3 · Inside the CPU", "the [b]CPU diagram[/b] on the right with the cycle inspector under it, [b]Step cycle[/b] (F11) to run one clock cycle at a time, the datapath registers in the Registers panel, and the [b]heat overlay[/b]: each part of the diagram is tinted by how much your program has used it (View menu to turn it off).", "cpuintro"],
+	3: ["Level 3 · Inside the CPU", "the [b]CPU diagram[/b] on the right with the cycle inspector under it and the [b]Walkthrough[/b] beside it (every step of your program, ▶ on the one you are on, and the breakpoints), so the Disassembly makes way for the [b]Memory[/b] tab while the diagram is shown, [b]Step cycle[/b] (F11) to run one clock cycle at a time, the datapath registers in the Registers panel, and the [b]heat overlay[/b]: each part of the diagram is tinted by how much your program has used it (View menu to turn it off).", "cpuintro"],
 	4: ["Level 4 · Pipeline & performance", "the diagram now shows the Pico's own [b]2-stage pipeline[/b] (the menu next to the diagram button switches back to Multi-cycle), and the [b]Performance[/b] window (F2) measures your program.", "pipeintro"],
 }
 
@@ -652,7 +658,7 @@ func _level_up(old: int, now: int) -> void:
 	if old < 3 and now >= 3:
 		btn_diagram.button_pressed = true          # the diagram and the cycle inspector
 		_set_heat_overlay(true)                     # with the heat overlay on it
-		fresh += [btn_cycle, btn_diagram, diagram_area, cycle_area, regs_panel.dp_row]
+		fresh += [btn_cycle, btn_diagram, diagram_area, walk_panel, cycle_area, regs_panel.dp_row, mem_panel]
 	if old < 4 and now >= 4:
 		machine_select.select(1)                    # the 2-stage pipeline
 		_on_machine(1)
@@ -996,10 +1002,14 @@ func _apply_machine() -> void:
 
 func _on_diagram_toggled(on: bool) -> void:
 	diagram_area.visible = on
+	diagram_split.visible = on
 	cycle_area.visible = on
 	btn_diagram.text = "Hide CPU Diagram" if on else "Show CPU Diagram"
 	console_panel.set_compact(on)
 	explain_panel.set_diagram_shown(on)
+	# the walkthrough beside the diagram lists the program: the Disassembly
+	# makes way for the Memory tab (buttons for the diagram exist from Level 3)
+	mem_panel.set_disasm_hidden(on and Level.at_least(3))
 
 
 func _on_pico_fullscreen(on: bool) -> void:
@@ -1049,9 +1059,6 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			if sim: _toggle_run()
 		KEY_F2:
 			if Level.at_least(4) or research: perf_window.open()
-		KEY_SLASH, KEY_QUESTION:
-			if chat and plain and (k.keycode == KEY_QUESTION or k.shift_pressed): chat.open()
-			else: return
 		KEY_O:
 			if k.is_command_or_control_pressed(): _open_dialog()
 		KEY_R:
@@ -1233,113 +1240,3 @@ func _update_controls() -> void:
 	btn_flash.visible = pico_ctl
 	btn_connect.text = "Disconnect" if st.get("serial") != null else "Connect"
 	btn_flash.disabled = not loaded or not str(st.get("path", "")).ends_with(".s")
-
-
-# ── Ask picosim (chat_panel.gd, picosim/chat/) ──────────────────────────────
-
-## The files the knowledge pack is built from; tests/test_chat.py checks that
-## tests/fixtures/pack.json was dumped from these exact files.
-const PACK_SOURCES := ["res://scripts/guide.gd", "res://scripts/component_info.gd", "res://scripts/state_info.gd",
-	"res://scripts/level.gd", "res://scripts/main.gd", "res://scripts/welcome.gd"]
-var _ask_spot := 0                # bumps with every "Show me", so only the latest one is released
-
-
-## The controls Ask picosim can point at with "Show me", by id.  The bot's
-## catalog (picosim/chat/catalog.py) names these ids.
-func ask_controls() -> Dictionary:
-	return {"open": btn_open, "examples": examples_menu, "reload": btn_reload, "settings": btn_settings,
-		"step_back": btn_back, "step_insn": btn_insn, "step_over": btn_over, "step_cycle": btn_cycle,
-		"run": btn_run, "speed": speed_slider, "mode": mode_select, "flash": btn_flash, "connect": btn_connect,
-		"zoom": zoom_label, "diagram": btn_diagram, "machine": machine_select, "view": view_menu,
-		"perf": btn_perf, "level": level_select, "guide": btn_guide, "ask": btn_ask,
-		"registers": regs_panel, "numfmt": regs_panel.format_select, "disassembly": mem_panel,
-		"memory_tab": mem_panel, "skip_main": mem_panel.btn_main, "explain": explain_panel,
-		"more_detail": explain_panel.detail_box, "console": console_panel, "pico": pico_view,
-		"status": status_label, "cycles": cycle_area}
-
-
-## What the student is looking at, sent with every question.
-func ask_context() -> Dictionary:
-	var shown := []
-	var ac := ask_controls()
-	for id in ac:
-		if ac[id] is Control and ac[id].is_visible_in_tree():
-			shown.append(id)
-	if not Level.at_least(2):
-		shown.erase("memory_tab")
-	return {"level": Level.current, "visible": shown, "mode": "pico" if mode_select.selected == 1 else "sim",
-		"tab": "memory" if mem_panel.tabs.current_tab == 1 else "disassembly",
-		"diagram": btn_diagram.button_pressed, "machine": MACHINES[machine_select.selected],
-		"board": "hidden" if not pico_view.visible else ("strip" if pico_view.compact else "shown"),
-		"theme": Palette.preference, "zoom": zoom}
-
-
-## Send the guide's knowledge pack to the backend (or, with --dump-pack,
-## write it to a file for the tests and quit).
-func _send_knowledge() -> void:
-	if chat == null and _dump_pack == "":
-		return
-	var pack: Dictionary = guide.knowledge_pack() if guide else {"levels": {}}
-	var controls := []
-	var ac := ask_controls()
-	for id in ac:
-		var c = ac[id]
-		if c is Control:
-			controls.append({"id": id, "tooltip": c.tooltip_text, "label": str(c.get("text")) if c.get("text") != null else ""})
-	pack["controls"] = controls
-	pack["examples"] = Welcome.examples().map(func(e): return {"file": str(e["path"]).get_file(),
-		"title": e["title"], "about": e["about"], "level": e["level"]})
-	var levels := []
-	for n in range(1, Level.MAX + 1):
-		var news: Array = LEVEL_NEWS.get(n, ["", "", "start"])
-		levels.append({"n": n, "name": Level.NAMES[n - 1], "about": Level.ABOUT[n - 1], "news": news[1], "topic": news[2]})
-	pack["level_info"] = levels
-	pack["version"] = 1
-	var hashes := PackedStringArray()
-	for p in PACK_SOURCES:
-		hashes.append(FileAccess.get_sha256(p))
-	pack["sources"] = "\n".join(hashes).sha256_text()
-	if _dump_pack != "":
-		var f := FileAccess.open(_dump_pack, FileAccess.WRITE)
-		f.store_string(JSON.stringify(pack, " "))
-		f.close()
-		get_tree().quit()
-		return
-	Backend.send("chat_knowledge", {"pack": pack})
-
-
-## Run a reply's action when the student clicks it: point at a control,
-## open a guide page, show an address in the Memory tab or change the level.
-func run_ask_action(kind: String, arg: Variant) -> void:
-	match kind:
-		"spotlight":
-			var c = ask_controls().get(str(arg))
-			if str(arg) == "cycles" and not cycle_area.visible and Level.at_least(3):
-				btn_diagram.button_pressed = true
-			if c is Control and c.is_visible_in_tree():
-				_ask_point(c)
-		"open_guide":
-			if guide:
-				guide.open(str(arg))
-		"memory_tab":
-			if Level.at_least(2):
-				mem_panel.tabs.current_tab = 1
-				if str(arg) != "":
-					mem_panel.mem_view._on_goto(str(arg))
-				_ask_point(mem_panel)
-		"set_level":
-			Level.set_level(int(arg))
-		"open_examples":
-			examples_menu.show_popup()
-
-
-## Outline a control for a few seconds (not while the tour is using the outline).
-func _ask_point(c: Control) -> void:
-	if tour.visible:
-		return
-	_ask_spot += 1
-	var token := _ask_spot
-	spotlight.hold([c])
-	get_tree().create_timer(4.0).timeout.connect(func():
-		if token == _ask_spot and not tour.visible:
-			spotlight.release())

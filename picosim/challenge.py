@@ -3,21 +3,17 @@
     @ Challenge: Make the program print 9, and keep R3 = 1.
     @ Expect: output "9\\n"
     @ Expect: R3 = 1
-    @ Hint: The two numbers are on lines 23 and 24.
 
 When the program halts, every Expect line is checked: `output "…"` against
 everything the program printed (a Python-style string, so \\n is a new line),
 and `Rn = value` (also SP, LR; the value in decimal, 0x hex, a negative
 number or a character like 'H') against the register's final value.
-
-Hint lines are the teacher's own hints for Ask picosim, given one at a time,
-in order, when a student asks for help with the challenge.
 """
 
 import ast
 import re
 
-_LINE = re.compile(r'^\s*@\s*(Challenge|Expect|Hint)\s*:\s*(.*?)\s*$', re.I)
+_LINE = re.compile(r'^\s*@\s*(Challenge|Expect)\s*:\s*(.*?)\s*$', re.I)
 _REG = re.compile(r'^(r1[0-2]|r[0-9]|sp|lr)\s*=\s*(.+)$', re.I)
 _NAMES = {'sp': 13, 'lr': 14}
 
@@ -62,7 +58,6 @@ def parse(source):
     lines before the first instruction are read."""
     task = []
     checks = []
-    hints = []
     for line in source.splitlines():
         s = line.strip()
         if s and not s.startswith('@'):
@@ -72,13 +67,11 @@ def parse(source):
             continue
         if m.group(1).lower() == 'challenge':
             task.append(m.group(2))
-        elif m.group(1).lower() == 'hint':
-            hints.append(m.group(2))
         else:
             checks.append((m.group(2), _check(m.group(2))))
     if not checks:
         return None
-    return {'task': ' '.join(task), 'checks': checks, 'hints': hints}
+    return {'task': ' '.join(task), 'checks': checks}
 
 
 def _show(s):

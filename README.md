@@ -165,7 +165,7 @@ goes on:
 |---|---|
 | 1 · Basics | Step instruction, Run, the registers and flags (in hex, decimal or signed), the disassembly, Explain this step and the serial console |
 | 2 · Memory & I/O | + the Memory tab (a map of memory, the bytes coloured by what they are, the stack as boxes, and what each step read or wrote), the Pico board, Pico (USB serial) mode |
-| 3 · Inside the CPU | + Step cycle, the CPU diagram and cycle inspector, MAR/MDR/IR, the program walkthrough |
+| 3 · Inside the CPU | + Step cycle, the CPU diagram and cycle inspector, MAR/MDR/IR, and the walkthrough beside the diagram (every step of the program, the current one marked, Go here to jump to any step, breakpoints), which replaces the disassembly with the Memory tab while the diagram is shown |
 | 4 · Pipeline & performance | + the 2-stage pipeline and the Performance window (the whole app) |
 
 The examples that use the Pico's pins (`05_blink_led.s`, `08_button_led.s`)
@@ -221,25 +221,6 @@ progress, panels skip updates that change nothing, the Pico board is drawn
 once into a texture, and while Run is on the diagram's pulse is redrawn at
 30 frames a second.
 
-**Ask picosim** (the toolbar's **Ask** button, or the `?` key) is a help
-chat. Students ask in their own words ("why did it stop?", "why is R0 72?",
-"what does LDR do?", "how do I set a breakpoint?") and get an answer built
-from the user guide and the program as it runs (`picosim/chat/`), with a
-link to the guide page and often a **Show me** button that outlines the
-control. It answers at the student's level, gives **hints only, never a
-finished solution** (there is no setting that changes this), and handles
-off-topic questions, personal data and wellbeing messages with fixed
-replies. It works offline. A teacher can optionally let questions it cannot
-answer go to Claude: `picosim --chat-setup` shows and creates the config
-file (`"ai": "on"`, the model, `max_ai_per_hour`, a `helpline`), which needs
-`pip install -e .[ai]` (Python 3.10+) and an `ANTHROPIC_API_KEY`; the
-student's question, a state summary and their program (personal data
-removed) are then sent to Anthropic, so check your school's rules first.
-`--teacher-config=PATH` uses another config file. Challenges can carry the
-teacher's own hints as `@ Hint:` lines. The guide's *Ask picosim* page has
-the details; `python -m picosim.chat.eval --heldout` runs the bot's
-evaluation set. GUI flags for screenshots: `--chat`, `--chat-ask "…"`.
-
 Raising the Level switches on what the new level adds (the Memory tab at 2,
 the CPU diagram at 3 (with the heat overlay on it), the 2-stage pipeline at 4), shows a "New at Level N"
 strip with a link to the matching lesson, and outlines the new controls with
@@ -252,7 +233,10 @@ a NEW tag for a few seconds (`gui/scripts/spotlight.gd`). Pass
   click a flag to toggle it.
 - **Memory** (bottom left): the *Disassembly* tab follows the PC; click the
   ● column to toggle a breakpoint. The *Memory* tab has a hex dump with
-  go-to, byte editing and a stack view.
+  go-to, byte editing and a stack view. At Levels 3 and 4, while the CPU
+  diagram is shown, only the *Memory* tab is shown: the walkthrough beside
+  the diagram lists the program instead, with the ▶ marker, the ● breakpoint
+  column and Skip to main. Hiding the diagram brings the Disassembly back.
 - **Raspberry Pi Pico** (bottom left): the board with its real 40-pin
   header. Every GPIO shows its live level right on its pin: a green **1**
   for an output driven high, **0** for low, blue for an input that reads 1,
