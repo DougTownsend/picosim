@@ -19,6 +19,7 @@ extends Node
 const POLL := 0.35          # seconds between requests while the machine changes
 const PIPE_N := [16, 32, 64, 128]
 const HeatTab := preload("res://scripts/heat_tab.gd")
+const HelpButton := preload("res://scripts/help_button.gd")
 
 var win: Window
 var tabs: TabContainer
@@ -67,6 +68,14 @@ func _ready() -> void:
 	heat_tab.name = "Heat map"
 	tabs.add_child(heat_tab)
 	tabs.tab_changed.connect(func(_t): if _heat_showing(): heat_tab.tick(1.0))
+	# the "?" sits in the empty end of the tab bar; the heat map has its own page
+	var help := HelpButton.new("performance", "Performance window")
+	help.size_flags_horizontal = Control.SIZE_SHRINK_END
+	help.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	bg.add_child(help)
+	var topics := {"Metrics": "perfmath", "Pipeline": "pipecycles", "Heat map": "heat"}
+	tabs.tab_changed.connect(func(t): help.topic = topics.get(str(tabs.get_tab_control(t).name), "performance"))
+	help.topic = "perfmath"   # Metrics opens first
 	Backend.perf_received.connect(_on_perf)
 	Backend.program_loaded.connect(func(_p): _reset())
 	_apply_palette()

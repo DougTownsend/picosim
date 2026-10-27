@@ -50,6 +50,7 @@ var C_SEL: Color
 
 const ComponentInfo := preload("res://scripts/component_info.gd")
 const HeatOverlay := preload("res://scripts/heat_overlay.gd")
+const HelpButton := preload("res://scripts/help_button.gd")
 
 ## Boxes that capture their inputs at the clock edge: data flowing into them
 ## does not continue out of them in the same cycle.
@@ -215,6 +216,7 @@ var selected_id := ""            # component whose info card is open
 var card: PanelContainer
 var card_text: RichTextLabel
 var card_hint: Label
+var card_help: Button      # the guide's page on the components (the FSM's: on its states)
 var text_scale := 1.0            # set by main when the diagram is dragged bigger
 var _card_pos = null             # Vector2 once the user has dragged the card
 var _card_grab = null            # mouse offset into the card while dragging
@@ -287,6 +289,8 @@ func _build_card() -> void:
 	close.focus_mode = Control.FOCUS_NONE
 	close.tooltip_text = "Close (Esc)"
 	close.pressed.connect(func(): select_component(""))
+	card_help = HelpButton.new("components", "Datapath components")
+	head.add_child(card_help)
 	head.add_child(close)
 	card_text = RichTextLabel.new()
 	card_text.bbcode_enabled = true
@@ -307,6 +311,8 @@ func select_component(id: String) -> void:
 	if id != "" and not ComponentInfo.INFO.has(id):
 		id = ""
 	selected_id = id
+	card_help.topic = "states" if id == "fsm" else "components"
+	card_help.tooltip_text = "Open the guide: " + ("FSM states" if id == "fsm" else "Datapath components")
 	if id == "":
 		_card_pos = null  # the next card opens in its default spot again
 		_card_grab = null

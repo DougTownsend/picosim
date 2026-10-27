@@ -50,6 +50,7 @@ var _unfold_all := false          # --guide-details (screenshots): every page un
 
 
 func _ready() -> void:
+	add_to_group("guide")   # help_button.gd finds the guide here
 	win = Window.new()
 	win.title = "picosim — User Guide"
 	win.visible = false
@@ -672,7 +673,7 @@ func _add_topics() -> void:
 		"• The tools from [code]installation.md[/code]: the ARM compiler, git and, ideally, [code]picotool[/code]. Your teacher has probably installed them already.\n" +
 		_sub("Steps") +
 		"1. Load your program in picosim and check it in the Simulator first.\n" +
-		"2. Choose [b]Pico (USB serial)[/b] in the toolbar's mode menu (it says [b]Simulator[/b] until you change it). The port menu, " + _k("⟳") + ", " + _k("Connect") + " and " + _k("Flash") + " appear.\n" +
+		"2. Choose [b]Pico (USB serial)[/b] in the toolbar's mode menu (it says [b]Simulator[/b] until you change it). The port menu, " + _k("⟳") + ", " + _k("Connect") + " and " + _k("Flash") + " take the place of the stepping buttons (the board runs the program, so Step and Run are put away until you switch back to Simulator).\n" +
 		"3. Click " + _k("Flash") + ". picosim builds the program with the Pico SDK and uploads it; the console shows each step. The very first build downloads the SDK and takes a few minutes; later ones take seconds. It uploads with [code]picotool[/code] if that is installed; otherwise it copies the file to the board's [code]RPI-RP2[/code] drive, which appears when you [b]hold the BOOTSEL button while plugging the board in[/b].\n" +
 		"4. When the upload finishes, picosim connects to the board by itself and the console talks to it: what the board prints appears in green, and keys you type go to the board. The board waits up to 5 seconds for this connection before your program starts, so nothing it prints is lost. If it does not connect, pick the port marked [i](Pico)[/i] (" + _k("⟳") + " refreshes the list) and click " + _k("Connect") + ".\n" +
 		"5. The " + _link("pico", "Pico board") + " drawing turns LIVE and shows your real board's pins.\n" +
@@ -992,7 +993,7 @@ func _summaries() -> Dictionary:
 	if l3:
 		panels += "; " + _k("Show CPU Diagram") + " adds a drawing of the processor's insides with the [b]Walkthrough[/b] beside it, which lists your program while the Disassembly makes way for the Memory tab"
 	d["tour"] = "Across the top is the toolbar: " + _k("Open…") + " and " + _k("Examples") + " load a program, " + _k("Reload") + " starts it over, " + _k("◀ Step back") + ", " + _k("Step instruction") + " and " + _k("Run") + " move through it, and " + _k("Speed") + " sets how fast Run goes. Below it, " + panels + ".\n\n" + \
-		"Hover any button for a reminder of what it does. A greyed-out button cannot be used right now: for example Step after the program has finished, until you press " + _k("Reload") + ". " + _k("View") + " ▸ [b]Show the tour again[/b] replays the short first-run tour."
+		"Hover any button for a reminder of what it does, or click the small " + _k("?") + " beside a panel's title to open its page in this guide. A greyed-out button cannot be used right now: for example Step after the program has finished, until you press " + _k("Reload") + ". " + _k("View") + " ▸ [b]Show the tour again[/b] replays the short first-run tour."
 	d["running"] = "Every program runs the same way: picosim's small [b]built-in OS[/b] calls your [code]main[/code], the CPU runs one instruction at a time from top to bottom (unless a branch jumps somewhere else), the program calls functions such as [code]putchar[/code] to print, and [code]main[/code] ends with [code]pop {…, pc}[/code], which returns to the OS. The OS then stops the processor and the status text says [b]halted[/b]." + \
 		(" At Level 1 the OS's own instructions are hidden, so ▶ starts on [code]main[/code] and each [code]bl putchar[/code] is one step." if not l2 else " From Level 2 you also step through the OS's instructions: three at the start and two inside each putchar; " + _k("Step over") + " (" + _k("O") + ") runs a whole call in one step.") + "\n\n" + \
 		_k("Step instruction") + " runs one instruction. " + _k("Run") + " keeps going until the program ends, reaches a [b]breakpoint[/b] (" + _bp_click() + ") or you press " + _k("Pause") + ". " + _k("◀ Step back") + " undoes a step, and " + _k("Reload") + " starts again. The full details walk through Say hello line by line, with the real values."
@@ -1138,6 +1139,7 @@ func _tour() -> String:
 	rows.append([_k("Guide"), "This guide (" + _k("F1") + "). " + _k("Esc") + " closes it."])
 	t += _grid(["Control", "What it does"], rows, 1)
 	t += "Buttons that cannot be used right now are greyed out: for example Step and Run after the program has halted, until you press " + _k("Reload") + ".\n"
+	t += "Every panel has a small " + _k("?") + " at the right of its title: it opens this guide at the page about that panel.\n"
 	t += _sub("The tour")
 	t += "The first time you load a program, a short tour points out Step, Explain this step, the Registers, " + ("the Walkthrough (the Disassembly while the CPU diagram is hidden)" if Level.at_least(3) else "the Disassembly") + ", the console and this guide, one at a time. " + _k("Next ▶") + " moves on and " + _k("Skip tour") + " (or " + _k("Esc") + ") ends it. To see it again, choose " + _k("View") + " ▸ [b]Show the tour again[/b].\n"
 	return t

@@ -11,6 +11,8 @@ extends PanelContainer
 ## last step changed and which line of the program did it.  Below level 3 the datapath registers and
 ## the FSM's next state are hidden: they belong to "Inside the CPU".
 
+const HelpButton := preload("res://scripts/help_button.gd")
+
 const NAMES := ["R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7",
 	"R8", "R9", "R10", "R11", "R12", "SP", "LR", "PC"]
 const DP_NAMES := ["MAR", "MDR", "IR", "IR2"]
@@ -80,6 +82,7 @@ func _ready() -> void:
 	format_select.item_selected.connect(_on_format)
 	_font(format_select, 14)
 	top.add_child(format_select)
+	top.add_child(HelpButton.new("registers", "Registers"))
 
 	var grid := GridContainer.new()
 	grid.columns = 8
@@ -128,6 +131,7 @@ func _ready() -> void:
 		cb.toggled.connect(func(on): Backend.send("set_flag", {"flag": f, "value": 1 if on else 0}))
 		row.add_child(cb)
 		flag_boxes[f] = cb
+	row.add_child(HelpButton.new("branches", "Flags and branches"))
 
 	change_label = Label.new()
 	change_label.clip_text = true

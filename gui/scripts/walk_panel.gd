@@ -20,6 +20,8 @@ extends PanelContainer
 ## differ; the panel says so when the instruction it expects is not the one
 ## the machine is on.
 
+const HelpButton := preload("res://scripts/help_button.gd")
+
 const LIMIT := 500                    # steps fetched (the walkthrough stops there)
 const CYCLE_KEYS := {"FETCH": "accent", "DECODE": "purple", "EVALUATE ADDRESS": "yellow",
 	"FETCH OPERANDS": "cyan", "EXECUTE": "red", "STORE RESULT": "green"}
@@ -94,6 +96,7 @@ func _ready() -> void:
 	fold_btn.focus_mode = Control.FOCUS_NONE
 	fold_btn.flat = true
 	fold_btn.pressed.connect(func(): set_open(false))
+	head.add_child(HelpButton.new("diagram", "Datapath diagram and walkthrough"))
 	head.add_child(fold_btn)
 
 	note = Label.new()

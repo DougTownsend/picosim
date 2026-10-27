@@ -11,6 +11,8 @@ extends PanelContainer
 ## Level (clock cycles from Level 3, the pipeline from Level 4) is left out
 ## below it.  Open / closed and More detail are remembered in settings.cfg.
 
+const HelpButton := preload("res://scripts/help_button.gd")
+
 signal toggled_open(open: bool)
 
 const SETTINGS := "user://settings.cfg"
@@ -69,6 +71,7 @@ func _ready() -> void:
 	detail_box.add_theme_font_size_override("font_size", 16)
 	detail_box.toggled.connect(_on_detail)
 	top.add_child(detail_box)
+	top.add_child(HelpButton.new("explain", "Explain this step"))
 	body = RichTextLabel.new()
 	body.bbcode_enabled = true
 	body.scroll_active = true

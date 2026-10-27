@@ -4,6 +4,8 @@ extends PanelContainer
 ## Click the output area and type to send keystrokes immediately, or use
 ## the line box below (Enter sends the line followed by a carriage return).
 
+const HelpButton := preload("res://scripts/help_button.gd")
+
 ## Palette key for each output source; text keeps its source so it can be
 ## recoloured when the colour scheme changes.
 const SOURCE_KEYS := {"system": "dim", "pico": "serial", "sim": "text"}
@@ -41,6 +43,7 @@ func _ready() -> void:
 	clear.focus_mode = Control.FOCUS_NONE
 	clear.pressed.connect(func(): out.clear(); _segs.clear())
 	head.add_child(clear)
+	head.add_child(HelpButton.new("serial", "Serial console"))
 
 	out = RichTextLabel.new()
 	out.size_flags_vertical = Control.SIZE_EXPAND_FILL

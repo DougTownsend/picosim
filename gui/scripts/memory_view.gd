@@ -21,6 +21,8 @@ extends VBoxContainer
 ## Everything is drawn by three custom Controls that redraw only when a new
 ## state arrives or the mouse moves over them, never every frame.
 
+const HelpButton := preload("res://scripts/help_button.gd")
+
 const RAM_TOP := 0x10000
 const OS_TOP := 0x3000
 const ROW := 16
@@ -126,6 +128,10 @@ func _ready() -> void:
 	follow_box.tooltip_text = "After each step, show the bytes it read or wrote"
 	follow_box.toggled.connect(_on_follow)
 	top.add_child(follow_box)
+	var gap := Control.new()
+	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.add_child(gap)
+	top.add_child(HelpButton.new("memmap", "Memory and addresses"))
 
 	banner = RichTextLabel.new()
 	banner.bbcode_enabled = true
@@ -158,6 +164,10 @@ func _ready() -> void:
 	stack.custom_minimum_size = Vector2(150, 160)
 	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	body.add_child(stack)
+	var stack_help := HelpButton.new("stack", "The stack and functions")
+	stack.add_child(stack_help)
+	stack_help.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 2)
+	stack_help.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 
 	var ins := HBoxContainer.new()
 	ins.add_theme_constant_override("separation", 6)
@@ -550,7 +560,7 @@ func _notes_by_row() -> Dictionary:
 		for col in ROW:
 			var a := view_addr + r * ROW + col
 			for n in labels_at.get(a, []):
-				items.append([col, str(n), "label"])
+				items.append([col, str(n), "dim"])
 			for reg in ptr.get(a, []):
 				items.append([col, str(reg) + " ↓", "accent"])
 		if not items.is_empty():
@@ -665,7 +675,7 @@ func _draw_grid(c: Control) -> void:
 		c.draw_rect(sq, t)
 		c.draw_string(font, Vector2(lx + 15 * text_scale, ly), e[1], HORIZONTAL_ALIGNMENT_LEFT, -1, fs2, dim)
 		lx += font.get_string_size(e[1], HORIZONTAL_ALIGNMENT_LEFT, -1, fs2).x + 30 * text_scale
-	for e in [["accent", "read by the last step"], ["changed", "written"]]:
+	for e in [["accent", "read"], ["changed", "written"]]:
 		var sq := Rect2(lx, ly - 11 * text_scale, 11 * text_scale, 11 * text_scale)
 		c.draw_rect(sq, Palette.c(e[0]), false, 2.0)
 		c.draw_string(font, Vector2(lx + 15 * text_scale, ly), e[1], HORIZONTAL_ALIGNMENT_LEFT, -1, fs2, dim)
@@ -978,7 +988,7 @@ func _draw_stack(c: Control) -> void:
 	var txt := Palette.c("text")
 	var sp := int(st["regs"][13])
 	c.draw_string(font, Vector2(6, 17 * s), "The stack", HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(14), txt)
-	c.draw_string(font, Vector2(6, 33 * s), "top of RAM: 0x10000 ↑ · grows down ↓", HORIZONTAL_ALIGNMENT_LEFT, c.size.x - 10, fs2, dim)
+	c.draw_string(font, Vector2(6, 33 * s), "grows down from 0x10000 ↓", HORIZONTAL_ALIGNMENT_LEFT, c.size.x - 10, fs2, dim)
 	var words := _stack_words()
 	var y := 42 * s
 	if sp >= RAM_TOP or words.is_empty():
@@ -1011,7 +1021,7 @@ func _draw_stack(c: Control) -> void:
 	for w in list:
 		var a := int(w[0])
 		if str(w[3]) != last_fn and str(w[3]) != "":
-			c.draw_string(font, Vector2(8, y + 12 * s), str(w[3]) + " saved:", HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(12), Palette.c("label"))
+			c.draw_string(font, Vector2(8, y + 12 * s), str(w[3]) + " saved:", HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(12), dim)
 			y += 15 * s
 		last_fn = str(w[3])
 		_stack_box(c, Rect2(6, y, c.size.x - 12, box_h - 4), w, changed.has(a), acc.get(a, ""), a == (sp & ~3))

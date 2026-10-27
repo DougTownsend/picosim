@@ -9,6 +9,8 @@ extends PanelContainer
 ## way for the Memory tab: the walkthrough beside the diagram (walk_panel.gd)
 ## lists the program then, with the ▶ marker, the breakpoints and Skip to main.
 
+const HelpButton := preload("res://scripts/help_button.gd")
+
 var tabs: TabContainer
 var tree: Tree
 var follow: CheckBox
@@ -140,6 +142,7 @@ func _build_disasm() -> Control:
 	btn_main.tooltip_text = "Run the built-in OS's start-up instructions and stop at the first line of your main"
 	btn_main.pressed.connect(func(): Backend.send("run_to_main"))
 	top.add_child(btn_main)
+	top.add_child(HelpButton.new("memory", "Disassembly"))
 
 	tree = Tree.new()
 	tree.size_flags_vertical = Control.SIZE_EXPAND_FILL

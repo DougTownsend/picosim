@@ -84,6 +84,7 @@ var mono: Font
 var _scale := 1.0
 var _origin := Vector2.ZERO
 var btn_full: Button
+var corner: HBoxContainer   # the top-right buttons: main.gd adds the guide's "?" here
 var _key = null          # what the drawing shows: redrawn only when it changes
 ## The board is painted once into a texture (_vp) and that one texture is
 ## drawn each frame: Godot renders every drawing in the window on every
@@ -119,10 +120,12 @@ func _ready() -> void:
 	btn_full.toggle_mode = true
 	btn_full.focus_mode = Control.FOCUS_NONE
 	btn_full.tooltip_text = "Show the board full-window (Esc to return)"
-	btn_full.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 6)
-	btn_full.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	btn_full.toggled.connect(_on_full_toggled)
-	add_child(btn_full)
+	corner = HBoxContainer.new()
+	corner.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 6)
+	corner.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	add_child(corner)
+	corner.add_child(btn_full)
 
 
 func _load_colors() -> void:
@@ -273,7 +276,7 @@ func _paint() -> void:
 		_ci.draw_string(font, Vector2(10, y), "▸ Raspberry Pi Pico board", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, C_TEXT)
 		var w := font.get_string_size("▸ Raspberry Pi Pico board   ", HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		_ci.draw_string(font, Vector2(10 + w, y), "this program has not used any pins yet · click to show the board",
-			HORIZONTAL_ALIGNMENT_LEFT, size.x - w - 20, fs, C_DIM)
+			HORIZONTAL_ALIGNMENT_LEFT, size.x - w - 26 - (corner.size.x if corner else 0.0), fs, C_DIM)
 		return
 	_scale = min(size.x / W, size.y / H)
 	_origin = (size - Vector2(W, H) * _scale) / 2.0

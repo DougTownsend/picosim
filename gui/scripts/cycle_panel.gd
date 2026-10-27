@@ -3,6 +3,8 @@ extends PanelContainer
 ## explains the selected one in context (what the datapath does and which
 ## state actually changes), and lets you step back through earlier cycles.
 
+const HelpButton := preload("res://scripts/help_button.gd")
+
 signal cycle_selected(info: Dictionary)
 
 const PHASES := ["FETCH", "DECODE", "EVALUATE ADDRESS", "FETCH OPERANDS", "EXECUTE", "STORE RESULT"]
@@ -55,7 +57,11 @@ func _ready() -> void:
 	var t := Label.new()
 	t.text = "Cycle by cycle"
 	t.add_theme_font_size_override("font_size", 15)
-	v.add_child(t)
+	var th := HBoxContainer.new()
+	v.add_child(th)
+	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	th.add_child(t)
+	th.add_child(HelpButton.new("cycles", "Cycle by cycle"))
 	insn_label = Label.new()
 	insn_label.add_theme_font_override("font", font)
 	insn_label.add_theme_font_size_override("font_size", 14)

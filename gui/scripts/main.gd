@@ -18,6 +18,7 @@ const SettingsDialog := preload("res://scripts/settings_dialog.gd")
 const Spotlight := preload("res://scripts/spotlight.gd")
 const Tour := preload("res://scripts/tour.gd")
 const ChallengeBar := preload("res://scripts/challenge_bar.gd")
+const HelpButton := preload("res://scripts/help_button.gd")
 const ExplainPanel := preload("res://scripts/explain_panel.gd")
 const WalkPanel := preload("res://scripts/walk_panel.gd")
 const MACHINES := ["multicycle", "m0plus"]
@@ -29,6 +30,9 @@ const ZOOM_STEP := 0.1
 const SETTINGS := "user://settings.cfg"
 const TOUR_ID := 100              # View menu item: Show the tour again
 const HEAT_ID := 101              # View menu item: Heat overlay on the CPU diagram
+const KEYS_ID := 102              # View menu item: the guide's Keyboard shortcuts
+const LAYOUT_ID := 103            # View menu item: the guide's Layout and zoom
+const ABOUT_EXAMPLES_ID := 1000   # Examples menu item: the guide's page on the examples
 const HeatOverlay := preload("res://scripts/heat_overlay.gd")
 const SPEEDS := [1, 2, 4, 8, 16, 50, 200, 1000, 10000, 100000, 0]
 ## Optional user guide: if this file is deleted the Guide button just disappears.
@@ -92,12 +96,14 @@ var port_select: OptionButton
 var btn_ports: Button
 var btn_connect: Button
 var btn_flash: Button
+var hw_help: Button        # Pico mode's "?": Running on a real Pico
 var btn_diagram: Button
 var machine_select: OptionButton
 var view_menu: MenuButton          # View ▾: the colour scheme
 var level_select: OptionButton
 var examples_menu: MenuButton
 var btn_perf: Button
+var sim_controls: HBoxContainer   # stepping and speed: shown in Simulator mode only
 var btn_settings: Button
 var settings_dialog: ConfirmationDialog
 var mode_sep: VSeparator
@@ -305,6 +311,8 @@ func _build_ui() -> void:
 	pico_home = lower
 	pico_view.fullscreen_toggled.connect(_on_pico_fullscreen)
 	pico_view.opened.connect(func(): _board_used = true)
+	pico_view.corner.add_child(HelpButton.new("pico", "Raspberry Pi Pico board"))
+	pico_view.corner.move_child(pico_view.corner.get_child(-1), 0)   # left of Enlarge
 
 	# right column: "Explain this step" on top (it folds away), then the
 	# diagram, then the cycle inspector + console underneath
@@ -340,6 +348,13 @@ func _build_ui() -> void:
 	pipe_view.set_speed(SPEEDS[int(speed_slider.value)])
 	pipe_view.visible = false
 	diagram_area.add_child(pipe_view)
+	# each drawing's "?" goes under its component card, so an open card covers it
+	for v in [[diagram, "diagram", "Datapath diagram"], [pipe_view, "pipeline", "Pipeline diagram"]]:
+		var h := HelpButton.new(v[1], v[2])
+		v[0].add_child(h)
+		v[0].move_child(h, 0)
+		h.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 4)
+		h.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 
 	var bottom := HSplitContainer.new()
 	bottom.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -360,7 +375,14 @@ func _build_ui() -> void:
 	pipe_caption.scroll_active = true
 	pipe_caption.selection_enabled = true
 	pipe_caption.add_theme_font_override("mono_font", Backend.mono_font())
+	var room := StyleBoxEmpty.new()
+	room.content_margin_right = 26   # the "?" sits in the top-right corner
+	pipe_caption.add_theme_stylebox_override("normal", room)
 	caption_panel.add_child(pipe_caption)
+	var cap_help := HelpButton.new("pipecycles", "Pipeline cycle by cycle")
+	cap_help.size_flags_horizontal = Control.SIZE_SHRINK_END
+	cap_help.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	caption_panel.add_child(cap_help)
 	cycle_panel.cycle_selected.connect(diagram.show_cycle)
 	console_panel = ConsolePanel.new()
 	console_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -449,12 +471,18 @@ func _build_toolbar() -> Control:
 	btn_back = _button("◀ Step back", "Undo the last step: go back one instruction (B)\nPartway through an instruction it goes back one cycle", func(): Backend.send("step_back"))
 	btn_run = _button("Run", "Run the program by itself, or pause it (Space or F5)", _toggle_run)
 	btn_run.custom_minimum_size.x = 70
-	for b in [btn_open, examples_menu, btn_reload, btn_settings, _sep(), btn_back, btn_insn, btn_over, btn_cycle, btn_run]:
+	for b in [btn_open, examples_menu, btn_reload, btn_settings, _sep()]:
 		bar.add_child(b)
+	# in Pico mode the board runs the program, so these give way to its port controls
+	sim_controls = HBoxContainer.new()
+	sim_controls.add_theme_constant_override("separation", 6)
+	bar.add_child(sim_controls)
+	for b in [btn_back, btn_insn, btn_over, btn_cycle, btn_run]:
+		sim_controls.add_child(b)
 
 	var sl := Label.new()
 	sl.text = "Speed"
-	bar.add_child(sl)
+	sim_controls.add_child(sl)
 	speed_slider = HSlider.new()
 	speed_slider.min_value = 0
 	speed_slider.max_value = SPEEDS.size() - 1
@@ -466,10 +494,10 @@ func _build_toolbar() -> Control:
 	speed_slider.value_changed.connect(_on_speed)
 	speed_slider.tooltip_text = "How fast Run goes, in clock cycles per second (Max = as fast as possible)"
 	sl.tooltip_text = speed_slider.tooltip_text
-	bar.add_child(speed_slider)
+	sim_controls.add_child(speed_slider)
 	speed_label = Label.new()
 	speed_label.custom_minimum_size.x = 90
-	bar.add_child(speed_label)
+	sim_controls.add_child(speed_label)
 	_on_speed(speed_slider.value)
 
 	mode_sep = _sep()
@@ -489,14 +517,15 @@ func _build_toolbar() -> Control:
 	btn_ports = _button("⟳", "Refresh serial ports", func(): Backend.send("serial_list"))
 	btn_connect = _button("Connect", "Open the selected serial port", _on_connect)
 	btn_flash = _button("Flash", "Build a .uf2 and upload it to the Pico", func(): Backend.send("flash"))
-	for b in [btn_ports, btn_connect, btn_flash]:
+	hw_help = HelpButton.new("hardware", "Running on a real Pico")
+	for b in [btn_ports, btn_connect, btn_flash, hw_help]:
 		bar.add_child(b)
 
 	# the status label takes the toolbar's spare width and grows to fit its
 	# text (see _set_status), so large insn/cycle counts are never cut off
 	status_label = Label.new()
 	status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	status_label.custom_minimum_size.x = 260
+	status_label.custom_minimum_size.x = 170
 	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	bar.add_child(status_label)
 	var zoom_out := _button("−", "Zoom out (Ctrl/Cmd −)", func(): _set_zoom(zoom - ZOOM_STEP))
@@ -558,6 +587,10 @@ func _build_toolbar() -> Control:
 		guide = load(GUIDE).new()
 		add_child(guide)
 		btn_guide = _button("Guide", "How to use picosim (F1)", func(): guide.open())
+		var vp2 := view_menu.get_popup()
+		vp2.add_separator("Help")
+		vp2.add_item("Keyboard shortcuts", KEYS_ID)
+		vp2.add_item("Layout and zoom", LAYOUT_ID)
 		bar.add_child(btn_guide)
 	return bar
 
@@ -694,9 +727,16 @@ func _fill_examples() -> void:
 	if list.is_empty():
 		pop.add_item("no examples folder found")
 		pop.set_item_disabled(0, true)
+	if guide:
+		pop.add_separator()
+		pop.add_item("About the examples…", ABOUT_EXAMPLES_ID)
+		pop.set_item_tooltip(pop.get_item_index(ABOUT_EXAMPLES_ID), "What each example shows and something to try in it (opens the guide)")
 
 
 func _on_example(id: int) -> void:
+	if id == ABOUT_EXAMPLES_ID:
+		guide.open("examples2" if Level.at_least(2) else "examples")
+		return
 	var path = examples_menu.get_popup().get_item_metadata(examples_menu.get_popup().get_item_index(id))
 	if path != null:
 		Backend.send("load", {"path": path})
@@ -787,17 +827,29 @@ func _on_text_panel_resized(e: Dictionary) -> void:
 func _default_zoom(win_size := Vector2i.ZERO) -> float:
 	if win_size == Vector2i.ZERO:
 		win_size = get_window().size
-	# Measure with the Pico-mode toolbar controls shown too, so switching
-	# modes later does not overflow the toolbar.
-	# Likewise the controls of higher levels and the panels behind the welcome
-	# page, so raising the level or loading a program never overflows either.
-	var extra: Array = [port_select, btn_ports, btn_connect, btn_flash, btn_cycle, btn_over, btn_diagram,
+	# Measure with the controls of higher levels and the panels behind the
+	# welcome page shown, so raising the level or loading a program never
+	# overflows the window.  The Simulator's stepping controls and the Pico's
+	# port controls take turns in the toolbar: measure each and keep the wider.
+	var extra: Array = [btn_cycle, btn_over, btn_diagram,
 		machine_select, btn_perf, mode_select, pico_view, panels].filter(func(c): return not c.visible)
 	for c in extra:
 		c.visible = true
 	var wv := welcome.visible
 	welcome.visible = false
-	var need := layout_root.get_combined_minimum_size() + Vector2(12, 12)  # + root margins
+	var pico_ctl: Array = [port_select, btn_ports, btn_connect, btn_flash, hw_help]
+	var pico_was: Array = pico_ctl.map(func(c): return c.visible)
+	var sim_was := sim_controls.visible
+	var need := Vector2.ZERO
+	for pico in [false, true]:
+		sim_controls.visible = not pico
+		for c in pico_ctl:
+			c.visible = pico
+		need = need.max(layout_root.get_combined_minimum_size())
+	need += Vector2(12, 12)  # + root margins
+	sim_controls.visible = sim_was
+	for i in pico_ctl.size():
+		pico_ctl[i].visible = pico_was[i]
 	for c in extra:
 		c.visible = false
 	welcome.visible = wv
@@ -808,6 +860,9 @@ func _default_zoom(win_size := Vector2i.ZERO) -> float:
 func _on_view_menu(id: int) -> void:
 	if id == HEAT_ID:
 		_set_heat_overlay(not heat_overlay)
+		return
+	if id == KEYS_ID or id == LAYOUT_ID:
+		guide.open("keys" if id == KEYS_ID else "layout")
 		return
 	if id == TOUR_ID:
 		if Backend.state.get("loaded", false):
@@ -1214,7 +1269,7 @@ func _set_status(text: String, bad: bool) -> void:
 	var font := status_label.get_theme_font("font")
 	var fsize := status_label.get_theme_font_size("font_size")
 	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize).x
-	status_label.custom_minimum_size.x = maxf(260.0, ceilf(w) + 4.0)
+	status_label.custom_minimum_size.x = maxf(170.0, ceilf(w) + 4.0)
 	Backend.set_color(status_label, "font_color", Palette.c("error") if bad else Palette.c("muted"))
 
 
@@ -1234,9 +1289,11 @@ func _update_controls() -> void:
 	btn_run.disabled = not (loaded and sim) or halted
 	btn_run.text = "Pause" if st.get("running", false) else "Run"
 	var pico_ctl := not sim and Level.at_least(2)
+	sim_controls.visible = not pico_ctl
 	port_select.visible = pico_ctl
 	btn_ports.visible = pico_ctl
 	btn_connect.visible = pico_ctl
 	btn_flash.visible = pico_ctl
+	hw_help.visible = pico_ctl and guide != null
 	btn_connect.text = "Disconnect" if st.get("serial") != null else "Connect"
 	btn_flash.disabled = not loaded or not str(st.get("path", "")).ends_with(".s")

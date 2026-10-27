@@ -51,6 +51,7 @@ var C_PANEL_ALT: Color
 
 const ComponentInfo := preload("res://scripts/component_info.gd")
 const HeatOverlay := preload("res://scripts/heat_overlay.gd")
+const HelpButton := preload("res://scripts/help_button.gd")
 
 ## Same timing rules as the CPU diagram's pulse (diagram_view.gd).
 const ANIM_FILL := 0.85
@@ -207,6 +208,7 @@ func _build_card() -> void:
 	close.focus_mode = Control.FOCUS_NONE
 	close.tooltip_text = "Close (Esc)"
 	close.pressed.connect(func(): select_component(""))
+	head.add_child(HelpButton.new("pipecomponents", "Pipeline components"))
 	head.add_child(close)
 	card_text = RichTextLabel.new()
 	card_text.bbcode_enabled = true
