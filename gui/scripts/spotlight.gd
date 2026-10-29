@@ -38,6 +38,12 @@ func hold(controls: Array) -> void:
 	_held = true
 
 
+## Stop the NEW outlines early (lowering the level); the tour's hold() stays.
+func stop_new() -> void:
+	if not _held:
+		release()
+
+
 func release() -> void:
 	_held = false
 	_targets.clear()

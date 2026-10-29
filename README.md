@@ -157,6 +157,13 @@ programs in [examples/](examples/). One click opens one, starting with
 `01_hello.s`. Each example begins with comments that say what it does and
 what to watch. The toolbar's **Examples** menu opens them later too.
 
+Clicking an example saves the student's own copy of it in `Documents/picosim`
+(only the first time; after that their copy is kept), loads that copy and
+opens it in a text editor (VS Code when installed, otherwise the system's
+editor for `.s` files), so they can change it straight away for its challenge.
+The files in `examples/` are never changed. **Examples → Start … over from the
+original** puts the original back over a copy.
+
 The **Level** menu (top right, remembered between runs) controls how much of
 the app is shown. Students can start at level 1 and move up as the course
 goes on:

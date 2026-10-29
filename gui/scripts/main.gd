@@ -33,6 +33,8 @@ const HEAT_ID := 101              # View menu item: Heat overlay on the CPU diag
 const KEYS_ID := 102              # View menu item: the guide's Keyboard shortcuts
 const LAYOUT_ID := 103            # View menu item: the guide's Layout and zoom
 const ABOUT_EXAMPLES_ID := 1000   # Examples menu item: the guide's page on the examples
+const RESTORE_EXAMPLE_ID := 1001  # Examples menu item: put the original back over the student's copy
+const COPIES_FOLDER_ID := 1002    # Examples menu item: show the folder of the student's copies
 const HeatOverlay := preload("res://scripts/heat_overlay.gd")
 const SPEEDS := [1, 2, 4, 8, 16, 50, 200, 1000, 10000, 100000, 0]
 ## Optional user guide: if this file is deleted the Guide button just disappears.
@@ -414,8 +416,10 @@ func _build_ui() -> void:
 	file_dialog.title = "Open assembly program"
 	file_dialog.file_selected.connect(func(p): Backend.send("load", {"path": p}))
 	var ex_dir := ProjectSettings.globalize_path("res://").path_join("../examples").simplify_path()
-	if DirAccess.dir_exists_absolute(ex_dir):
-		file_dialog.current_dir = ex_dir
+	for dir in [Welcome.copies_dir(), ex_dir]:     # the student's copies first
+		if DirAccess.dir_exists_absolute(dir):
+			file_dialog.current_dir = dir
+			break
 	add_child(file_dialog)
 
 	error_dialog = AcceptDialog.new()
@@ -679,29 +683,38 @@ func _on_level_changed() -> void:
 		_level_up(old, Level.current)
 	else:
 		level_bar.visible = false
+		spotlight.stop_new()
 
 
 ## Raising the level gives a fresh view: what the new level adds is switched
 ## on and shown (the Memory tab, the CPU diagram, the pipeline), the strip
 ## says what is new, and the new controls are outlined for a few seconds.
+## Levels the student has had on before are not announced again: going back
+## up to them only switches their views back on.
 func _level_up(old: int, now: int) -> void:
-	var fresh := []
-	if old < 2 and now >= 2:
-		fresh += [btn_over, mode_select, mem_panel, pico_view]
 	if old < 3 and now >= 3:
 		btn_diagram.button_pressed = true          # the diagram and the cycle inspector
 		_set_heat_overlay(true)                     # with the heat overlay on it
-		fresh += [btn_cycle, btn_diagram, diagram_area, walk_panel, cycle_area, regs_panel.dp_row, mem_panel]
 	if old < 4 and now >= 4:
 		machine_select.select(1)                    # the 2-stage pipeline
 		_on_machine(1)
-		fresh += [machine_select, btn_perf]
-		if old >= 3:
-			fresh.append(diagram_area)
 	if now == 2:
 		mem_panel.tabs.current_tab = 1              # Level 2's new view: the Memory tab
+	var seen := maxi(old, Level.highest)           # Level.highest still holds the old value here
+	if now <= seen:
+		level_bar.visible = false
+		return
+	var fresh := []
+	if seen < 2 and now >= 2:
+		fresh += [btn_over, mode_select, mem_panel, pico_view]
+	if seen < 3 and now >= 3:
+		fresh += [btn_cycle, btn_diagram, diagram_area, walk_panel, cycle_area, regs_panel.dp_row, mem_panel]
+	if seen < 4 and now >= 4:
+		fresh += [machine_select, btn_perf]
+		if seen >= 3:
+			fresh.append(diagram_area)
 	var t := ""
-	for n in range(old + 1, now + 1):
+	for n in range(seen + 1, now + 1):
 		var e: Array = LEVEL_NEWS[n]
 		t += ("\n" if t != "" else "") + "[b]%s[/b]   [color=%s]New:[/color] %s" % [e[0], Palette.hex("changed"), e[1]]
 	level_bar.get_child(0).get_node("Text").text = t
@@ -727,8 +740,15 @@ func _fill_examples() -> void:
 	if list.is_empty():
 		pop.add_item("no examples folder found")
 		pop.set_item_disabled(0, true)
+	pop.add_separator()
+	var copy := str(Backend.program.get("path", "")) if Backend.state.get("loaded", false) else ""
+	if Welcome.original_of(copy) != "":
+		pop.add_item("Start %s over from the original…" % copy.get_file(), RESTORE_EXAMPLE_ID)
+		pop.set_item_tooltip(pop.get_item_index(RESTORE_EXAMPLE_ID), "Replace your copy of this example with the original, undoing your changes")
+	if DirAccess.dir_exists_absolute(Welcome.copies_dir()):
+		pop.add_item("Show my copies folder", COPIES_FOLDER_ID)
+		pop.set_item_tooltip(pop.get_item_index(COPIES_FOLDER_ID), "Your copies of the examples are in %s" % Welcome.copies_dir())
 	if guide:
-		pop.add_separator()
 		pop.add_item("About the examples…", ABOUT_EXAMPLES_ID)
 		pop.set_item_tooltip(pop.get_item_index(ABOUT_EXAMPLES_ID), "What each example shows and something to try in it (opens the guide)")
 
@@ -737,9 +757,26 @@ func _on_example(id: int) -> void:
 	if id == ABOUT_EXAMPLES_ID:
 		guide.open("examples2" if Level.at_least(2) else "examples")
 		return
+	if id == COPIES_FOLDER_ID:
+		OS.shell_open(Welcome.copies_dir())
+		return
+	if id == RESTORE_EXAMPLE_ID:
+		_confirm_restore(str(Backend.program.get("path", "")))
+		return
 	var path = examples_menu.get_popup().get_item_metadata(examples_menu.get_popup().get_item_index(id))
 	if path != null:
-		Backend.send("load", {"path": path})
+		Welcome.open_example(path)
+
+
+func _confirm_restore(copy: String) -> void:
+	var d := ConfirmationDialog.new()
+	d.title = "Start over from the original"
+	d.dialog_text = "Replace your copy of %s with the original example?\nYour changes to it will be lost." % copy.get_file()
+	d.ok_button_text = "Start over"
+	d.confirmed.connect(func(): Welcome.restore_example(copy))
+	d.visibility_changed.connect(func(): if not d.visible: d.queue_free())
+	add_child(d)
+	d.popup_centered()
 
 
 ## Show only what the current level needs. Lowering the level also undoes what
