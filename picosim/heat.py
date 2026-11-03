@@ -335,8 +335,7 @@ def set_table(core, model='multicycle'):
     entries = []
     index = PIPE_INDEX if model == 'm0plus' else INDEX
     for rec in core.profile():
-        sio = rec['reads'][1] + rec['writes'][1] > rec['execs'] // 2
-        u = _usage(model, rec, sio)
+        u = _usage(model, rec, _bus_of(rec))
         if u is None:
             continue
         code = ((rec['addr'] >> 1) & 0x7FFF) << 1
@@ -382,12 +381,18 @@ def _arch_accesses(cycles):
     return regs, flags_r, flags_w
 
 
-def _pipe_path(hw1, hw2, mc_cycles, taken, sio):
+def _bus_cycles(bus):
+    """A load/store's cycles by where its data went (timing.cycles' rule)."""
+    return {'sio': 1, 'apb_r': 2 + timing.APB_LOAD_EXTRA,
+            'apb_w': 2 + timing.APB_STORE_EXTRA}.get(bus, 2)
+
+
+def _pipe_path(hw1, hw2, mc_cycles, taken, bus):
     group, row, rule, n, pc_write = timing.pico_row(hw1, hw2)
     if rule == 'fixed':
         t = n
     elif rule == 'ldst':
-        t = 1 if sio else 2
+        t = _bus_cycles(bus)
     elif rule == 'mul':
         t = 1
     elif rule == 'bcond':
@@ -414,7 +419,7 @@ def _pipe_path(hw1, hw2, mc_cycles, taken, sio):
     if group in ('ALU', 'multiply') or rule == 'ldst':
         cyc[0].append('p_alu')
     if group in ('load', 'store', 'push/pop') or (group == 'call/return' and row.startswith('POP')):
-        mem = 1 if rule == 'ldst' else max(1, n - 1 - (2 if redirect else 0))
+        mem = max(1, t - 1) if rule == 'ldst' else max(1, n - 1 - (2 if redirect else 0))
         for k in range(mem):
             cyc[min(t - 1, 1 + k) if t > 1 else 0].append('p_dmem')
     if fr or fw:
@@ -431,21 +436,36 @@ def _pipe_path(hw1, hw2, mc_cycles, taken, sio):
 
 
 @lru_cache(maxsize=None)
-def pipeline_usage(hw1, hw2=0, sio=False):
+def pipeline_usage(hw1, hw2=0, bus=None):
     """Estimated per-cycle block ids of one encoding on the 2-stage pipeline,
-    in the same shape as encoding_usage."""
+    in the same shape as encoding_usage.  `bus` is where a load/store's data
+    goes ('sio', 'apb_r', 'apb_w', or None for RAM): it sets the cycles."""
+    if bus is True:
+        bus = 'sio'                    # the old sio=True
     mc = encoding_usage(hw1, hw2)
     if mc is None:
         return None
     if 'always' in mc:
-        return {'always': _pipe_path(hw1, hw2, mc['always'], False, sio)}
-    return {'taken': _pipe_path(hw1, hw2, mc['taken'], True, sio),
-            'not_taken': _pipe_path(hw1, hw2, mc['not_taken'], False, sio)}
+        return {'always': _pipe_path(hw1, hw2, mc['always'], False, bus)}
+    return {'taken': _pipe_path(hw1, hw2, mc['taken'], True, bus),
+            'not_taken': _pipe_path(hw1, hw2, mc['not_taken'], False, bus)}
 
 
-def _usage(model, rec, sio=False):
+def _bus_of(rec):
+    """Where most of a record's data accesses went (for its pipeline path)."""
+    x = max(1, rec['execs'])
+    if rec['reads'][1] + rec['writes'][1] > x // 2:
+        return 'sio'
+    if rec['reads'][2] > x // 2:
+        return 'apb_r'
+    if rec['writes'][2] > x // 2:
+        return 'apb_w'
+    return None
+
+
+def _usage(model, rec, bus=None):
     if model == 'm0plus':
-        return pipeline_usage(rec['hw1'], rec['hw2'], sio)
+        return pipeline_usage(rec['hw1'], rec['hw2'], bus)
     return encoding_usage(rec['hw1'], rec['hw2'])
 
 
@@ -455,14 +475,21 @@ def address_usage_model(model, rec):
         return address_usage(rec)
     acc = {}
     x = rec['execs']
-    sio = rec['reads'][1] + rec['writes'][1]
     group, row, rule, n, pc_write = timing.pico_row(rec['hw1'], rec['hw2'])
-    runs = [(False, x)]
-    if rule == 'ldst' and sio:
-        runs = [(True, min(x, sio)), (False, x - min(x, sio))]
+    runs = [(None, x)]
+    if rule == 'ldst':
+        # each execution makes one access: split them by where it went
+        left, runs = x, []
+        for bus, k in (('sio', rec['reads'][1] + rec['writes'][1]),
+                       ('apb_r', rec['reads'][2]), ('apb_w', rec['writes'][2])):
+            k = min(left, k)
+            if k:
+                runs.append((bus, k))
+                left -= k
+        runs.append((None, left))
     cycles = 0
-    for fast, times in runs:
-        u = pipeline_usage(rec['hw1'], rec['hw2'], fast)
+    for bus, times in runs:
+        u = pipeline_usage(rec['hw1'], rec['hw2'], bus)
         if u is None or not times:
             continue
         if 'always' in u:

@@ -157,6 +157,7 @@ class Server:
         # a note is shown only while the word still holds that value
         self.mem_notes = {}
         self._push_k = 0             # which register of the current PUSH is being written
+        self._hw = None              # Testing: picosim vs. a real RP2040 (picosim/hwtest)
 
     # ── transport ────────────────────────────────────────────────────────────
 
@@ -202,6 +203,7 @@ class Server:
             try:
                 self.poll_serial()
                 self.poll_flash()
+                self.poll_hw()
                 self.poll_file()
                 if busy:
                     self.run_slice()
@@ -212,6 +214,8 @@ class Server:
                 self.error(f"internal error: {e!r}")
                 self.dirty = True
         self.close_serial()
+        if self._hw:
+            self._hw.disconnect()           # stops OpenOCD too
 
     def _wait(self):
         """How long the loop may sleep in select(): not at all while running
@@ -1528,6 +1532,63 @@ class Server:
                 time.sleep(0.1)
             self.mode = 'pico'
             self.cmd_serial_open({})
+
+    # ── Testing: picosim vs. a real RP2040 (picosim/hwtest) ─────────────────
+
+    @property
+    def hw(self):
+        if self._hw is None:
+            from .hwtest.session import Session
+            self._hw = Session()
+        return self._hw
+
+    def poll_hw(self):
+        if self._hw:
+            for m in self._hw.drain():
+                self.send(m)
+
+    def cmd_hw_info(self, msg):
+        self.send(self.hw.info())
+
+    def cmd_hw_connect(self, msg):
+        err = self.hw.connect(msg.get('kind', 'openocd'), msg.get('host') or '127.0.0.1',
+                              msg.get('port') or 3333, msg.get('speed') or 5000, msg.get('openocd'))
+        if err:
+            self._hw_refused(err)
+
+    def cmd_hw_disconnect(self, msg):
+        self.hw.disconnect()
+
+    def cmd_hw_run(self, msg):
+        """msg: tests [{path, kind}] (path '' = the loaded program), input,
+        max_steps, stop_on_diff."""
+        tests = []
+        for t in msg.get('tests', []):
+            path = t.get('path') or self.path
+            if not path or not path.endswith('.s'):
+                return self._hw_refused("Testing runs .s programs: load one in the main window first")
+            tests.append({'path': path, 'kind': t.get('kind', 'trace'), 'title': t.get('title', ''),
+                          **({'input': t['input']} if 'input' in t else {})})
+        err = self.hw.run(tests, str(msg.get('input', '')),
+                          max(1, min(1_000_000, int(msg.get('max_steps', 20000)))),
+                          bool(msg.get('stop_on_diff', False)))
+        if err:
+            self._hw_refused(err)
+
+    def cmd_hw_stop(self, msg):
+        self.hw.stop()
+
+    def _hw_refused(self, why):
+        """Say why in the Testing window, with the connection's real status."""
+        self.send({'type': 'hw', 'event': 'error', 'message': why})
+        self.send({'type': 'hw', 'event': 'status', **self.hw._status()})
+
+    def cmd_hw_export(self, msg):
+        try:
+            paths = self.hw.export(str(msg.get('path', '')))
+        except (OSError, ValueError) as e:
+            return self.error(f"could not save the report: {e}")
+        self.send({'type': 'hw', 'event': 'exported', 'paths': paths})
 
 
 def timing_recent_max():

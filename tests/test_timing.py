@@ -134,9 +134,11 @@ class Table81Test(unittest.TestCase):
         self.assertEqual(timing.cycles('m0plus', 0x6842, 0, rec), 1)
         rec = run_one(0x6042, regs={0: 0xD0000010})          # STR r2, [r0, #4] -> SIO
         self.assertEqual(timing.cycles('m0plus', 0x6042, 0, rec), 1)
-        rec = run_one(0x6842, regs={0: 0x40014000})          # APB: Table 81 still says 2
-        self.assertEqual(timing.cycles('m0plus', 0x6842, 0, rec), 2)
+        rec = run_one(0x6842, regs={0: 0x40014000})          # APB load: 4, measured on an RP2040
+        self.assertEqual(timing.cycles('m0plus', 0x6842, 0, rec), 4)
         self.assertEqual(rec['reads'][timing.RG_APB], 1)
+        rec = run_one(0x6042, regs={0: 0x40014000})          # APB store: 5, measured on an RP2040
+        self.assertEqual(timing.cycles('m0plus', 0x6042, 0, rec), 5)
 
     def test_iterative_multiplier(self):
         rec = run_one(0x4348)

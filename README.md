@@ -291,6 +291,17 @@ a NEW tag for a few seconds (`gui/scripts/spotlight.gd`). Pass
 | Ctrl/Cmd+O | open a `.s` file |
 | Ctrl/Cmd+R | reload (re-assemble and reset) |
 
+### Testing against a real RP2040
+
+**Testing** (the mode menu's last entry, or `python3 -m picosim.hwtest`)
+runs a program on a real RP2040 and in picosim at once, through a second
+Pico running Raspberry Pi's debugprobe firmware wired to the target's SWD
+pins. Step-by-step tests compare every register, flag and memory write
+after every instruction; timing tests compare clock cycles measured with
+SysTick against picosim's RP2040 model. The suite is in
+[hwtests/](hwtests/); a stand-in emulator lets you try it without hardware.
+See [docs/hardware-testing.md](docs/hardware-testing.md).
+
 Every instruction takes several clock cycles, as described in the course
 text's datapath chapter. See [docs/cycles.md](docs/cycles.md) for the count
 and state sequence of each instruction.

@@ -17,11 +17,16 @@ completed instruction, its encoding, whether it branched, whether a B<cond>
 was taken, and where its data accesses went (RAM, the SIO's single-cycle
 IOPORT, APB peripherals, other AHB space).
 
+Measured on a real RP2040 rather than taken from Table 81 (Testing,
+hwtests/b04_io_timing.s; see docs/hardware-testing.md):
+  * an access to an APB peripheral (IO_BANK0, PADS_BANK0, RESETS …) is
+    slower than Table 81's 2 cycles, because the AHB-to-APB bridge adds wait
+    cycles: a load takes 4 (APB_LOAD_EXTRA = 2) and a store 5
+    (APB_STORE_EXTRA = 3).
+
 Not modelled, and reported instead of guessed:
   * SVC and BKPT: their cost depends on exception entry/return and debug
     configuration (Table 81 note e); picosim also runs SVC calls directly.
-  * APB peripheral accesses (IO_BANK0, PADS_BANK0 …) have extra bus cycles on
-    the real chip (datasheet §2.1.3); Table 81 counts exclude them.
   * Encodings that are not ARMv6-M (the simulator refuses to run them, so
     they only appear here if a scratch core was used).
 """
@@ -38,6 +43,12 @@ MACHINE_NAMES = {'multicycle': 'Multi-cycle (teaching datapath)',
                  'pipe3': '3-stage pipeline (teaching)'}
 DEPTH = {'m0plus': 2, 'pipe3': 3}
 PICO_CLOCK_MHZ = 125          # the Pico SDK's default system clock for RP2040
+# Wait cycles the APB bridge adds to each access, measured on a real RP2040
+# with Testing (hwtests/b04_io_timing.s, 2026-10-29): 32 LDRs from IO_BANK0,
+# PADS_BANK0 or RESETS take 128 cycles, not 64; 32 STRs to PADS_BANK0 or
+# IO_BANK0 take 160; 16 LDR + STR pairs take 144 (16 x (4 + 5)).
+APB_LOAD_EXTRA = 2
+APB_STORE_EXTRA = 3
 
 
 def _popcount(v):
@@ -229,6 +240,7 @@ def cycles(machine, hw1, hw2, e, mul_cycles=1, wait=0):
         t = n * x
     elif rule == 'ldst':
         t = 2 * x - a['sio']          # "2 if to AHB interface or SCS, 1 if to single-cycle I/O port"
+        t += APB_LOAD_EXTRA * a['apb_r'] + APB_STORE_EXTRA * a['apb_w']   # measured: see the top
     elif rule == 'mul':
         t = mul_cycles * x
     else:                             # 'bcond': "2 if taken, 1 if not-taken"

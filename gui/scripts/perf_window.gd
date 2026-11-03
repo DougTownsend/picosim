@@ -409,7 +409,7 @@ func _fill_metrics() -> void:
 	tail += "[/table]\n"
 	var apb := int(s["data"]["reads"][2]) + int(s["data"]["writes"][2])
 	if apb > 0:
-		tail += "[color=%s]• APB accesses (IO_BANK0, PADS_BANK0, …): on the real RP2040 these take extra bus cycles — APB accesses take at least two cycles and the bridge adds one more for reads and two for writes (datasheet §2.1.3). Table 81 assumes zero wait states, so the RP2040 totals above do not include them.[/color]\n" % dim
+		tail += "[color=%s]• APB accesses (IO_BANK0, PADS_BANK0, …): Table 81 assumes zero wait states, but the bus bridge adds some. A load from an APB peripheral is counted as 4 cycles and a store as 5, as measured on a real RP2040 with Testing.[/color]\n" % dim
 	if int(s["data"]["reads"][1]) + int(s["data"]["writes"][1]) > 0:
 		tail += "[color=%s]• SIO accesses go over the Cortex-M0+'s single-cycle IOPORT: on the RP2040 each such load or store takes 1 cycle instead of 2.[/color]\n" % dim
 	var b: Dictionary = s["branches"]
@@ -539,7 +539,7 @@ func _pipe_explain(sch: Dictionary, t: int) -> String:
 			if int(r["sio"]) > 0:
 				out += " Its data access goes to the SIO over the single-cycle IOPORT, so it takes 1 cycle instead of 2."
 			if int(r["apb"]) > 0:
-				out += " [color=%s]Its data access goes to an APB peripheral: on the real chip that adds bus wait states (datasheet §2.1.3) that Table 81 does not include.[/color]" % dim
+				out += " [color=%s]Its data access goes to an APB peripheral: the bus bridge adds wait cycles that Table 81 leaves out (a load takes 4 cycles and a store 5, measured on a real RP2040).[/color]" % dim
 			out += "\n"
 		elif r["flushed"]:
 			out += txt + ": fetched from the next sequential address, but the branch in Execute changed the PC, so it will be discarded (✕).\n"

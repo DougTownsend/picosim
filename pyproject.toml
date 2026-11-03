@@ -15,11 +15,16 @@ dependencies = [
     "pyserial",
 ]
 
+[project.optional-dependencies]
+# Testing's stand-in RP2040 (an emulator, to try Testing without hardware)
+hwtest = ["unicorn>=2.0"]
+
 [project.scripts]
 picosim = "picosim.sim:main"
 
 [tool.setuptools]
-packages = ["picosim"]
+packages = ["picosim", "picosim.hwtest"]
 
 [tool.setuptools.package-data]
 picosim = ["*.s", "*.ld", "*.c", "CMakeLists.txt"]
+"picosim.hwtest" = ["*.s", "*.ld"]

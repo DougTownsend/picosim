@@ -25,6 +25,8 @@ signal heat_baseline_changed(exists: bool)
 signal settings_error(message: String)
 ## Facts the teaching text quotes (picosim/teaching.py), e.g. cycle counts.
 signal facts_received
+## Testing (picosim vs. a real RP2040): every {"type": "hw"} message.
+signal hw_message(msg: Dictionary)
 
 var tcp := StreamPeerTCP.new()
 var port := 0
@@ -137,6 +139,8 @@ func _handle(msg: Variant) -> void:
 			heat_baseline_changed.emit(bool(msg.get("exists", false)))
 		"settings_error":
 			settings_error.emit(msg["message"])
+		"hw":
+			hw_message.emit(msg)
 		"facts":
 			facts = msg
 			facts_received.emit()

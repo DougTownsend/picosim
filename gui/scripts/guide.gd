@@ -691,6 +691,36 @@ func _add_topics() -> void:
 			["an assembler error", "Your program does not assemble: fix it in the Simulator first."],
 		], 1), 2)
 
+	_topic("testing", "Testing: picosim vs. RP2040", _h("Testing: picosim vs. a real RP2040") +
+		"Testing runs the same program on a real RP2040 and in picosim at the same time, and compares them. [b]Step by step[/b] tests compare every register, the N, Z, C and V flags and every byte written to memory after [i]every instruction[/i]; [b]timing[/b] tests compare how many clock cycles regions of a program take. Open it from the toolbar's mode menu: [b]Testing (vs. real RP2040)…[/b]\n" +
+		_sub("What you need") +
+		"• Two Picos (Pico or Pico W). One is the [b]probe[/b]: copy Raspberry Pi's [code]debugprobe_on_pico.uf2[/code] (from github.com/raspberrypi/debugprobe, Releases) onto it in BOOTSEL mode. A Raspberry Pi Debug Probe works the same way. The other is the [b]target[/b]: the chip under test. It needs no program of its own; Testing loads each test into its RAM.\n" +
+		"• Three wires from the probe to the target's 3-pin [b]DEBUG[/b] header (the SWD port; on a Pico W it is the same header):\n" +
+		_grid(["Probe Pico", "Target Pico"], [
+			["GP2", "SWCLK"],
+			["GP3", "SWDIO"],
+			["GND", "GND (the middle pin)"],
+		], 1) +
+		"• Power for both: plug each into USB (or connect the probe's VSYS to the target's VSYS).\n" +
+		"• OpenOCD 0.12 or newer on the computer ([code]brew install open-ocd[/code] on a Mac; see [code]docs/hardware-testing.md[/code] for Windows and Linux).\n" +
+		_sub("Running tests") +
+		"1. Choose [b]Debug probe (OpenOCD)[/b] and click " + _k("Connect") + ". picosim starts OpenOCD and stops the target's core. If something is wrong the window says what (no probe found, the wires, the speed).\n" +
+		"2. Tick tests on the left and click " + _k("Run ticked") + ", or " + _k("Run all") + ". [b]The loaded program[/b] at the top tests whatever is open in the main window.\n" +
+		"3. Click a test to see its result, and a row for the details.\n" +
+		"No hardware yet? Choose [b]Stand-in (no hardware)[/b]: an emulator plays the chip, so you can try everything. It is a second, independent implementation of the instruction set, but [i]not[/i] the real chip: its timing and peripherals are picosim's own model.\n" +
+		_sub("Reading a step-by-step result") +
+		_grid(["Mark", "Meaning"], [
+			["[color=" + _c("green") + "]✓[/color]", "After this instruction both machines hold exactly the same registers, flags and written bytes."],
+			["call", "A call into the built-in OS (putchar, getchar). picosim runs it; on the chip the test runner does the same I/O, then both are compared."],
+			["[color=" + _c("yellow") + "]I/O[/color]", "The instruction read a peripheral register and the chip returned something else (a real pin, a register picosim models more simply). picosim takes the chip's value and carries on. It does not count as a failure."],
+			["[color=" + _c("error") + "]✗[/color]", "A real difference: the registers, flags or memory named in red. picosim then takes the chip's values and carries on, so one run shows every difference (tick [b]Stop at the first difference[/b] to stop instead)."],
+		], 1) +
+		"The chip runs the program from its SRAM, where every address is picosim's address + [code]0x20000000[/code]. The RP2040 column shows those as picosim's addresses, so the two columns compare directly. At the end the whole of the program's memory ([code]0x3000[/code]–[code]0xFFFF[/code]), what it printed and the GPIO registers it wrote are compared too.\n" +
+		_sub("Reading a timing result") +
+		"A timing test marks regions with [code]bl bench_start[/code] and [code]bl bench_stop[/code] (in picosim they do nothing). On the chip they read the [b]SysTick[/b] counter, which counts processor clock cycles; the cost of measuring (21 cycles, found by a calibration run) is taken off. [b]picosim[/b] is what picosim's RP2040 model (datasheet Table 81) says the region takes; [b]Difference[/b] is the chip minus the model, and [b]Per instr.[/b] divides it by the repetitions named in the region's comment ([code]@ MULS x 64[/code]).\n" +
+		_note("Write your own", "Any [code].s[/code] file works as a test: load it and use [b]The loaded program[/b]. To time part of it, put [code]bl bench_start[/code] before and [code]bl bench_stop[/code] after, with a comment naming the region. The suite's files are in the [code]hwtests[/code] folder; [code]docs/hardware-testing.md[/code] explains everything in more depth.") +
+		_note("Save report…", "writes every result as a Markdown report and the full data as JSON, to analyse or compare later. From a terminal, [code]python3 -m picosim.hwtest --report results.md[/code] runs the whole suite without the window.", "green"), 2)
+
 	_section("Inside the CPU", 3)
 
 	_topic("cpuintro", "The big picture", _cpu_intro())
@@ -824,7 +854,7 @@ func _add_topics() -> void:
 		_sub("Where the numbers come from") +
 		"• RP2040 cycle counts are the [b]RP2040 datasheet, Table 81[/b] (Cortex-M0+ instruction summary), which assumes zero wait states — code and data in SRAM, or the flash cache hitting. For example ADDS = 1, LDR/STR = 2 (or 1 to the SIO's single-cycle I/O port), B<cond> = 1 not taken / 2 taken, B = 2, BL = 3, PUSH = 1 + N, POP {…, PC} = 3 + N.\n" +
 		"• The 3-stage design uses the same execute cycles, but a taken branch costs one cycle more than on the 2-stage (2 refill cycles instead of 1), because it has one more stage to refill.\n" +
-		"• Not timed, and listed separately instead of guessed: SVC and BKPT (the datasheet gives no fixed count), and the extra bus cycles of APB peripheral accesses (datasheet §2.1.3) — the window tells you how many there were.\n" +
+		"• Not timed, and listed separately instead of guessed: SVC and BKPT (the datasheet gives no fixed count).\n" + "• Accesses to APB peripherals are counted as measured on a real RP2040 with " + _link("testing", "Testing") + ": a load takes 4 cycles and a store 5, not Table 81's 2, because the bus bridge adds wait cycles.\n" +
 		"• The exact cycle in which the real Cortex-M0+ fetches is not published (it fetches up to 32 bits ahead), so the chart's F marks when an instruction is in this model's fetch stage; the execute-stage counts are the datasheet's.\n")
 
 	var heatp := _h("Heat map") + \

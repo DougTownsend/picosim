@@ -186,7 +186,7 @@ class MemoryTabDataTest(unittest.TestCase):
         self.assertEqual(r['sections']['data'], [0x3024, 0x3038])
         kinds = {k for _, _, k in r['runs']}
         self.assertEqual(kinds, {'insn', 'lit'})
-        self.assertEqual(r['os_code_end'], 0x18)
+        self.assertEqual(r['os_code_end'], 0x1C)   # _start, putchar, getchar, bench_start/stop
 
     def test_loads_and_stores(self):
         s = server(os.path.join(EX, '04_memory.s'), skip_boot=True, step_over_os=True)

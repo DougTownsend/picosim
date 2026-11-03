@@ -69,3 +69,21 @@ putchar:
 getchar:
     svc  #3
     bx   lr
+
+/* ── Benchmark markers ─────────────────────────────────────────────────────── */
+
+/*
+ * bench_start / bench_stop: mark a region of the program to time.  They do
+ * nothing here (picosim counts the region's cycles itself); when the program
+ * runs on a real RP2040 under Testing (picosim/hwtest/os_hw.s) they read the
+ * chip's SysTick cycle counter.  Every register and flag is left unchanged.
+ */
+.global bench_start
+.type   bench_start, %function
+bench_start:
+    bx   lr
+
+.global bench_stop
+.type   bench_stop, %function
+bench_stop:
+    bx   lr

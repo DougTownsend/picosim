@@ -734,8 +734,17 @@ class Explainer:
         if rule is None:
             return [4, f"On the RP2040's pipeline: the datasheet (Table 81, “{row}”) gives no fixed cycle count."]
         if rule == 'ldst':
-            sio = run.mem_addr is not None and 0xD0000000 <= run.mem_addr < 0xE0000000
-            n, why = (1, " (1, not 2: the SIO is on the single-cycle I/O port)") if sio else (2, '')
+            a = run.mem_addr
+            load = row.startswith('LDR')
+            if a is not None and 0xD0000000 <= a < 0xE0000000:
+                n, why = 1, " (1, not 2: the SIO is on the single-cycle I/O port)"
+            elif a is not None and 0x40000000 <= a < 0x50000000:
+                extra = timing.APB_LOAD_EXTRA if load else timing.APB_STORE_EXTRA
+                n = 2 + extra
+                why = (f" ({n}, not 2: it {'reads' if load else 'writes'} an APB peripheral, and "
+                       f"the bus bridge adds {extra} wait cycles, as measured on a real RP2040)")
+            else:
+                n, why = 2, ''
         elif rule == 'mul':
             n, why = 1, " (the RP2040 has the fast multiplier)"
         elif rule == 'bcond':

@@ -155,6 +155,24 @@ Download Godot from [godotengine.org](https://godotengine.org/download) and put 
 
 ---
 
+## 7. OpenOCD and a debug probe (optional, for Testing)
+
+Testing compares picosim with a real RP2040 through its debug port. It needs a
+second Pico running Raspberry Pi's debugprobe firmware (or a Raspberry Pi Debug
+Probe) and OpenOCD 0.12 or newer:
+
+```bash
+brew install open-ocd          # macOS
+sudo apt install openocd       # Debian / Ubuntu (check that it is 0.12 or newer)
+```
+
+On Windows, the Raspberry Pi Pico VS Code extension installs OpenOCD under
+`~/.pico-sdk/openocd/`, where picosim finds it. To try Testing without any
+hardware, install the stand-in's emulator: `pip install -e ".[hwtest]"`.
+Wiring and use: [docs/hardware-testing.md](docs/hardware-testing.md).
+
+---
+
 ## Quick check
 
 After installing everything, run these commands to confirm:

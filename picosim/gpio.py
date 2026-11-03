@@ -9,6 +9,9 @@ GPIO is a MemoryBlock whose handles() covers four disjoint address ranges:
   0x40014000 – 0x400147FF   IO_BANK0  (function select per pin)
   0x4001C000 – 0x4001C0FF   PADS_BANK0 (pull-up/down, input-enable per pin)
   0xD0000000 – 0xD000003F   SIO GPIO registers
+RESETS, IO_BANK0 and PADS_BANK0 also answer at their atomic aliases, as on
+the RP2040 (datasheet §2.1.2): a write to the register's address + 0x1000
+XORs it with the value, + 0x2000 sets the value's bits, + 0x3000 clears them.
 
 Register GPIO with the CPU's Memory object so reads/writes to those
 addresses are routed here automatically.
@@ -31,6 +34,7 @@ _RANGES = (
     (_PADS_BANK0_BASE, 0x100),
     (_RESETS_BASE,     0x100),
 )
+_ALIASED = (_IO_BANK0_BASE, _PADS_BANK0_BASE, _RESETS_BASE)   # + 0x1000 XOR, 0x2000 SET, 0x3000 CLR
 
 _PIN_MASK = (1 << NUM_PINS) - 1
 _CTRL_MASK = 0x3033331F   # IRQOVER, INOVER, OEOVER, OUTOVER, FUNCSEL
@@ -40,6 +44,7 @@ FUNC_SIO = 5              # FUNCSEL value that connects a pin to the SIO GPIO re
 _PADS_PDE = 1 << 2   # pull-down enable
 _PADS_PUE = 1 << 3   # pull-up enable
 _PADS_IE  = 1 << 6   # input enable
+_PADS_RESET = 0x56   # IE, 4 mA drive, pull-down, Schmitt trigger (datasheet reset value)
 
 
 class GPIO(MemoryBlock):
@@ -58,6 +63,12 @@ class GPIO(MemoryBlock):
         self._pue = 0                       # pull-up enable bitmask
         self._pde = 0                       # pull-down enable bitmask
         self._ctrl = [0x1F] * NUM_PINS      # IO_BANK0 CTRL (FUNCSEL + overrides)
+        # PADS_BANK0 registers as a program reads them back.  The pulls a
+        # pin really has are _pue/_pde, set when a program writes its pad
+        # register: until then the pin is drawn floating (Z) although the
+        # register says pull-down, as it does on the chip.  A floating pin
+        # reads 0 here, so GPIO_IN is the same either way.
+        self._pads = [_PADS_RESET] * NUM_PINS
         # RESETS: as the Pico SDK leaves them before main() runs, IO_BANK0
         # (bit 5) and PADS_BANK0 (bit 8) are already out of reset, so a
         # program that waits for RESET_DONE works in both places.
@@ -68,14 +79,22 @@ class GPIO(MemoryBlock):
     # ── address routing ────────────────────────────────────────────────────────
 
     def handles(self, addr):
-        addr &= 0xFFFFFFFF
+        addr = self._unalias(addr & 0xFFFFFFFF)[0]
         for base, size in _RANGES:
             if base <= addr < base + size:
                 return True
         return False
 
+    @staticmethod
+    def _unalias(addr):
+        """(register address, alias): alias 0 normal, 1 XOR, 2 SET, 3 CLR."""
+        for base in _ALIASED:
+            if base <= addr < base + 0x4000:
+                return base + (addr & 0xFFF), (addr - base) >> 12
+        return addr, 0
+
     def read32(self, addr):
-        addr &= 0xFFFFFFFF
+        addr = self._unalias(addr & 0xFFFFFFFF)[0]   # an alias reads the register
         off = addr - _SIO_BASE
         if 0 <= off < 0x40:
             return self._sio_read(off)
@@ -91,8 +110,11 @@ class GPIO(MemoryBlock):
         return 0
 
     def write32(self, addr, val):
-        addr &= 0xFFFFFFFF
+        addr, alias = self._unalias(addr & 0xFFFFFFFF)
         val  &= 0xFFFFFFFF
+        if alias:
+            old = self.read32(addr)
+            val = (old ^ val, old | val, old & ~val & 0xFFFFFFFF)[alias - 1]
         off = addr - _SIO_BASE
         if 0 <= off < 0x40:
             self._sio_write(off, val); return
@@ -193,15 +215,13 @@ class GPIO(MemoryBlock):
         if off == 0: return 0
         pin = (off - 4) >> 2
         if not (0 <= pin < NUM_PINS): return 0
-        v = _PADS_IE                               # IE on by default
-        if self._pue & (1 << pin): v |= _PADS_PUE
-        if self._pde & (1 << pin): v |= _PADS_PDE
-        return v
+        return self._pads[pin]
 
     def _pads_write(self, off, val):
         if off == 0: return
         pin = (off - 4) >> 2
         if not (0 <= pin < NUM_PINS): return
+        self._pads[pin] = val & 0xFF
         bit = 1 << pin
         if val & _PADS_PUE: self._pue |= bit
         else:               self._pue &= ~bit & _PIN_MASK

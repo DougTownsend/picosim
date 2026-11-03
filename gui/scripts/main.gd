@@ -33,6 +33,7 @@ const HEAT_ID := 101              # View menu item: Heat overlay on the CPU diag
 const KEYS_ID := 102              # View menu item: the guide's Keyboard shortcuts
 const LAYOUT_ID := 103            # View menu item: the guide's Layout and zoom
 const ABOUT_EXAMPLES_ID := 1000   # Examples menu item: the guide's page on the examples
+const TESTING_ID := 7             # mode menu item: the Testing window
 const RESTORE_EXAMPLE_ID := 1001  # Examples menu item: put the original back over the student's copy
 const COPIES_FOLDER_ID := 1002    # Examples menu item: show the folder of the student's copies
 const HeatOverlay := preload("res://scripts/heat_overlay.gd")
@@ -58,6 +59,7 @@ var caption_panel: PanelContainer
 var cycle_area: Control
 var pico_view
 var perf_window
+var testing_window                # the mode menu's Testing: picosim vs. a real RP2040
 var zoom := 1.0
 var zoom_label: Button
 var diagram_area: Control
@@ -94,6 +96,7 @@ var btn_run: Button
 var speed_slider: HSlider
 var speed_label: Label
 var mode_select: OptionButton
+var _mode_idx := 0                # Simulator (0) or Pico (1): what Testing returns the menu to
 var port_select: OptionButton
 var btn_ports: Button
 var btn_connect: Button
@@ -509,9 +512,11 @@ func _build_toolbar() -> Control:
 	mode_select = OptionButton.new()
 	mode_select.add_item("Simulator", 0)
 	mode_select.add_item("Pico (USB serial)", 1)
+	mode_select.add_separator()
+	mode_select.add_item("Testing (vs. real RP2040)…", TESTING_ID)
 	mode_select.focus_mode = Control.FOCUS_NONE
 	mode_select.item_selected.connect(_on_mode)
-	mode_select.tooltip_text = "Simulator — run your program here on screen\nPico (USB serial) — talk to a real Raspberry Pi Pico plugged in by USB"
+	mode_select.tooltip_text = "Simulator — run your program here on screen\nPico (USB serial) — talk to a real Raspberry Pi Pico plugged in by USB\nTesting — run tests on a real RP2040 through its debug port and compare it with picosim, step by step and cycle by cycle"
 	bar.add_child(mode_select)
 	port_select = OptionButton.new()
 	port_select.custom_minimum_size.x = 180
@@ -568,6 +573,8 @@ func _build_toolbar() -> Control:
 	vp.id_pressed.connect(_on_view_menu)
 	bar.add_child(view_menu)
 	_check_scheme()
+	testing_window = load("res://scripts/testing_window.gd").new()
+	add_child(testing_window)
 	var perf: Node = load("res://scripts/perf_window.gd").new()
 	add_child(perf)
 	btn_perf = _button("Performance", "Cycles, CPI, the RP2040 pipeline and design comparisons (F2)", func(): perf.open())
@@ -1055,6 +1062,12 @@ func _on_speed(v: float) -> void:
 
 
 func _on_mode(idx: int) -> void:
+	if mode_select.get_item_id(idx) == TESTING_ID:
+		# Testing has its own window; the toolbar stays in the mode it was in
+		mode_select.select(_mode_idx)
+		testing_window.open()
+		return
+	_mode_idx = idx
 	Backend.send("set_mode", {"mode": "pico" if idx == 1 else "sim"})
 	if idx == 1:
 		Backend.send("serial_list")
@@ -1287,6 +1300,7 @@ func _on_flash_done(ok: bool) -> void:
 	_set_status("Flash succeeded" if ok else "Flash failed — see console", not ok)
 	if ok:
 		mode_select.select(1)
+		_mode_idx = 1
 		Backend.send("serial_list")
 
 

@@ -419,8 +419,13 @@ def _script_dir():
 def assemble(s_file, elf_file, ld_file, extra_s_files=None, extra_ld_flags=None):
     """Assemble and link a .s file.  Returns (ok, message).  Line-number debug
     info (-g) is always included, so the GUI can show each instruction's
-    source line (see source_lines)."""
-    import subprocess, shutil
+    source line (see source_lines).
+
+    The linker writes a private temporary file that then replaces elf_file in
+    one step, so another picosim process building the same file at the same
+    time (Testing in one window, a test run in another) never reads it half
+    written."""
+    import subprocess, shutil, threading
     if shutil.which('arm-none-eabi-gcc') is None:
         return False, ("arm-none-eabi-gcc not found on PATH.\n"
                        "See DEPENDENCIES.md for installation instructions.")
@@ -432,15 +437,21 @@ def assemble(s_file, elf_file, ld_file, extra_s_files=None, extra_ld_flags=None)
         '-Wa,--keep-locals',    # keep .L* labels in the assembler object
         '-Wl,--discard-none',   # prevent the linker from stripping them
         '-T', ld_file,
-        '-o', elf_file,
+        '-o', None,
         s_file,
     ]
+    tmp = f"{elf_file}.{os.getpid()}-{threading.get_ident()}.tmp"
+    cmd[cmd.index(None)] = tmp
     if extra_s_files:
         cmd.extend(extra_s_files)
     if extra_ld_flags:
         cmd.extend(extra_ld_flags)
     result = subprocess.run(cmd, capture_output=True, text=True)
-    combined = (result.stderr + result.stdout).strip()
+    combined = (result.stderr + result.stdout).strip().replace(tmp, elf_file)
+    if result.returncode == 0:
+        os.replace(tmp, elf_file)
+    elif os.path.exists(tmp):
+        os.remove(tmp)
     return result.returncode == 0, combined
 
 

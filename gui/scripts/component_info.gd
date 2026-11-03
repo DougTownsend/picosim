@@ -527,7 +527,7 @@ const PIPE_INFO := {
 		"title": "Data access",
 		"kind": "Bus access (Execute stage)",
 		"what": "The data transfer of a load, store, PUSH or POP.",
-		"how": "Over AHB-Lite a transfer takes 2 cycles (address, then data), so Execute is busy and the instruction behind it waits in IF/EX. The SIO, which includes the GPIO registers, sits on the single-cycle IOPORT, so loads and stores there take 1 cycle. APB peripherals add bus wait states that Table 81 does not include.",
+		"how": "Over AHB-Lite a transfer takes 2 cycles (address, then data), so Execute is busy and the instruction behind it waits in IF/EX. The SIO, which includes the GPIO registers, sits on the single-cycle IOPORT, so loads and stores there take 1 cycle. APB peripherals add bus wait states that Table 81 does not include: a load from one takes 4 cycles and a store 5 on a real RP2040 (measured with Testing).",
 		"links": [
 			["in", "p_alu", "", "address"],
 			["out", "p_regfile", "", "loaded data"],
