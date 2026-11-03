@@ -18,6 +18,13 @@
  *   bench_start / stop  read the SysTick counter into BENCH_TABLE; registers,
  *                       flags and the program's memory are left unchanged
  *
+ * Built with --defsym TIMED=1 (image.build(timed=True)) for timing a program
+ * that has no bench_start / bench_stop: every stretch of it between the OS
+ * is a region.  The runner starts the chip at hw_go, which reads SysTick and
+ * calls main; putchar and getchar read it before their BKPT and again after
+ * it, and main's return reads it a last time.  Each pair goes into
+ * BENCH_TABLE as bench_stop's do.
+ *
  * BENCH_TABLE (in the OS's part of SRAM, which picosim never compares):
  *   +0  number of regions recorded      +4  SysTick value at the last bench_start
  *   +8  [start, stop] SysTick values, 8 bytes per region (BENCH_MAX regions)
@@ -43,13 +50,21 @@ _start:
 .global putchar
 .type   putchar, %function
 putchar:
+.ifdef TIMED
+    b    hw_putchar
+.else
     bkpt #2
+.endif
     bx   lr
 
 .global getchar
 .type   getchar, %function
 getchar:
+.ifdef TIMED
+    b    hw_getchar
+.else
     bkpt #3
+.endif
     bx   lr
 
 .global bench_start
@@ -65,18 +80,16 @@ bench_stop:
 /* The SysTick read is the third instruction of both routines, so the time
  * between the two reads is the region plus a fixed overhead, which the
  * calibration test measures (an empty region). */
-.type hw_bench_start, %function
-hw_bench_start:
+.macro SYSTICK_START            @ SysTick into BENCH_TABLE+4; all else unchanged
     push {r0, r1}
     ldr  r0, =SYST_CVR
     ldr  r0, [r0]               @ SysTick now (it counts down)
     ldr  r1, =BENCH_TABLE
     str  r0, [r1, #4]
     pop  {r0, r1}
-    bx   lr
+.endm
 
-.type hw_bench_stop, %function
-hw_bench_stop:
+.macro SYSTICK_STOP             @ the pair into the table; all else unchanged
     push {r0, r1}
     ldr  r0, =SYST_CVR
     ldr  r0, [r0]               @ SysTick now
@@ -98,5 +111,53 @@ hw_bench_stop:
     msr  apsr_nzcvq, r3
     pop  {r2, r3}
     pop  {r0, r1}
+.endm
+
+.type hw_bench_start, %function
+hw_bench_start:
+    SYSTICK_START
     bx   lr
+
+.type hw_bench_stop, %function
+hw_bench_stop:
+    SYSTICK_STOP
+    bx   lr
+
+.ifdef TIMED
+/* Every path from one SysTick read to the next costs the same as Table 81
+ * counts it: after a read, LDR =, STR, POP {r0,r1} and a 2-cycle branch
+ * (BX LR, or BLX r0 into main); before the next, the program's own call or
+ * return, a B, PUSH {r0,r1}, LDR = and the reading LDR. */
+.global hw_go
+.type hw_go, %function
+hw_go:                          @ the runner starts the chip here, r0 = main
+    SYSTICK_START
+    blx  r0
+    b    hw_end                 @ main returns here
+
+.type hw_putchar, %function
+hw_putchar:
+    SYSTICK_STOP
+.global hw_putchar_bkpt
+hw_putchar_bkpt:
+    bkpt #2                     @ the runner prints R0 and continues
+    SYSTICK_START
+    bx   lr
+
+.type hw_getchar, %function
+hw_getchar:
+    SYSTICK_STOP
+.global hw_getchar_bkpt
+hw_getchar_bkpt:
+    bkpt #3                     @ the runner puts the next input in R0 and continues
+    SYSTICK_START
+    bx   lr
+
+.type hw_end, %function
+hw_end:
+    SYSTICK_STOP
+.global hw_end_bkpt
+hw_end_bkpt:
+    bkpt #0
+.endif
 .pool

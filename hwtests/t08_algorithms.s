@@ -1,6 +1,7 @@
 @ Title: Small programs
 @ About: Real code rather than single instructions: CRC-32 of "123456789" bit by bit (prints CBF43926, the standard check value), a bubble sort of eight numbers, and Euclid's GCD by subtraction. Every intermediate step is compared.
 @ Kind: trace
+@ Calls: putchar prints the CRC-32 as eight hex digits and a new line, one character per call, so the final answer is checked as printed output too.
 
         .syntax unified
         .cpu cortex-m0plus

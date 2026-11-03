@@ -312,7 +312,7 @@ func _refresh_tests() -> void:
 		var k := _key("", kind, true)
 		var it := _add_test(loaded, k, ("Step by step" if kind == "trace" else "Timing") +
 			(" — " + prog if prog != "" else ""),
-			"Compare the program loaded in the main window: " + ("every step" if kind == "trace" else "its bench_start / bench_stop regions"))
+			"Compare the program loaded in the main window: " + ("every step" if kind == "trace" else "its bench_start / bench_stop regions, or, if it has none, every stretch of it between OS calls"))
 		it.set_meta("path", "")
 		it.set_meta("kind", kind)
 	var groups := {"trace": "Step by step (registers, flags, memory)", "bench": "Timing (cycles)"}
@@ -328,6 +328,7 @@ func _refresh_tests() -> void:
 			var k := _key(t["path"], kind, false)
 			var it := _add_test(g, k, t["title"], t["about"])
 			it.set_meta("path", t["path"])
+			it.set_meta("calls", t.get("calls", ""))
 			it.set_meta("kind", kind)
 	for k in ticked:
 		if _items.has(k):
@@ -616,6 +617,10 @@ func _show(key: String) -> void:
 	_show_head()
 	detail.text = "[color=%s]Click a row to see %s.[/color]" % [Palette.hex("dim"),
 		"the whole machine after that step, picosim and the chip side by side" if r["kind"] != "bench" else "what the region is made of"]
+	var calls: String = (_items[key] as TreeItem).get_meta("calls", "") if _items.has(key) else ""
+	if calls != "":
+		detail.text += "\n\n[b]OS calls in this test[/b]\n%s%s" % [_esc(calls),
+			"" if r["kind"] == "bench" else "\nClick a step marked [b]call[/b] to see what that call did on each machine, and how, why and when."]
 
 
 func _regions(r: Dictionary) -> Array:
@@ -781,6 +786,8 @@ func _show_step(row: Dictionary) -> void:
 		var f: Dictionary = row["fault"]
 		t += "[color=%s]picosim: %s\nRP2040: %s[/color]\n" % [Palette.hex("error"),
 			_esc(str(f.get("sim"))) if f.get("sim") != null else "no fault", _esc(str(f.get("hw"))) if f.get("hw") != null else "no fault"]
+	if row.has("os"):
+		t += _os_call(row["os"]) + "\n"
 	var sim: Dictionary = row.get("sim", {})
 	var hw: Dictionary = row.get("hw", {})
 	if sim.is_empty():
@@ -833,7 +840,9 @@ func _show_step(row: Dictionary) -> void:
 
 func _show_region(g: Dictionary) -> void:
 	var t := "[b]%s[/b]" % _esc(str(g.get("name", "")))
-	if int(g.get("line", 0)) > 0:
+	if g.get("stretch", false) and int(g.get("line", 0)) > 0:
+		t += "   [color=%s]lines %d–%d[/color]" % [Palette.hex("dim"), int(g["line"]), int(g.get("stop_line", g["line"]))]
+	elif int(g.get("line", 0)) > 0:
 		t += "   [color=%s]bench_start on line %d[/color]" % [Palette.hex("dim"), int(g["line"])]
 	t += "\n"
 	t += "picosim's RP2040 model (datasheet Table 81): [b]%s[/b] cycles   ·   measured on the chip: [b]%s[/b] cycles (SysTick %s, minus the calibration)   ·   picosim's multi-cycle teaching machine: %s cycles\n" % [
@@ -847,7 +856,19 @@ func _show_region(g: Dictionary) -> void:
 			t += "[code]  %5d  %s[/code]\n" % [int(m[1]), _esc(str(m[0]))]
 	for n in g.get("notes", []):
 		t += "\n[color=%s]%s[/color]" % [Palette.hex("yellow"), _esc(str(n))]
+	if g.has("os"):
+		t += "\n" + _os_call(g["os"])
 	detail.text = t
+
+
+## A call into the built-in OS (oscalls.py): what it did, how each machine
+## did it, why it is done that way, and when it happened.
+func _os_call(info: Dictionary) -> String:
+	var t := "\n[b]The OS call: %s[/b]\n[table=2]" % _esc(str(info.get("name", "")))
+	for k in [["what", "What"], ["how", "How"], ["why", "Why"], ["when", "When"]]:
+		t += "[cell padding=0,3,12,3][color=%s][b]%s[/b][/color][/cell][cell expand=1 padding=0,3,0,3]%s[/cell]" % [
+			Palette.hex("accent"), k[1], _esc(str(info.get(k[0], "")))]
+	return t + "[/table]"
 
 
 func _demo_select(spec: String) -> void:

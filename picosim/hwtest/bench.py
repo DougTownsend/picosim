@@ -21,6 +21,14 @@ connection with empty regions (calibrate.s) and every region subtracts it.
 In picosim the same program runs instruction by instruction and each
 region's cycles are added up from the model, counting exactly the
 instructions between the return from bench_start and the bl bench_stop.
+
+A program with no bench_start / bench_stop is timed in stretches instead:
+every run of the program's own code between the OS is a region, from the
+start of main (or the return from a putchar / getchar) up to and including
+the next call (or main's return).  The chip runs the timed os_hw.s
+(image.build(timed=True)), whose putchar, getchar and main's return read
+SysTick on either side of their BKPT; calibrate_calls.s measures the
+overhead the same way as for regions.
 """
 
 import os
@@ -28,17 +36,36 @@ import re
 
 from .. import timing
 from . import image as img
+from . import oscalls
 from .lockstep import SimSide, TestError, effective, start_chip
 from .rsp import RSPError
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CALIBRATION = os.path.join(HERE, 'calibrate.s')
+CALL_CALIBRATION = os.path.join(HERE, 'calibrate_calls.s')
 # Table 81 cycles from one SysTick read to the next across an empty region:
 # the rest of hw_bench_start after its read (LDR =, STR, POP {r0,r1}, BX LR:
 # 2+2+3+2), BL bench_stop (3), B hw_bench_stop (2), PUSH {r0,r1} (3), LDR =
 # (2), and the reading LDR itself (2).
 PREDICTED_OVERHEAD = 21
+# The same for a stretch that is only a call (which picosim counts as the
+# stretch): the rest of SYSTICK_START after its read (LDR =, STR, POP {r0,r1}:
+# 2+2+3), BX LR (2), B hw_putchar (2), PUSH {r0,r1} (3), LDR = (2) and the
+# reading LDR (2).
+PREDICTED_CALL_OVERHEAD = 18
 MAX_SIM_INSNS = 3_000_000
+STRETCH_MAX = 100        # stretches timed in a program that never ends (an echo loop)
+AFTER = {'main': "start of main", 'putchar': "after putchar", 'getchar': "after getchar"}
+UNTIL = {'putchar': "putchar", 'getchar': "getchar", 'return': "main returns"}
+
+
+def uses_bench(source):
+    """True if the program calls bench_start or bench_stop (comments aside)."""
+    with open(source, errors='replace') as f:
+        text = f.read()
+    text = re.sub(r'/\*.*?\*/', '', text, flags=re.S)
+    text = re.sub(r'(@|//).*', '', text)
+    return re.search(r'\bbench_(start|stop)\b', text) is not None
 
 
 def _reps(name):
@@ -65,36 +92,49 @@ class Bench:
         self.timeout = timeout
 
     def run(self):
-        cal = calibrate(self.target, self.stop_flag)
-        return self._run(effective(self.source), cal)
+        src = effective(self.source)
+        if uses_bench(src):
+            return self._run(src, calibrate(self.target, self.stop_flag))
+        return self._run(src, calibrate_calls(self.target, self.stop_flag), stretches=True)
 
-    def _run(self, src, cal):
+    def _run(self, src, cal, stretches=False):
         sim = SimSide(src, self.input_text)
         try:
-            hwimg = img.build(src, sim.prog)
+            hwimg = img.build(src, sim.prog, timed=stretches)
         except img.ImageError as e:
             raise TestError(str(e))
-        start_chip(self.target, sim, hwimg, bench=True)
-        sim_regions, sim_end = sim_regions_of(sim, hwimg)
+        start_bench(self.target, sim, hwimg)
+        if stretches:
+            sim_regions, sim_end = sim_stretches_of(sim, hwimg)
+        else:
+            sim_regions, sim_end = sim_regions_of(sim, hwimg)
         pairs, hw_out, hw_end = run_chip(self.target, hwimg, self.input_text,
                                          self.timeout, self.stop_flag)
         rows = []
-        for k in range(max(len(sim_regions), len(pairs))):
+        n_regions = max(len(sim_regions), len(pairs))
+        for k in range(n_regions):
             s = sim_regions[k] if k < len(sim_regions) else None
             raw = ((pairs[k][0] - pairs[k][1]) & 0xFFFFFF) if k < len(pairs) else None
             row = {'k': k + 1}
             if s:
-                row.update(name=_site_name(sim.prog, s['site']), site=s['site'],
+                if stretches:
+                    name = f"{AFTER[s['after']]} → {UNTIL[s['until']]}"
+                else:
+                    name = _site_name(sim.prog, s['site'])
+                row.update(name=name, site=s['site'],
                            line=sim.prog.source.get(s['site'], (0, ''))[0],
                            sim=s['cycles'], multicycle=s['multicycle'], insns=s['insns'],
                            mix=sorted(s['mix'].items(), key=lambda kv: -kv[1])[:6],
                            apb=s['apb_r'] + s['apb_w'], apb_r=s['apb_r'], apb_w=s['apb_w'],
-                           sio=s['sio'], untimed=s['untimed'], calls=s['calls'])
+                           sio=s['sio'], untimed=s['untimed'], calls=s['calls'],
+                           stop_site=s['stop_site'],
+                           stop_line=sim.prog.source.get(s['stop_site'], (0, ''))[0])
             else:
                 row.update(name=f"region {k + 1}", sim=None)
             if raw is not None and cal and s:
                 over = cal['overhead'].get(s['stop_site'] % 4, cal['overhead'].get(0))
                 row['raw'] = raw
+                row['over'] = over
                 row['hw'] = raw - over
             elif raw is not None:
                 row['raw'] = raw
@@ -107,24 +147,44 @@ class Bench:
                 if reps:
                     row['reps'] = reps
                     row['per'] = row['diff'] / reps
+            if k < len(pairs):
+                row['systick'] = list(pairs[k])
             row['notes'] = _notes(row)
+            if stretches:
+                row['stretch'] = True
+                if s:
+                    row.update(after=s['after'], until=s['until'])
+                row['os'] = oscalls.bench_stretch(row, n_regions)
+            else:
+                row['os'] = oscalls.bench_region(row, n_regions)
             rows.append(row)
             self.emit('region', row)
         same = all(r.get('diff') == 0 for r in rows) and rows
         summary = {'name': self.name, 'source': self.source, 'kind': 'bench', 'regions': rows,
                    'end': hw_end, 'sim_end': sim_end, 'image': hwimg.digest,
                    'output': {'sim': bytes(sim.out).decode('latin-1'), 'hw': hw_out},
-                   'calibration': cal,
+                   'calibration': cal, 'stretches': stretches,
                    'verdict': 'identical' if same else ('different' if rows else 'no regions')}
         if not rows:
-            summary['note'] = ("This program has no bench_start / bench_stop regions, so there is "
+            summary['note'] = ("The program never reached an OS call or the end of main, so no "
+                               "stretch of it finished. Add bl bench_start and bl bench_stop around "
+                               "the code to time." if stretches else
+                               "This program has no bench_start / bench_stop regions, so there is "
                                "nothing to time. Add bl bench_start and bl bench_stop around the "
                                "code to time.")
         elif hw_end != 'halted':
             summary['note'] = {'timeout': "The program was still running when the time limit "
                                           "ran out; the regions it finished are shown.",
                                'fault': "The chip took a HardFault; the regions before it are shown.",
-                               'stopped': "Stopped by you."}.get(hw_end, '')
+                               'stopped': "Stopped by you.",
+                               'limit': f"The program was still running after {STRETCH_MAX} OS "
+                                        "calls, so it was stopped there; those stretches are "
+                                        "shown."}.get(hw_end, '')
+        if stretches and rows:
+            summary['note'] = ("No bench_start / bench_stop, so every stretch of the program "
+                               "between OS calls is timed: from the start of main or the return "
+                               "from putchar / getchar, up to and including the next call or "
+                               "main's return. " + summary.get('note', '')).strip()
         self.emit('summary', summary)
         return summary
 
@@ -150,6 +210,42 @@ def _notes(row):
     return notes
 
 
+def _new_region(site):
+    return {'site': site, 'cycles': 0, 'multicycle': 0, 'insns': 0, 'mix': {},
+            'apb_r': 0, 'apb_w': 0, 'sio': 0, 'untimed': 0, 'calls': 0}
+
+
+def _count(cur, c):
+    """Add the instruction picosim has just run to region `cur`.  Returns
+    (Table 81 cycles, multi-cycle cycles, Table 81 row)."""
+    rec = c.recent(1)[0]
+    hw1, hw2 = rec['hw1'], rec['hw2']
+    t = timing.cycles('m0plus', hw1, hw2, rec)
+    mc = timing.cycles('multicycle', hw1, hw2, rec)
+    row = timing.pico_row(hw1, hw2)[1]
+    cur['insns'] += 1
+    cur['mix'][row] = cur['mix'].get(row, 0) + 1
+    if t is None:
+        cur['untimed'] += 1
+    else:
+        cur['cycles'] += t
+    cur['multicycle'] += mc or 0
+    cur['apb_r'] += rec['reads'][2]
+    cur['apb_w'] += rec['writes'][2]
+    cur['sio'] += rec['reads'][1] + rec['writes'][1]
+    return t, mc, row
+
+
+def _run_stub(c):
+    """Run the OS routine just called, up to its return."""
+    ret = c.lr & ~1
+    for _ in range(64):
+        if c.halted or c.pc == ret:
+            return
+        c.step()
+        c.check_halt()
+
+
 def sim_regions_of(sim, hwimg):
     """Run picosim to the end, adding up each region's cycles."""
     c = sim.core
@@ -161,12 +257,7 @@ def sim_regions_of(sim, hwimg):
     end = 'halted'
 
     def run_stub():
-        ret = c.lr & ~1
-        for _ in range(64):
-            if c.halted or c.pc == ret:
-                return
-            c.step()
-            c.check_halt()
+        _run_stub(c)
 
     while not c.halted:
         if n >= MAX_SIM_INSNS:
@@ -174,8 +265,7 @@ def sim_regions_of(sim, hwimg):
             break
         pc = c.pc
         if pc == start:
-            cur = {'site': (c.lr & ~1) - 4, 'cycles': 0, 'multicycle': 0, 'insns': 0, 'mix': {},
-                   'apb_r': 0, 'apb_w': 0, 'sio': 0, 'untimed': 0, 'calls': 0}
+            cur = _new_region((c.lr & ~1) - 4)
             last = None
             run_stub()
             continue
@@ -207,29 +297,69 @@ def sim_regions_of(sim, hwimg):
         c.check_halt()
         n += 1
         if cur is not None:
-            rec = c.recent(1)[0]
-            hw1, hw2 = rec['hw1'], rec['hw2']
-            t = timing.cycles('m0plus', hw1, hw2, rec)
-            mc = timing.cycles('multicycle', hw1, hw2, rec)
-            row = timing.pico_row(hw1, hw2)[1]
-            cur['insns'] += 1
-            cur['mix'][row] = cur['mix'].get(row, 0) + 1
-            if t is None:
-                cur['untimed'] += 1
-            else:
-                cur['cycles'] += t
-            cur['multicycle'] += mc or 0
-            cur['apb_r'] += rec['reads'][2]
-            cur['apb_w'] += rec['writes'][2]
-            cur['sio'] += rec['reads'][1] + rec['writes'][1]
-            last = (t, mc, row)
+            last = _count(cur, c)
     return regions, end
+
+
+def sim_stretches_of(sim, hwimg, cap=STRETCH_MAX):
+    """Run picosim to the end (or `cap` stretches), adding up each stretch's
+    cycles: the program's own instructions from the start of main or the
+    return from an OS call, up to and including the next call or main's
+    return.  Each has 'after' (main, putchar, getchar) and 'until'
+    (putchar, getchar, return)."""
+    c = sim.core
+    io = {hwimg.calls['putchar']: 'putchar', hwimg.calls['getchar']: 'getchar'}
+    stretches, cur, after = [], None, 'main'
+    n = 0
+    end = 'halted'
+    while not c.halted:
+        pc = c.pc
+        if pc < img.USER_BASE:                     # into the OS: the stretch ends
+            if cur is not None:
+                cur['until'] = io.get(pc, 'return')
+                stretches.append(cur)
+                cur = None
+                if len(stretches) >= cap:
+                    end = 'limit'
+                    break
+            if pc in io:
+                after = io[pc]
+                _run_stub(c)
+                continue
+        elif cur is None:
+            cur = _new_region(pc)
+            cur['after'] = after
+        if n >= MAX_SIM_INSNS:
+            end = 'limit'
+            break
+        try:
+            c.step()
+        except Exception:
+            end = 'fault'
+            break
+        c.check_halt()
+        n += 1
+        if cur is not None:
+            _count(cur, c)
+            cur['stop_site'] = pc
+    return stretches, end
+
+
+def start_bench(target, sim, hwimg):
+    """Load the chip for a benchmark; with the timed OS, start it at hw_go,
+    which reads SysTick and calls main."""
+    start_chip(target, sim, hwimg, bench=True)
+    if hwimg.timed:
+        target.rsp.write_reg(0, img.to_hw(sim.prog.main_addr) | 1)
+        target.rsp.write_reg(15, img.to_hw(hwimg.timed['go']))
 
 
 def run_chip(target, hwimg, input_text, timeout, stop_flag):
     """Run the loaded program on the chip at full speed; returns the
     [(start, stop)] SysTick pairs, what it printed and how it ended."""
     calls = hwimg.calls
+    timed = hwimg.timed
+    halts = 0
     inp = list(input_text.encode('latin-1', 'replace'))
     out = bytearray()
     r = target.rsp
@@ -250,6 +380,21 @@ def run_chip(target, hwimg, input_text, timeout, stop_flag):
             end = 'fault'
             break
         pc = img.to_sim(regs[15])
+        if timed:
+            # the timed OS's putchar / getchar: the I/O, then on past the BKPT
+            # to its second SysTick read and its return
+            if pc not in (timed['putchar'], timed['getchar']):
+                break              # main returned (hw_end) or the program's own BKPT
+            halts += 1
+            if halts >= STRETCH_MAX:           # picosim stops at the same call
+                end = 'limit'
+                break
+            if pc == timed['putchar']:
+                out.append(regs[0] & 0xFF)
+            else:
+                r.write_reg(0, inp.pop(0) if inp else 0xFFFFFFFF)
+            r.write_reg(15, regs[15] + 2)
+            continue
         if pc == calls['putchar']:
             out.append(regs[0] & 0xFF)
         elif pc == calls['getchar']:
@@ -271,20 +416,33 @@ def calibrate(target, stop_flag=None, force=False):
     """The chip's cycles for an empty region, by alignment of the bl bench_stop."""
     if getattr(target, 'calibration', None) and not force:
         return target.calibration
-    sim = SimSide(CALIBRATION)
-    hwimg = img.build(CALIBRATION, sim.prog)
-    start_chip(target, sim, hwimg, bench=True)
-    regions, _ = sim_regions_of(sim, hwimg)
+    target.calibration = _calibrate(target, CALIBRATION, False, PREDICTED_OVERHEAD, stop_flag)
+    return target.calibration
+
+
+def calibrate_calls(target, stop_flag=None, force=False):
+    """The chip's cycles beyond picosim's for a stretch between OS calls, by
+    alignment of the stretch's last instruction (calibrate_calls.s)."""
+    if getattr(target, 'call_calibration', None) and not force:
+        return target.call_calibration
+    target.call_calibration = _calibrate(target, CALL_CALIBRATION, True,
+                                         PREDICTED_CALL_OVERHEAD, stop_flag)
+    return target.call_calibration
+
+
+def _calibrate(target, source, stretches, predicted, stop_flag):
+    sim = SimSide(source)
+    hwimg = img.build(source, sim.prog, timed=stretches)
+    start_bench(target, sim, hwimg)
+    regions, _ = (sim_stretches_of if stretches else sim_regions_of)(sim, hwimg)
     pairs, _, end = run_chip(target, hwimg, '', 10.0, stop_flag)
     if end != 'halted' or len(pairs) != len(regions) or not pairs:
         raise TestError("calibration did not run to its end on the chip "
                         f"({end}, {len(pairs)} of {len(regions)} regions)")
     by_align = {}
     for s, (a, b) in zip(regions, pairs):
-        by_align.setdefault(s['stop_site'] % 4, []).append((a - b) & 0xFFFFFF)
-    cal = {'overhead': {k: min(v) for k, v in by_align.items()},
-           'samples': {k: v for k, v in by_align.items()},
-           'predicted': PREDICTED_OVERHEAD,
-           'steady': all(len(set(v)) == 1 for v in by_align.values())}
-    target.calibration = cal
-    return cal
+        by_align.setdefault(s['stop_site'] % 4, []).append(((a - b) & 0xFFFFFF) - s['cycles'])
+    return {'overhead': {k: min(v) for k, v in by_align.items()},
+            'samples': {k: v for k, v in by_align.items()},
+            'predicted': predicted,
+            'steady': all(len(set(v)) == 1 for v in by_align.values())}

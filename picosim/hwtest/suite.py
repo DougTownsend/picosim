@@ -7,12 +7,16 @@ Each file starts with comment lines that say what it is:
     @ About: what it checks, in a sentence or two
     @ Kind: trace          (step-by-step comparison) or bench (timing)
     @ Input: "abc\\n"       (optional: what getchar returns, in order)
+    @ Calls: why it calls the built-in OS (putchar, getchar), if it does
 """
 
 import os
 import re
 
-KEYS = ('Title', 'About', 'Kind', 'Input')
+KEYS = ('Title', 'About', 'Kind', 'Input', 'Calls')
+BENCH_CALLS = ("bl bench_start and bl bench_stop mark each region to time. On the chip they read "
+               "the SysTick cycle counter; in picosim they do nothing, and picosim adds up the "
+               "region's cycles itself. Click a region to see its two readings.")
 
 
 def suite_dir():
@@ -21,9 +25,9 @@ def suite_dir():
 
 
 def header(path):
-    """{'path', 'title', 'about', 'kind', 'input'} from a file's opening comments."""
+    """{'path', 'title', 'about', 'kind', 'input', 'calls'} from a file's opening comments."""
     info = {'path': path, 'title': os.path.splitext(os.path.basename(path))[0], 'about': '',
-            'kind': 'trace', 'input': ''}
+            'kind': 'trace', 'input': '', 'calls': ''}
     try:
         with open(path, encoding='utf-8', errors='replace') as f:
             for line in f:
@@ -42,6 +46,8 @@ def header(path):
                         info[key.lower()] = val
     except OSError:
         pass
+    if info['kind'] == 'bench' and not info['calls']:
+        info['calls'] = BENCH_CALLS
     return info
 
 

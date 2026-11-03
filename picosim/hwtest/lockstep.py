@@ -29,6 +29,7 @@ from ..cpu import SimulatorError, MEM_SIZE
 from ..loader import load_program, LoadError
 from .. import settings as prog_settings
 from . import image as img
+from . import oscalls
 from .rsp import RSPError
 from .target import TargetError
 
@@ -149,6 +150,7 @@ class Lockstep:
         self.name = name or os.path.basename(source)
         self.rows = []
         self.counts = {'same': 0, 'io': 0, 'diff': 0, 'call': 0}
+        self.calls_made = {}             # calls so far to each OS routine
         self.hw_out = bytearray()
         self.io_written = set()          # peripheral registers the program wrote
         self.fault_sp = None             # SP when both machines faulted
@@ -309,9 +311,12 @@ class Lockstep:
         row['text'] = f"{name} (built-in OS)"
         ret = sim.core.lr & ~1
         out_before = len(sim.out)
+        r0_in = sim.regs()[0]
+        os_insns = []
         for _ in range(64):
             if sim.core.halted or sim.core.pc == ret:
                 break
+            os_insns.append(sim.text(sim.core.pc))
             _, _, _, fault = sim.step_insn()
             if fault:
                 row.update(status='diff', diffs=['fault'], fault={'sim': fault, 'hw': None},
@@ -334,6 +339,10 @@ class Lockstep:
                      'printed': chr(hw_regs[0] & 0xFF) if name == 'putchar' else ''}
         row['diffs'] = diffs
         row['status'] = 'call' if not diffs else 'diff'
+        k = self.calls_made[name] = self.calls_made.get(name, 0) + 1
+        line, src = sim.line(ret - 4)
+        row['os'] = oscalls.trace_call(name, k, line, ' '.join(src.split()), pc, ret, os_insns,
+                                       r0_in, sim_regs[0])
         if diffs and not self.stop_on_diff:
             self._resync(hw_regs, hw_xpsr, [], [])
         return row

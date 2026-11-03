@@ -1,6 +1,7 @@
 @ Title: Recursion and the stack
 @ About: factorial(10) and fib(9) written recursively: deep chains of BL, PUSH {.., LR} and POP {.., PC}, with every saved word on the stack compared. Prints 3628800 and 34.
 @ Kind: trace
+@ Calls: putchar prints the two results, 3628800 and 34, one decimal digit per call, so the final answers are checked as printed output too.
 
         .syntax unified
         .cpu cortex-m0plus

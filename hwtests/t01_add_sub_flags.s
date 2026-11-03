@@ -1,6 +1,7 @@
 @ Title: Add, subtract and the flags
 @ About: ADDS, ADCS, SUBS, SBCS, RSBS, CMP and CMN on every pair of eight edge values (0, 1, 2, 0x7FFFFFFF, 0x80000000, 0x80000001, 0xFFFFFFFE, 0xFFFFFFFF). After every instruction the result and N, Z, C, V must be the chip's.
 @ Kind: trace
+@ Calls: putchar prints OK and a new line once both loops have finished, as a sign that the run reached its end. Whether the test passes comes from the step comparisons, not from what it prints.
 
         .syntax unified
         .cpu cortex-m0plus

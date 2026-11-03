@@ -10,6 +10,8 @@ compares the two:
 - **Timing (benchmark).** For regions of a program marked with
   `bl bench_start` / `bl bench_stop`, it compares the clock cycles the chip
   really takes with what picosim's RP2040 model (datasheet Table 81) predicts.
+  A program without them is timed in stretches: every run of its own code
+  between OS calls (see [Timing a program without regions](#timing-a-program-without-regions)).
 
 Open it from the toolbar's mode menu: **Testing (vs. real RP2040)…** (Level 2
 and up). Or run it from a terminal:
@@ -71,6 +73,14 @@ address literals.
   OS's part of SRAM, leaving every register, flag and byte of the program
   unchanged. (In picosim they are a plain `bx lr`.)
 
+In the Testing window, click a step marked **call**, or a Timing region, to
+see what that call did, how picosim and the chip each did it, why it is done
+that way, and when it happened, with the run's own values (the character
+printed, the two SysTick readings and the calibration subtracted, the line
+of the `bl`). `picosim/hwtest/oscalls.py` writes these. A test's `@ Calls:`
+line says why that test calls the OS at all; it is shown when the test is
+selected.
+
 ### Preparing the chip
 
 Before each test the chip is put in the state picosim starts in:
@@ -125,6 +135,39 @@ adds up the model's cycles for exactly the instructions between the return
 from `bench_start` and the `bl bench_stop`. So **Difference = chip − model**
 is in the region's own instructions, and **Per instr.** divides it by the
 repetition count in the region's comment (`@ MULS x 64`).
+
+#### Timing a program without regions
+
+A program with no `bench_start` / `bench_stop` (most examples, or your own
+`gpio.s`) is timed in **stretches**: each run of the program's own code
+between the OS. A stretch starts at main or at the return from `putchar` /
+`getchar`, and runs up to and including the next call or main's return.
+So an echo loop gives "start of main → getchar" (its set-up),
+"after getchar → putchar" and "after putchar → getchar".
+
+For this the chip runs a timed build of `os_hw.s` (`--defsym TIMED=1`):
+
+- The runner starts the chip at `hw_go`, which reads SysTick and calls main
+  with `blx r0`.
+- `putchar` / `getchar` branch to routines that read SysTick and record the
+  stretch, stop at a `BKPT` for the runner's I/O, then read SysTick again
+  before returning.
+- Main returns into `hw_go`, which records the last stretch.
+
+Both reads sit on the program's side of the `BKPT`, so the time the core
+spends stopped for I/O is not counted. Every path from one read to the next
+costs the same in Table 81: after the read, LDR =, STR, POP and a 2-cycle
+branch; before the next read, the program's own call or return, then B,
+PUSH, LDR = and the reading LDR. That is 18 cycles of overhead beyond what
+picosim counts. A second calibration (`calibrate_calls.s`) measures it once
+per connection, with calls at word and halfword addresses and with main's
+first and last stretches. Its `steady` flag shows whether every path really
+costs the same on the chip.
+
+A program that never ends (an echo loop with no `q` in its input) is stopped
+after 100 OS calls on both machines, and those stretches are compared. The
+untimed `os_hw.s` that traces and region benchmarks use assembles to the
+same bytes as before.
 
 SysTick counts processor clock cycles at whatever clock the chip runs.
 After `reset halt` that is the ring oscillator (about 6 MHz). Cycle counts
@@ -208,7 +251,8 @@ loaded program**, or add a file to `hwtests/`. A suite file starts with:
 @ Input: "abc\n"         @ optional: what getchar returns, in order
 ```
 
-To time part of a program:
+Without `bench_start` / `bench_stop`, Timing times every stretch between OS
+calls (above). To time a particular part of a program:
 
 ```asm
         bl      bench_start     @ LDRB from SRAM x 32

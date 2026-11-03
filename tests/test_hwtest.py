@@ -5,6 +5,7 @@ the server's hw_* commands."""
 import glob
 import json
 import os
+import re
 import socket
 import tempfile
 import time
@@ -13,7 +14,8 @@ import unittest
 from picosim.hwtest import image as img
 from picosim.hwtest import suite
 from picosim.hwtest.lockstep import Lockstep, SimSide
-from picosim.hwtest.bench import Bench, calibrate, PREDICTED_OVERHEAD
+from picosim.hwtest.bench import (Bench, calibrate, calibrate_calls, uses_bench, PREDICTED_OVERHEAD,
+                                  PREDICTED_CALL_OVERHEAD, STRETCH_MAX)
 
 try:
     from picosim.hwtest.standin import available, Chip
@@ -39,6 +41,26 @@ class ImageTest(unittest.TestCase):
         self.assertEqual(int.from_bytes(hw.image[0x2FFC:0x3000], 'little'),
                          img.to_hw(sim.prog.main_addr) | 1)
 
+    def test_timed_os_keeps_the_program_and_the_offsets(self):
+        src = os.path.join(EX, '06_echo.s')
+        sim = SimSide(src)
+        plain, timed = img.build(src, sim.prog), img.build(src, sim.prog, timed=True)
+        self.assertIsNone(plain.timed)
+        self.assertEqual(set(timed.timed), {'go', 'putchar', 'getchar', 'end'})
+        self.assertEqual(plain.calls, timed.calls)
+        self.assertEqual(plain.image[img.USER_BASE:], timed.image[img.USER_BASE:])
+        self.assertNotEqual(plain.image[:img.USER_BASE], timed.image[:img.USER_BASE])
+
+    def test_programs_with_regions_are_told_apart(self):
+        self.assertTrue(uses_bench(os.path.join(ROOT, 'hwtests', 'b01_alu_timing.s')))
+        self.assertFalse(uses_bench(os.path.join(EX, '06_echo.s')))
+        with tempfile.NamedTemporaryFile('w', suffix='.s', delete=False) as f:
+            f.write("@ bl bench_start in a comment\n/* bench_stop */\nmain: bx lr // bench_start\n")
+        try:
+            self.assertFalse(uses_bench(f.name))
+        finally:
+            os.remove(f.name)
+
     def test_mapping(self):
         self.assertTrue(img.same(0x3104, 0x20003104))
         self.assertTrue(img.same(0x10000, 0x20010000))   # the stack's top
@@ -55,6 +77,13 @@ class ImageTest(unittest.TestCase):
         self.assertEqual(kinds, {'trace', 'bench'})
         for t in tests:
             self.assertTrue(t['title'] and t['about'], t['path'])
+
+    def test_suite_says_why_it_calls_the_os(self):
+        # every test that calls the built-in OS says why in its @ Calls line
+        for t in suite.tests():
+            with open(t['path']) as f:
+                calls = re.search(r'\bbl\s+(putchar|getchar|bench_)', f.read()) is not None
+            self.assertEqual(bool(t['calls']), calls, t['path'])
 
 
 @unittest.skipUnless(HAVE_STANDIN, "the stand-in needs Unicorn (pip install unicorn)")
@@ -90,6 +119,46 @@ class StandInTest(unittest.TestCase):
         cal = calibrate(self.t, force=True)
         self.assertEqual(cal['overhead'], {0: PREDICTED_OVERHEAD, 2: PREDICTED_OVERHEAD})
         self.assertTrue(cal['steady'])
+
+    def test_call_calibration(self):
+        cal = calibrate_calls(self.t, force=True)
+        self.assertEqual(cal['overhead'], {0: PREDICTED_CALL_OVERHEAD, 2: PREDICTED_CALL_OVERHEAD})
+        self.assertTrue(cal['steady'])
+
+    def test_a_program_without_regions_is_timed_in_stretches(self):
+        s = Bench(self.t, os.path.join(EX, '01_hello.s')).run()
+        self.assertEqual(s['verdict'], 'identical')
+        self.assertTrue(s['stretches'])
+        self.assertEqual(s['end'], 'halted')
+        names = [r['name'] for r in s['regions']]
+        self.assertEqual(names[0], 'start of main → putchar')
+        self.assertEqual(names[-1], 'after putchar → main returns')
+        self.assertEqual(s['output']['sim'], s['output']['hw'])
+        r = s['regions'][1]
+        start, stop = r['systick']
+        self.assertEqual(start - stop - r['over'], r['hw'])
+        self.assertIn(f"{start} − {stop} = {r['raw']}", r['os']['how'])
+
+    def test_a_program_that_never_ends_stops_after_the_limit(self):
+        s = Bench(self.t, os.path.join(EX, '06_echo.s'), 'hi\n').run()
+        self.assertEqual(s['verdict'], 'identical')
+        self.assertEqual((s['end'], s['sim_end']), ('limit', 'limit'))
+        self.assertEqual(len(s['regions']), STRETCH_MAX)
+        self.assertEqual(s['output']['sim'], s['output']['hw'])
+
+    def test_a_slow_instruction_shows_in_a_stretch(self):
+        orig = Chip._cost
+
+        def slow_adds(chip, hw1, hw2, taken):              # ADDS Rd, Rn, Rm
+            return orig(chip, hw1, hw2, taken) + (1 if (hw1 & 0xFE00) == 0x1800 else 0)
+        try:
+            Chip._cost = slow_adds
+            calibrate_calls(self.t, force=True)          # the calibration has no ADDS
+            s = Bench(self.t, os.path.join(EX, '02_add.s')).run()
+        finally:
+            Chip._cost = orig
+        self.assertEqual(s['verdict'], 'different')
+        self.assertEqual([r['diff'] for r in s['regions']], [1, 0, 0])
 
     def _sabotage(self, after_step):
         """Make the stand-in's chip call after_step(chip, pc) after each instruction."""
@@ -242,6 +311,31 @@ class StandInTest(unittest.TestCase):
         self.assertEqual(by['MULS Rd, Rn, Rd x 64']['diff'], 64)
         self.assertEqual(by['MULS Rd, Rn, Rd x 64']['per'], 1.0)
         self.assertEqual(by['ADDS Rd, Rn, Rm x 64']['diff'], 0)
+
+    def test_os_calls_are_explained(self):
+        rows = []
+        Lockstep(self.t, os.path.join(EX, '06_echo.s'), 'a', max_steps=200,
+                 emit=lambda what, data: rows.append(data) if what == 'step' else None).run()
+        calls = [r['os'] for r in rows if r['status'] == 'call']
+        self.assertTrue(calls)
+        for c in calls:
+            self.assertEqual(set(c), {'name', 'what', 'how', 'why', 'when'})
+        gets = [c for c in calls if c['name'] == 'getchar']
+        self.assertIn("'a'", gets[0]['what'])
+        self.assertIn('0xFFFFFFFF', gets[1]['what'])          # the input has run out
+        self.assertIn('Call 2 to getchar', gets[1]['when'])
+        put = next(c for c in calls if c['name'] == 'putchar')
+        self.assertIn('svc #2, bx lr', put['how'])
+        self.assertIn('0x20000010', put['how'])               # putchar's address on the chip
+
+    def test_bench_regions_explain_the_systick_reads(self):
+        s = Bench(self.t, os.path.join(ROOT, 'hwtests', 'b01_alu_timing.s')).run()
+        r = s['regions'][1]
+        start, stop = r['systick']
+        self.assertEqual(start - stop - r['over'], r['hw'])
+        self.assertIn(f"{start} − {stop} = {r['raw']}", r['os']['how'])
+        self.assertIn('0x20002010', r['os']['how'])           # region 2's slot in BENCH_TABLE
+        self.assertIn(f"bench_stop on line {r['stop_line']}", r['os']['when'])
 
 
 @unittest.skipUnless(HAVE_STANDIN, "the stand-in needs Unicorn (pip install unicorn)")

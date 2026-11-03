@@ -1,6 +1,7 @@
 @ Title: Strings
 @ About: strlen, an in-place reverse and a copy of a zero-terminated string, mixing byte loads and stores with word-sized pointer arithmetic. Prints the string, reversed and copied.
 @ Kind: trace
+@ Calls: putchar prints the string, then the reversed string, then the copy, one character per call and each followed by a new line, so the results are checked as printed output too.
 
         .syntax unified
         .cpu cortex-m0plus

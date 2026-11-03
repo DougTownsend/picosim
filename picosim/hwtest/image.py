@@ -96,15 +96,16 @@ def _load(elf_path, base, image):
             image[a:a + len(data)] = data
 
 
-def build_os():
-    """Assemble os_hw.s (cached) and check it lines up with os.s.  Returns its ELF path."""
+def build_os(timed=False):
+    """Assemble os_hw.s (cached) and check it lines up with os.s.  Returns its
+    ELF path.  timed: the variant that times every stretch between OS calls."""
     from ..loader import build_os_elf
     from ..sim import assemble
     src = os.path.join(_here(), 'os_hw.s')
     ld = os.path.join(_here(), 'os_hw.ld')
-    out = os.path.join(_cache_dir(), 'os_hw.elf')
+    out = os.path.join(_cache_dir(), 'os_hw_timed.elf' if timed else 'os_hw.elf')
     if not os.path.exists(out) or max(os.path.getmtime(src), os.path.getmtime(ld)) > os.path.getmtime(out):
-        ok, msg = assemble(src, out, ld)
+        ok, msg = assemble(src, out, ld, extra_ld_flags=['-Wa,--defsym,TIMED=1'] if timed else None)
         if not ok:
             raise ImageError(f"building the RP2040 OS failed:\n{msg}")
     sim_syms = _symbols(build_os_elf())
@@ -123,26 +124,30 @@ class HwImage:
     symbols    name -> picosim address (the same names on both)
     calls      OS routine name -> picosim address
     halt_addr  picosim address of _start's BKPT, where main returns to
+    timed      built with the timed OS: {'go', 'putchar', 'getchar', 'end'}
+               -> picosim address of hw_go and of the three BKPTs; else None
     """
 
-    def __init__(self, image, symbols, calls, halt_addr, elf):
+    def __init__(self, image, symbols, calls, halt_addr, elf, timed=None):
         self.image = image
         self.symbols = symbols
         self.calls = calls
         self.halt_addr = halt_addr
         self.elf = elf
+        self.timed = timed
 
     @property
     def digest(self):
         return hashlib.sha1(self.image).hexdigest()[:12]
 
 
-def build(source, prog):
+def build(source, prog, timed=False):
     """Build `source` (the .s file picosim assembled into `prog`) for SRAM.
+    timed: with the OS that times every stretch between OS calls (bench.py).
 
     Raises ImageError when the build fails or its layout is not picosim's."""
     from ..sim import assemble
-    os_elf = build_os()
+    os_elf = build_os(timed)
     pkg = os.path.dirname(_here())
     with open(os.path.join(pkg, 'link.ld')) as f:
         ld_text = f.read()
@@ -186,7 +191,11 @@ def build(source, prog):
     os_syms = _symbols(os_elf)
     calls = {n: os_syms[n] - OFFSET for n in OS_CALLS}
     halt = os_syms['_start'] - OFFSET + 6
-    return HwImage(bytes(image), {**sim_syms, **calls}, calls, halt, elf)
+    stops = None
+    if timed:
+        stops = {k: os_syms[n] - OFFSET for k, n in (('go', 'hw_go'), ('putchar', 'hw_putchar_bkpt'),
+                                                     ('getchar', 'hw_getchar_bkpt'), ('end', 'hw_end_bkpt'))}
+    return HwImage(bytes(image), {**sim_syms, **calls}, calls, halt, elf, stops)
 
 
 def _check_bytes(prog, image):
