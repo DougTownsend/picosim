@@ -1590,6 +1590,79 @@ class Server:
             return self.error(f"could not save the report: {e}")
         self.send({'type': 'hw', 'event': 'exported', 'paths': paths})
 
+    # ── Testing: Level 5 discovery (picosim/discover, plan S18) ──────────────
+    # The campaigns' results are read from their files (discover/overview.py);
+    # runs go through the command line's own code in the Testing session's
+    # worker, so their progress arrives with the other {"type": "hw"} messages.
+
+    def _discover_kind(self, msg):
+        """Whose results: the stand-in's or the real chip's.  The connection
+        decides when there is one; otherwise the window says."""
+        if self._hw and self._hw.target:
+            return 'standin' if self._hw.target.kind == 'standin' else 'openocd'
+        return 'standin' if msg.get('kind') == 'standin' else 'openocd'
+
+    def cmd_hw_discover_status(self, msg):
+        from .discover import overview
+        kind = self._discover_kind(msg)
+        self.send({'type': 'hw', 'event': 'discover_status', 'kind': kind,
+                   'campaigns': overview.campaigns(kind), 'flash': overview.flash_status(),
+                   'steps': overview.FLASH_STEPS, 'running': self._hw.discovering if self._hw else ''})
+
+    def cmd_hw_discover_detail(self, msg):
+        from .discover import overview
+        kind = self._discover_kind(msg)
+        name = str(msg.get('campaign', ''))
+        self.send({'type': 'hw', 'event': 'discover_detail', 'kind': kind,
+                   'detail': overview.detail(name, kind), 'steps': overview.FLASH_STEPS})
+
+    def cmd_hw_discover_run(self, msg):
+        """msg: campaign, fresh (start over, like --fresh; otherwise it carries
+        on where it stopped), confirmed (campaign F's confirmation), extra
+        (more command-line options, e.g. ["--limit", "50"])."""
+        err = self.hw.discover_run(str(msg.get('campaign', '')), bool(msg.get('fresh', False)),
+                                   [str(x) for x in msg.get('extra', [])], bool(msg.get('confirmed', False)))
+        if err:
+            self._discover_refused(err, str(msg.get('campaign', '')))
+
+    def cmd_hw_discover_stop(self, msg):
+        self.hw.stop()
+
+    def cmd_hw_discover_answer(self, msg):
+        self.hw.answer()
+
+    def cmd_hw_discover_flash(self, msg):
+        """msg: action 'backup' or 'restore' (campaign F's flash guard)."""
+        err = self.hw.discover_flash(str(msg.get('action', '')))
+        if err:
+            self._discover_refused(err, 'flashed')
+
+    def _discover_refused(self, why, campaign):
+        from .discover import overview
+        restore = False
+        try:
+            restore = overview.flash_status()['pending_restore']
+        except Exception:                 # noqa: BLE001 - only a hint
+            pass
+        self.send({'type': 'hw', 'event': 'discover_refused', 'campaign': campaign, 'message': why,
+                   'restore': restore and ('restor' in why.lower() or campaign == 'flashed')})
+        self.send({'type': 'hw', 'event': 'status', **self.hw._status()})
+
+    def cmd_hw_discover_open_case(self, msg):
+        """Load one difference's example as a program in the main window.
+        msg: campaign, index (the difference's number in its detail)."""
+        from .discover import overview
+        kind = self._discover_kind(msg)
+        name = str(msg.get('campaign', ''))
+        try:
+            diff = overview.find_difference(name, kind, 'chip1', int(msg.get('index', -1)))
+            path = overview.case_program(diff, name)
+        except (IndexError, ValueError, OSError) as e:
+            return self.send({'type': 'hw', 'event': 'discover_refused', 'campaign': name,
+                              'message': f"could not make the example program: {e}", 'restore': False})
+        self.send({'type': 'hw', 'event': 'discover_opened', 'campaign': name, 'path': path})
+        self.cmd_load({'path': path})
+
 
 def timing_recent_max():
     return 512   # CPUCore.RECENT

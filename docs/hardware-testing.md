@@ -275,6 +275,39 @@ Rules:
 
 ---
 
+## Hardware facts (Level 5 discovery)
+
+The Testing window's third group lists the discovery campaigns
+(`picosim/discover`, see `docs/level5-discovery-plan.md`): 0 identity,
+A memory map, C registers, B encodings, D timing, E random programs,
+F flashed programs and G peripherals. Each row shows *not run*, *partial*
+(batches done of the stage it stopped in) or *done* with its number of
+differences from picosim, for the chip you are connected to, or for the
+stand-in (whose results are kept apart, in the cache).
+
+Selecting a campaign shows what it measures, its provenance (chip, date,
+OpenOCD, picosim commit, agent, runs and whether the repeat agreed) and its
+differences. A difference with an example has **Open in picosim**: it
+writes a small `.s` file (in the discovery cache's `cases/` folder) that sets
+R0-R12 and N Z C V as the case had them on the chip, runs the instruction and
+stops at a BKPT, and loads it in the main window.
+
+**Run** starts the campaign over (`--fresh`), **Resume** carries on where it
+stopped, **Stop** stops after the current batch. Both run
+`picosim.discover.__main__.run_campaign`, the command line's own code, on
+the window's connection; progress and the log arrive with the other Testing
+messages. Campaign F first shows every backup and restore step and cannot
+start without a checked flash backup; if a restore is pending, every
+campaign refuses to start and the window offers **Restore the flash now**.
+
+Everything is also available without the window:
+`python3 -m picosim.discover <campaign> [--target standin]`,
+`python3 -m picosim.discover status [--standin]`, `backup-flash`,
+`restore-flash` and `check`. The backend commands are `hw_discover_status`,
+`hw_discover_detail`, `hw_discover_run`, `hw_discover_stop`,
+`hw_discover_answer`, `hw_discover_flash` and `hw_discover_open_case`
+(`picosim/server.py`, reading `picosim/discover/overview.py`).
+
 ## What Testing cannot see
 
 - **The pipeline's inside.** SWD sees the machine between instructions.

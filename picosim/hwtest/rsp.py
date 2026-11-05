@@ -68,8 +68,10 @@ class RSP:
         self.regbits = {}                  # regnum -> size in bits, from target.xml
         feats = self.cmd('qSupported:multiprocess-;swbreak+;hwbreak+;xmlRegisters=arm')
         m = re.search(r'PacketSize=([0-9a-fA-F]+)', feats)
+        self.packet_max = self.PACKET
         if m:
-            self.PACKET = max(256, min(self.PACKET, (int(m.group(1), 16) - 32) // 2))
+            self.packet_max = max(256, (int(m.group(1), 16) - 32) // 2)
+            self.PACKET = min(self.PACKET, self.packet_max)
         if 'QStartNoAckMode+' in feats and self.cmd('QStartNoAckMode') == 'OK':
             self.ack = False
         if 'qXfer:features:read+' in feats:
@@ -244,10 +246,10 @@ class RSP:
 
     # ── memory ──────────────────────────────────────────────────────────────
 
-    def read_mem(self, addr, n):
+    def read_mem(self, addr, n, packet=None):
         out = bytearray()
         while n > 0:
-            k = min(n, self.PACKET)
+            k = min(n, packet or self.PACKET)
             data = self._hex(self.cmd(f'm{addr:x},{k:x}'), f'reading memory at 0x{addr:08X}')
             if not data:
                 raise RSPError(f"reading memory at 0x{addr:08X} returned nothing")
@@ -259,9 +261,10 @@ class RSP:
     def read32(self, addr):
         return int.from_bytes(self.read_mem(addr, 4), 'little')
 
-    def write_mem(self, addr, data):
-        for i in range(0, len(data), self.PACKET):
-            chunk = data[i:i + self.PACKET]
+    def write_mem(self, addr, data, packet=None):
+        packet = packet or self.PACKET
+        for i in range(0, len(data), packet):
+            chunk = data[i:i + packet]
             r = self.cmd(f'M{addr + i:x},{len(chunk):x}:{chunk.hex()}')
             if r != 'OK':
                 raise RSPError(f"writing memory at 0x{addr + i:08X} failed ({r or 'not supported'})")

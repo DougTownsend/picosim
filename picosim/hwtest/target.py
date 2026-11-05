@@ -26,6 +26,7 @@ Every packet and everything OpenOCD prints goes to a session log
 
 import glob
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -41,7 +42,10 @@ RESET_DONE = RESETS + 0x8
 GPIO_RESETS = (1 << 5) | (1 << 8)          # IO_BANK0, PADS_BANK0
 SIO_OUT_CLR, SIO_OE_CLR = 0xD0000018, 0xD0000028
 SYST_CSR, SYST_RVR, SYST_CVR = 0xE000E010, 0xE000E014, 0xE000E018
+DHCSR, DEMCR = 0xE000EDF0, 0xE000EDFC
+VC_BITS = (1 << 10) | 1                     # DEMCR VC_HARDERR, VC_CORERESET
 ALL_PINS = (1 << 30) - 1
+POLL_GRACE = 0.3                            # s: OpenOCD polls every 100 ms once polling is on
 SIO = 0xD0000000
 CODE = 0x20002C00                           # scratch code and data in the OS's part of SRAM
 DATA = 0x20002E00
@@ -315,6 +319,70 @@ class Target:
         if bench:
             r.write32(SYST_CSR, 5)
 
+    # ── debug state (for the discovery agent) ───────────────────────────────
+
+    def dhcsr(self):
+        """The core's debug status: DHCSR, read through the debugger."""
+        v = self.rsp.read32(DHCSR)
+        return {'value': v, 'halted': bool(v >> 17 & 1), 'sleep': bool(v >> 18 & 1),
+                'lockup': bool(v >> 19 & 1), 'reset': bool(v >> 25 & 1)}
+
+    def demcr(self):
+        return self.rsp.read32(DEMCR)
+
+    def vector_catch(self, mode='none'):
+        """Stop (all) or don't stop (none) the core on a HardFault or a reset.
+        With VC_HARDERR set a fault halts instead of running the agent's
+        handler.  OpenOCD's command first; if DEMCR does not show it, DEMCR
+        is written directly.  Returns DEMCR as read back."""
+        want = 0 if mode == 'none' else VC_BITS
+        try:
+            self.rsp.monitor(f'cortex_m vector_catch {mode}')
+        except RSPError as e:
+            self.log(f"vector_catch through OpenOCD failed ({e}); writing DEMCR")
+        v = self.demcr()
+        if v & VC_BITS != want:
+            self.rsp.write32(DEMCR, (v & ~VC_BITS) | want)
+            v = self.demcr()
+        if v & VC_BITS != want:
+            raise TargetError(f"DEMCR reads 0x{v:08X}: vector catch could not be set to '{mode}'")
+        return v
+
+    def poll(self, on):
+        """OpenOCD's background polling of the core (it shares the bus with
+        the core, so timed runs turn it off).  Returns what OpenOCD said, or
+        None if it has no such command."""
+        try:
+            return self.rsp.monitor('poll ' + ('on' if on else 'off')).strip()
+        except RSPError as e:
+            self.log(f"poll {'on' if on else 'off'} failed ({e})")
+            return None
+
+    def openocd_version(self):
+        try:
+            return self.rsp.monitor('version').strip()
+        except RSPError:
+            return ''
+
+    def read_mem_fast(self, addr, n):
+        """Read with the largest packet the server allows, timing it
+        (self.throughput['read'], bytes per second)."""
+        t = time.monotonic()
+        out = self.rsp.read_mem(addr, n, packet=self.rsp.packet_max)
+        self._rate('read', n, time.monotonic() - t)
+        return out
+
+    def write_mem_fast(self, addr, data):
+        t = time.monotonic()
+        self.rsp.write_mem(addr, data, packet=self.rsp.packet_max)
+        self._rate('write', len(data), time.monotonic() - t)
+
+    def _rate(self, what, n, dt):
+        if not hasattr(self, 'throughput'):
+            self.throughput = {}
+        if n >= 4096 and dt > 0:
+            self.throughput[what] = round(n / dt)
+
     # ── state ───────────────────────────────────────────────────────────────
 
     def regs(self):
@@ -351,20 +419,67 @@ class Target:
         d = self.rsp.read_mem(DATA, 8)
         return int.from_bytes(d[:4], 'little'), int.from_bytes(d[4:], 'little')
 
-    def run(self, timeout, stop_flag=None):
+    def run(self, timeout, stop_flag=None, quiet=None):
         """Continue until the core halts.  Returns 'halted', or 'timeout' when
-        it was still running after `timeout` seconds (it is stopped then)."""
+        it was still running after `timeout` seconds (it is stopped then).
+
+        With `quiet` (seconds) the debugger leaves the bus alone at first:
+        OpenOCD's background polling is off for that long, then on again.
+        With polling off OpenOCD never notices a halt by itself, so it must
+        come back on before the run can end.  self.polled_running is True
+        when the core was still running once polling was back on (the
+        debugger then polled while it ran)."""
         r = self.rsp
+        self.polled_running = False
+        if quiet is not None:
+            self.poll(False)
         r.resume()
-        end = time.monotonic() + timeout
+        t0 = time.monotonic()
+        end = t0 + timeout
+        quiet_end = t0 + min(quiet, timeout) if quiet is not None else None
         while True:
+            now = time.monotonic()
+            if quiet_end is not None and now >= quiet_end:
+                quiet_end = None
+                if self._poll_on_running():
+                    return 'halted'
+                woke = time.monotonic()
+                try:
+                    r.wait_stop(POLL_GRACE)
+                    return 'halted'
+                except RSPError as e:
+                    if 'in time' not in str(e):
+                        raise
+                self.polled_running = True
+                self.log(f"still running {woke - t0:.2f} s after the start: polling on while it runs")
+                continue
             try:
-                r.wait_stop(min(0.25, max(0.01, end - time.monotonic())))
+                r.wait_stop(min(0.25, max(0.01, (quiet_end or end) - now)))
                 return 'halted'
             except RSPError as e:
                 if 'in time' not in str(e):
                     raise
             if time.monotonic() >= end or (stop_flag and stop_flag.is_set()):
+                if quiet_end is not None and self._poll_on_running():
+                    return 'halted'               # stopping early: polling must not stay off
                 r.interrupt()
                 r.wait_stop(5.0)
                 return 'timeout'
+
+    def _poll_on_running(self):
+        """Turn OpenOCD's polling back on while the core runs.  OpenOCD
+        answers commands while the core runs, and with polling off it
+        cannot have sent a stop reply yet; but if one comes before the
+        command's OK, it is kept: returns True (the core has halted)."""
+        r = self.rsp
+        r.console = []
+        r.send('qRcmd,' + 'poll on'.encode().hex())
+        halted = False
+        while True:
+            reply = r.recv(5.0)
+            if re.fullmatch(r'[ST][0-9a-fA-F]{2}.*', reply):
+                halted = True
+                continue
+            if reply.startswith('E') and len(reply) == 3:
+                self.log(f"poll on failed ({reply})")
+            return halted

@@ -1,0 +1,9262 @@
+{
+ "schema": 1,
+ "kind": "memory_map",
+ "provenance": {
+  "chip": {
+   "chip_id": "0x20002927",
+   "cpuid": "0x410CC601",
+   "rom_version": 3
+  },
+  "date": "2026-11-05 14:30:38",
+  "openocd": "Open On-Chip Debugger 0.12.0",
+  "swd_khz": 5000,
+  "picosim": {
+   "commit": "8d69161720ee0dd37b6eef862f47973c931c2e3f",
+   "dirty": true
+  },
+  "agent": "b6c7a134ff4178bbcd4a20b58373555ce3cde451",
+  "campaign": "A",
+  "run_id": "20261105-143035",
+  "runs": 2,
+  "agreed": false,
+  "target": "openocd",
+  "chip_label": "chip1"
+ },
+ "facts": [
+  {
+   "id": "memmap.sram.striping_as_datasheet",
+   "value": true,
+   "source": "measured"
+  },
+  {
+   "id": "memmap.debugger.hangs",
+   "value": 0,
+   "source": "measured"
+  },
+  {
+   "id": "memmap.probes",
+   "value": 299,
+   "source": "measured"
+  },
+  {
+   "id": "timing.access.striped_sram.load32",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.striped_sram.store32",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.striped_sram.load16",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.striped_sram.store16",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.striped_sram.load8",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.striped_sram.store8",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.sram4.load32",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.sram4.store32",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.sram4.load16",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.sram4.store16",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.sram4.load8",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.sram4.store8",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.sram5.load32",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.sram5.store32",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.sram5.load16",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.sram5.store16",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.sram5.load8",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.sram5.store8",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.non_striped_sram.load32",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.non_striped_sram.store32",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.non_striped_sram.load16",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.non_striped_sram.store16",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.non_striped_sram.load8",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.non_striped_sram.store8",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.rom.load32",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.rom.load16",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.rom.load8",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.apb_io_bank0_gpio0_status.load32",
+   "value": 4.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 130
+  },
+  {
+   "id": "timing.access.apb_io_bank0_gpio0_status.load16",
+   "value": 4.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 130
+  },
+  {
+   "id": "timing.access.apb_io_bank0_gpio0_status.load8",
+   "value": 4.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 130
+  },
+  {
+   "id": "timing.access.apb_pads_bank0_gpio22.load32",
+   "value": 4.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 130
+  },
+  {
+   "id": "timing.access.apb_pads_bank0_gpio22.store32",
+   "value": 5.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 162
+  },
+  {
+   "id": "timing.access.apb_pads_bank0_gpio22.load16",
+   "value": 4.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 130
+  },
+  {
+   "id": "timing.access.apb_pads_bank0_gpio22.store16",
+   "value": 5.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 162
+  },
+  {
+   "id": "timing.access.apb_pads_bank0_gpio22.load8",
+   "value": 4.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 130
+  },
+  {
+   "id": "timing.access.apb_pads_bank0_gpio22.store8",
+   "value": 5.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 162
+  },
+  {
+   "id": "timing.access.ahb_xip_ctrl_ctrl.load32",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.ahb_xip_ctrl_ctrl.load16",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.ahb_xip_ctrl_ctrl.load8",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.sio_gpio_in.load32",
+   "value": 1.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 34
+  },
+  {
+   "id": "timing.access.sio_gpio_in.load16",
+   "value": 1.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 34
+  },
+  {
+   "id": "timing.access.sio_gpio_in.load8",
+   "value": 1.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 34
+  },
+  {
+   "id": "timing.access.sio_gpio_out_xor.load32",
+   "value": 1.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 34
+  },
+  {
+   "id": "timing.access.sio_gpio_out_xor.store32",
+   "value": 1.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 34
+  },
+  {
+   "id": "timing.access.sio_gpio_out_xor.load16",
+   "value": 1.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 34
+  },
+  {
+   "id": "timing.access.sio_gpio_out_xor.store16",
+   "value": 1.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 34
+  },
+  {
+   "id": "timing.access.sio_gpio_out_xor.load8",
+   "value": 1.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 34
+  },
+  {
+   "id": "timing.access.sio_gpio_out_xor.store8",
+   "value": 1.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 34
+  },
+  {
+   "id": "timing.access.ppb_syst_rvr.load32",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.ppb_syst_rvr.load16",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.ppb_syst_rvr.load8",
+   "value": 2.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 66
+  },
+  {
+   "id": "timing.access.striped.fetchNone",
+   "value": 1.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 34
+  },
+  {
+   "id": "timing.access.striped-halfword.fetchNone",
+   "value": 1.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 34
+  },
+  {
+   "id": "timing.access.sram4.fetchNone",
+   "value": 1.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 34
+  },
+  {
+   "id": "timing.access.sram4-halfword.fetchNone",
+   "value": 1.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 34
+  },
+  {
+   "id": "timing.access.sram5.fetchNone",
+   "value": 1.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 34
+  },
+  {
+   "id": "timing.access.sram5-halfword.fetchNone",
+   "value": 1.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 34
+  },
+  {
+   "id": "timing.access.nonstriped.fetchNone",
+   "value": 1.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 34
+  },
+  {
+   "id": "timing.access.nonstriped-halfword.fetchNone",
+   "value": 1.0,
+   "source": "measured",
+   "unit": "cycles",
+   "raw": 34
+  }
+ ],
+ "regions": [
+  {
+   "name": "ROM",
+   "base": "0x00000000",
+   "size": 16384,
+   "kind": "rom",
+   "debugger": "0x20041F00",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x20041F00"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x1F00"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   },
+   "past_end": {
+    "debugger": "0x00000000",
+    "core": {
+     "read32": {
+      "ok": false,
+      "ended": "fault"
+     },
+     "read16": {
+      "ok": false,
+      "ended": "fault"
+     },
+     "read8": {
+      "ok": false,
+      "ended": "fault"
+     },
+     "write32": {
+      "ok": false,
+      "ended": "fault"
+     },
+     "write16": {
+      "ok": false,
+      "ended": "fault"
+     },
+     "write8": {
+      "ok": false,
+      "ended": "fault"
+     }
+    }
+   }
+  },
+  {
+   "name": "XIP",
+   "base": "0x10000000",
+   "size": 16777216,
+   "kind": "xip",
+   "debugger": "not read (side effect or flash)",
+   "core": null,
+   "past_end": {
+    "debugger": "not read (side effect or flash)",
+    "core": null
+   }
+  },
+  {
+   "name": "XIP_NOALLOC",
+   "base": "0x11000000",
+   "size": 16777216,
+   "kind": "xip",
+   "debugger": "not read (side effect or flash)",
+   "core": null,
+   "past_end": {
+    "debugger": "not read (side effect or flash)",
+    "core": null
+   }
+  },
+  {
+   "name": "XIP_NOCACHE",
+   "base": "0x12000000",
+   "size": 16777216,
+   "kind": "xip",
+   "debugger": "not read (side effect or flash)",
+   "core": null,
+   "past_end": {
+    "debugger": "not read (side effect or flash)",
+    "core": null
+   }
+  },
+  {
+   "name": "XIP_NOCACHE_NOALLOC",
+   "base": "0x13000000",
+   "size": 16777216,
+   "kind": "xip",
+   "debugger": "not read (side effect or flash)",
+   "core": null,
+   "past_end": {
+    "debugger": "0x00000003",
+    "core": {
+     "read32": {
+      "ok": true,
+      "value": "0x00000003"
+     },
+     "read16": {
+      "ok": true,
+      "value": "0x0003"
+     },
+     "read8": {
+      "ok": true,
+      "value": "0x03"
+     }
+    }
+   }
+  },
+  {
+   "name": "XIP_CTRL",
+   "base": "0x14000000",
+   "size": 32,
+   "kind": "ahb",
+   "debugger": "0x00000003",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000003"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0003"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x03"
+    }
+   },
+   "past_end": {
+    "debugger": "0x00000003",
+    "core": {
+     "read32": {
+      "ok": true,
+      "value": "0x00000003"
+     },
+     "read16": {
+      "ok": true,
+      "value": "0x0003"
+     },
+     "read8": {
+      "ok": true,
+      "value": "0x03"
+     }
+    }
+   }
+  },
+  {
+   "name": "XIP_SRAM",
+   "base": "0x15000000",
+   "size": 16384,
+   "kind": "xip",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read8": {
+     "ok": false,
+     "ended": "fault"
+    }
+   },
+   "past_end": {
+    "debugger": "0x00000000",
+    "core": {
+     "read32": {
+      "ok": false,
+      "ended": "fault"
+     },
+     "read16": {
+      "ok": false,
+      "ended": "fault"
+     },
+     "read8": {
+      "ok": false,
+      "ended": "fault"
+     }
+    }
+   }
+  },
+  {
+   "name": "XIP_SSI",
+   "base": "0x18000000",
+   "size": 256,
+   "kind": "apb-flash",
+   "debugger": "0x001F0300",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x001F0300"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0300"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   },
+   "past_end": {
+    "debugger": "0x001F0300",
+    "core": {
+     "read32": {
+      "ok": true,
+      "value": "0x001F0300"
+     },
+     "read16": {
+      "ok": true,
+      "value": "0x0300"
+     },
+     "read8": {
+      "ok": true,
+      "value": "0x00"
+     }
+    }
+   }
+  },
+  {
+   "name": "SRAM (striped)",
+   "base": "0x20000000",
+   "size": 262144,
+   "kind": "sram",
+   "debugger": "0x20001800",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x20001800"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x1800"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   },
+   "past_end": {
+    "debugger": "0xA5C3965A",
+    "core": {
+     "read32": {
+      "ok": true,
+      "value": "0x4BD881FA"
+     },
+     "read16": {
+      "ok": true,
+      "value": "0x81FA"
+     },
+     "read8": {
+      "ok": true,
+      "value": "0xFA"
+     },
+     "write32": {
+      "ok": true,
+      "value": "0xA5C3965A",
+      "stored": true
+     },
+     "write16": {
+      "ok": true,
+      "value": "0x965A",
+      "stored": true
+     },
+     "write8": {
+      "ok": true,
+      "value": "0x5A",
+      "stored": true
+     }
+    }
+   }
+  },
+  {
+   "name": "SRAM4",
+   "base": "0x20040000",
+   "size": 4096,
+   "kind": "sram",
+   "debugger": "0xA5C3965A",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x4BD881FA"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x81FA"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0xFA"
+    },
+    "write32": {
+     "ok": true,
+     "value": "0xA5C3965A",
+     "stored": true
+    },
+    "write16": {
+     "ok": true,
+     "value": "0x965A",
+     "stored": true
+    },
+    "write8": {
+     "ok": true,
+     "value": "0x5A",
+     "stored": true
+    }
+   },
+   "past_end": {
+    "debugger": "0xA5C3965A",
+    "core": {
+     "read32": {
+      "ok": true,
+      "value": "0x7CB01352"
+     },
+     "read16": {
+      "ok": true,
+      "value": "0x1352"
+     },
+     "read8": {
+      "ok": true,
+      "value": "0x52"
+     },
+     "write32": {
+      "ok": true,
+      "value": "0xA5C3965A",
+      "stored": true
+     },
+     "write16": {
+      "ok": true,
+      "value": "0x965A",
+      "stored": true
+     },
+     "write8": {
+      "ok": true,
+      "value": "0x5A",
+      "stored": true
+     }
+    }
+   }
+  },
+  {
+   "name": "SRAM5",
+   "base": "0x20041000",
+   "size": 4096,
+   "kind": "sram",
+   "debugger": "0xA5C3965A",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x7CB01352"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x1352"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x52"
+    },
+    "write32": {
+     "ok": true,
+     "value": "0xA5C3965A",
+     "stored": true
+    },
+    "write16": {
+     "ok": true,
+     "value": "0x965A",
+     "stored": true
+    },
+    "write8": {
+     "ok": true,
+     "value": "0x5A",
+     "stored": true
+    }
+   },
+   "past_end": {
+    "debugger": "0x00000000",
+    "core": {
+     "read32": {
+      "ok": false,
+      "ended": "fault"
+     },
+     "read16": {
+      "ok": false,
+      "ended": "fault"
+     },
+     "read8": {
+      "ok": false,
+      "ended": "fault"
+     },
+     "write32": {
+      "ok": false,
+      "ended": "fault"
+     },
+     "write16": {
+      "ok": false,
+      "ended": "fault"
+     },
+     "write8": {
+      "ok": false,
+      "ended": "fault"
+     }
+    }
+   }
+  },
+  {
+   "name": "SRAM0",
+   "base": "0x21000000",
+   "size": 65536,
+   "kind": "sram",
+   "debugger": "0x20001800",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x20001800"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x1800"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   },
+   "past_end": {
+    "debugger": "0x200000C1",
+    "core": {
+     "read32": {
+      "ok": true,
+      "value": "0x200000C1"
+     },
+     "read16": {
+      "ok": true,
+      "value": "0x00C1"
+     },
+     "read8": {
+      "ok": true,
+      "value": "0xC1"
+     }
+    }
+   }
+  },
+  {
+   "name": "SRAM1",
+   "base": "0x21010000",
+   "size": 65536,
+   "kind": "sram",
+   "debugger": "0x200000C1",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x200000C1"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x00C1"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0xC1"
+    }
+   },
+   "past_end": {
+    "debugger": "0x200000E7",
+    "core": {
+     "read32": {
+      "ok": true,
+      "value": "0x200000E7"
+     },
+     "read16": {
+      "ok": true,
+      "value": "0x00E7"
+     },
+     "read8": {
+      "ok": true,
+      "value": "0xE7"
+     }
+    }
+   }
+  },
+  {
+   "name": "SRAM2",
+   "base": "0x21020000",
+   "size": 65536,
+   "kind": "sram",
+   "debugger": "0x200000E7",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x200000E7"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x00E7"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0xE7"
+    }
+   },
+   "past_end": {
+    "debugger": "0x200000E7",
+    "core": {
+     "read32": {
+      "ok": true,
+      "value": "0x200000E7"
+     },
+     "read16": {
+      "ok": true,
+      "value": "0x00E7"
+     },
+     "read8": {
+      "ok": true,
+      "value": "0xE7"
+     }
+    }
+   }
+  },
+  {
+   "name": "SRAM3",
+   "base": "0x21030000",
+   "size": 65536,
+   "kind": "sram",
+   "debugger": "0x200000E7",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x200000E7"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x00E7"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0xE7"
+    }
+   },
+   "past_end": {
+    "debugger": "0x00000000",
+    "core": {
+     "read32": {
+      "ok": false,
+      "ended": "fault"
+     },
+     "read16": {
+      "ok": false,
+      "ended": "fault"
+     },
+     "read8": {
+      "ok": false,
+      "ended": "fault"
+     },
+     "write32": {
+      "ok": false,
+      "ended": "fault"
+     },
+     "write16": {
+      "ok": false,
+      "ended": "fault"
+     },
+     "write8": {
+      "ok": false,
+      "ended": "fault"
+     }
+    }
+   }
+  },
+  {
+   "name": "USB DPRAM",
+   "base": "0x50100000",
+   "size": 4096,
+   "kind": "ahb",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   },
+   "past_end": {
+    "debugger": "0x00000000",
+    "core": {
+     "read32": {
+      "ok": true,
+      "value": "0x00000000"
+     },
+     "read16": {
+      "ok": true,
+      "value": "0x0000"
+     },
+     "read8": {
+      "ok": true,
+      "value": "0x00"
+     }
+    }
+   }
+  },
+  {
+   "name": "SIO",
+   "base": "0xD0000000",
+   "size": 384,
+   "kind": "sio",
+   "debugger": "not reachable (SIO)",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   },
+   "past_end": {
+    "debugger": "not reachable (SIO)",
+    "core": {
+     "read32": {
+      "ok": true,
+      "value": "0x00000000"
+     },
+     "read16": {
+      "ok": true,
+      "value": "0x0000"
+     },
+     "read8": {
+      "ok": true,
+      "value": "0x00"
+     },
+     "write32": {
+      "ok": true,
+      "value": "0x00000001",
+      "stored": false
+     },
+     "write16": {
+      "ok": true,
+      "value": "0x0001",
+      "stored": false
+     },
+     "write8": {
+      "ok": true,
+      "value": "0x01",
+      "stored": false
+     }
+    }
+   }
+  },
+  {
+   "name": "PPB",
+   "base": "0xE0000000",
+   "size": 1048576,
+   "kind": "ppb",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   },
+   "past_end": {
+    "debugger": "0x00000000",
+    "core": {
+     "read32": {
+      "ok": true,
+      "value": "0x00000000"
+     },
+     "read16": {
+      "ok": true,
+      "value": "0x0000"
+     },
+     "read8": {
+      "ok": true,
+      "value": "0x00"
+     },
+     "write32": {
+      "ok": true,
+      "value": "0x00000000",
+      "stored": false
+     },
+     "write16": {
+      "ok": true,
+      "value": "0x0000",
+      "stored": false
+     },
+     "write8": {
+      "ok": true,
+      "value": "0x00",
+      "stored": false
+     }
+    }
+   }
+  }
+ ],
+ "probes": {
+  "0x00000000": {
+   "why": "ROM first",
+   "debugger": "0x20041F00",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x20041F00"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x1F00"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x00002000": {
+   "why": "ROM middle",
+   "debugger": "0xD00A2901",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0xD00A2901"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x2901"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x01"
+    }
+   }
+  },
+  "0x00003FFC": {
+   "why": "ROM last",
+   "debugger": "0xBE00BE00",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0xBE00BE00"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0xBE00"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    },
+    "write32": {
+     "ok": true,
+     "value": "0xBE00BE00",
+     "stored": false
+    },
+    "write16": {
+     "ok": true,
+     "value": "0xBE00",
+     "stored": false
+    },
+    "write8": {
+     "ok": true,
+     "value": "0x00",
+     "stored": false
+    }
+   }
+  },
+  "0x00004000": {
+   "why": "ROM past",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read8": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write8": {
+     "ok": false,
+     "ended": "fault"
+    }
+   }
+  },
+  "0x0FFFFFFC": {
+   "why": "a hole (proposal \u00a76.A)",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read8": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write8": {
+     "ok": false,
+     "ended": "fault"
+    }
+   }
+  },
+  "0x10000000": {
+   "why": "XIP first",
+   "debugger": "not read (side effect or flash)",
+   "core": null
+  },
+  "0x10800000": {
+   "why": "XIP middle",
+   "debugger": "not read (side effect or flash)",
+   "core": null
+  },
+  "0x10FFFFFC": {
+   "why": "XIP last",
+   "debugger": "not read (side effect or flash)",
+   "core": null
+  },
+  "0x11000000": {
+   "why": "XIP past",
+   "debugger": "not read (side effect or flash)",
+   "core": null
+  },
+  "0x11800000": {
+   "why": "XIP_NOALLOC middle",
+   "debugger": "not read (side effect or flash)",
+   "core": null
+  },
+  "0x11FFFFFC": {
+   "why": "XIP_NOALLOC last",
+   "debugger": "not read (side effect or flash)",
+   "core": null
+  },
+  "0x12000000": {
+   "why": "XIP_NOALLOC past",
+   "debugger": "not read (side effect or flash)",
+   "core": null
+  },
+  "0x12800000": {
+   "why": "XIP_NOCACHE middle",
+   "debugger": "not read (side effect or flash)",
+   "core": null
+  },
+  "0x12FFFFFC": {
+   "why": "XIP_NOCACHE last",
+   "debugger": "not read (side effect or flash)",
+   "core": null
+  },
+  "0x13000000": {
+   "why": "XIP_NOCACHE past",
+   "debugger": "not read (side effect or flash)",
+   "core": null
+  },
+  "0x13800000": {
+   "why": "XIP_NOCACHE_NOALLOC middle",
+   "debugger": "not read (side effect or flash)",
+   "core": null
+  },
+  "0x13FFFFFC": {
+   "why": "XIP_NOCACHE_NOALLOC last",
+   "debugger": "not read (side effect or flash)",
+   "core": null
+  },
+  "0x14000000": {
+   "why": "XIP_NOCACHE_NOALLOC past",
+   "debugger": "0x00000003",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000003"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0003"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x03"
+    }
+   }
+  },
+  "0x14000010": {
+   "why": "XIP_CTRL middle",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x1400001C": {
+   "why": "XIP_CTRL last",
+   "debugger": "not read (side effect or flash)",
+   "core": null
+  },
+  "0x14000020": {
+   "why": "XIP_CTRL past",
+   "debugger": "0x00000003",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000003"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0003"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x03"
+    }
+   }
+  },
+  "0x14000FFC": {
+   "why": "XIP_CTRL end of its 4 KB",
+   "debugger": "0x88004008",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x88004008"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x4008"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x08"
+    }
+   }
+  },
+  "0x14001000": {
+   "why": "XIP_CTRL XOR alias",
+   "debugger": "0x00000003",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000003"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0003"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x03"
+    }
+   }
+  },
+  "0x14002000": {
+   "why": "XIP_CTRL SET alias",
+   "debugger": "0x00000003",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000003"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0003"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x03"
+    }
+   }
+  },
+  "0x14003000": {
+   "why": "XIP_CTRL CLR alias",
+   "debugger": "0x00000003",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000003"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0003"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x03"
+    }
+   }
+  },
+  "0x15000000": {
+   "why": "XIP_SRAM first",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read8": {
+     "ok": false,
+     "ended": "fault"
+    }
+   }
+  },
+  "0x15002000": {
+   "why": "XIP_SRAM middle",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read8": {
+     "ok": false,
+     "ended": "fault"
+    }
+   }
+  },
+  "0x15003FFC": {
+   "why": "XIP_SRAM last",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read8": {
+     "ok": false,
+     "ended": "fault"
+    }
+   }
+  },
+  "0x15004000": {
+   "why": "XIP_SRAM past",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read8": {
+     "ok": false,
+     "ended": "fault"
+    }
+   }
+  },
+  "0x18000000": {
+   "why": "XIP_SSI first",
+   "debugger": "0x001F0300",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x001F0300"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0300"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x18000080": {
+   "why": "XIP_SSI middle",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x180000F8": {
+   "why": "SSI last register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x180000FC": {
+   "why": "XIP_SSI last",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x18000100": {
+   "why": "XIP_SSI past",
+   "debugger": "0x001F0300",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x001F0300"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0300"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x18000FFC": {
+   "why": "SSI end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x18001000": {
+   "why": "SSI XOR alias",
+   "debugger": "0x001F0300",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x001F0300"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0300"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x18002000": {
+   "why": "SSI SET alias",
+   "debugger": "0x001F0300",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x001F0300"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0300"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x18003000": {
+   "why": "SSI CLR alias",
+   "debugger": "0x001F0300",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x001F0300"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0300"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x20000000": {
+   "why": "SRAM (striped) first",
+   "debugger": "0x20001800",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x20001800"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x1800"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x20020000": {
+   "why": "SRAM (striped) middle",
+   "debugger": "0x00000250",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x5D724EEB"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x4EEB"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0xEB"
+    }
+   }
+  },
+  "0x2003FFFC": {
+   "why": "SRAM (striped) last",
+   "debugger": "0xA5C3965A",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0xABA713A2"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x13A2"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0xA2"
+    },
+    "write32": {
+     "ok": true,
+     "value": "0xA5C3965A",
+     "stored": true
+    },
+    "write16": {
+     "ok": true,
+     "value": "0x965A",
+     "stored": true
+    },
+    "write8": {
+     "ok": true,
+     "value": "0x5A",
+     "stored": true
+    }
+   }
+  },
+  "0x20040000": {
+   "why": "SRAM (striped) past",
+   "debugger": "0xA5C3965A",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x4BD881FA"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x81FA"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0xFA"
+    },
+    "write32": {
+     "ok": true,
+     "value": "0xA5C3965A",
+     "stored": true
+    },
+    "write16": {
+     "ok": true,
+     "value": "0x965A",
+     "stored": true
+    },
+    "write8": {
+     "ok": true,
+     "value": "0x5A",
+     "stored": true
+    }
+   }
+  },
+  "0x20040800": {
+   "why": "SRAM4 middle",
+   "debugger": "0xDE00DE00",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x2827A552"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0xA552"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x52"
+    },
+    "write32": {
+     "ok": true,
+     "value": "0xA5C3965A",
+     "stored": true
+    },
+    "write16": {
+     "ok": true,
+     "value": "0x965A",
+     "stored": true
+    },
+    "write8": {
+     "ok": true,
+     "value": "0x5A",
+     "stored": true
+    }
+   }
+  },
+  "0x20040FFC": {
+   "why": "SRAM4 last",
+   "debugger": "0xDE00DE00",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x32974A67"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x4A67"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x67"
+    },
+    "write32": {
+     "ok": true,
+     "value": "0xA5C3965A",
+     "stored": true
+    },
+    "write16": {
+     "ok": true,
+     "value": "0x965A",
+     "stored": true
+    },
+    "write8": {
+     "ok": true,
+     "value": "0x5A",
+     "stored": true
+    }
+   }
+  },
+  "0x20041000": {
+   "why": "SRAM4 past",
+   "debugger": "0xA5C3965A",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x7CB01352"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x1352"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x52"
+    },
+    "write32": {
+     "ok": true,
+     "value": "0xA5C3965A",
+     "stored": true
+    },
+    "write16": {
+     "ok": true,
+     "value": "0x965A",
+     "stored": true
+    },
+    "write8": {
+     "ok": true,
+     "value": "0x5A",
+     "stored": true
+    }
+   }
+  },
+  "0x20041800": {
+   "why": "SRAM5 middle",
+   "debugger": "0xDE00DE00",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x76BD9AA0"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x9AA0"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0xA0"
+    }
+   }
+  },
+  "0x20041FFC": {
+   "why": "SRAM5 last",
+   "debugger": "0xDE00DE00",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0xFFFFFFFF"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0xFFFF"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0xFF"
+    },
+    "write32": {
+     "ok": true,
+     "value": "0xA5C3965A",
+     "stored": true
+    },
+    "write16": {
+     "ok": true,
+     "value": "0x965A",
+     "stored": true
+    },
+    "write8": {
+     "ok": true,
+     "value": "0x5A",
+     "stored": true
+    }
+   }
+  },
+  "0x20042000": {
+   "why": "SRAM5 past",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read8": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write8": {
+     "ok": false,
+     "ended": "fault"
+    }
+   }
+  },
+  "0x20080000": {
+   "why": "a hole (proposal \u00a76.A)",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read8": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write8": {
+     "ok": false,
+     "ended": "fault"
+    }
+   }
+  },
+  "0x21000000": {
+   "why": "SRAM0 first",
+   "debugger": "0x20001800",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x20001800"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x1800"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x21008000": {
+   "why": "SRAM0 middle",
+   "debugger": "0x00000250",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x5D724EEB"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x4EEB"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0xEB"
+    }
+   }
+  },
+  "0x2100FFFC": {
+   "why": "SRAM0 last",
+   "debugger": "0x7D0A94C4",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x7D0A94C4"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x94C4"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0xC4"
+    }
+   }
+  },
+  "0x21010000": {
+   "why": "SRAM0 past",
+   "debugger": "0x200000C1",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x200000C1"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x00C1"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0xC1"
+    }
+   }
+  },
+  "0x21018000": {
+   "why": "SRAM1 middle",
+   "debugger": "0x00000003",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0xB4201442"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x1442"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x42"
+    }
+   }
+  },
+  "0x2101FFFC": {
+   "why": "SRAM1 last",
+   "debugger": "0x11C4DDF0",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x11C4DDF0"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0xDDF0"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0xF0"
+    }
+   }
+  },
+  "0x21020000": {
+   "why": "SRAM1 past",
+   "debugger": "0x200000E7",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x200000E7"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x00E7"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0xE7"
+    }
+   }
+  },
+  "0x21028000": {
+   "why": "SRAM2 middle",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x1E629C93"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x9C93"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x93"
+    }
+   }
+  },
+  "0x2102FFFC": {
+   "why": "SRAM2 last",
+   "debugger": "0x5E59A056",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x5E59A056"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0xA056"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x56"
+    }
+   }
+  },
+  "0x21030000": {
+   "why": "SRAM2 past",
+   "debugger": "0x200000E7",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x200000E7"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x00E7"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0xE7"
+    }
+   }
+  },
+  "0x21038000": {
+   "why": "SRAM3 middle",
+   "debugger": "0x40058FFC",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x375F6D5B"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x6D5B"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x5B"
+    }
+   }
+  },
+  "0x2103FFFC": {
+   "why": "SRAM3 last",
+   "debugger": "0xA5C3965A",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0xABA713A2"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x13A2"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0xA2"
+    },
+    "write32": {
+     "ok": true,
+     "value": "0xA5C3965A",
+     "stored": true
+    },
+    "write16": {
+     "ok": true,
+     "value": "0x965A",
+     "stored": true
+    },
+    "write8": {
+     "ok": true,
+     "value": "0x5A",
+     "stored": true
+    }
+   }
+  },
+  "0x21040000": {
+   "why": "SRAM3 past",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read8": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write8": {
+     "ok": false,
+     "ended": "fault"
+    }
+   }
+  },
+  "0x30000000": {
+   "why": "a hole (proposal \u00a76.A)",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read8": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write8": {
+     "ok": false,
+     "ended": "fault"
+    }
+   }
+  },
+  "0x40000000": {
+   "why": "SYSINFO first register",
+   "debugger": "0x20002927",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x20002927"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x2927"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x27"
+    }
+   }
+  },
+  "0x40000040": {
+   "why": "SYSINFO last register",
+   "debugger": "0xE0C912E8",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0xE0C912E8"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x12E8"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0xE8"
+    }
+   }
+  },
+  "0x40000044": {
+   "why": "SYSINFO past its registers",
+   "debugger": "0x0696DFDF",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x0696DFDF"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0xDFDF"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0xDF"
+    }
+   }
+  },
+  "0x40000FFC": {
+   "why": "SYSINFO end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40001000": {
+   "why": "SYSINFO XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40002000": {
+   "why": "SYSINFO SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40003000": {
+   "why": "SYSINFO CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40004000": {
+   "why": "SYSCFG first register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40004018": {
+   "why": "SYSCFG last register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4000401C": {
+   "why": "SYSCFG past its registers",
+   "debugger": "0x53434647",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x53434647"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x4647"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x47"
+    }
+   }
+  },
+  "0x40004FFC": {
+   "why": "SYSCFG end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40005000": {
+   "why": "SYSCFG XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40006000": {
+   "why": "SYSCFG SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40007000": {
+   "why": "SYSCFG CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40008000": {
+   "why": "CLOCKS first register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x400080C4": {
+   "why": "CLOCKS last register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x400080C8": {
+   "why": "CLOCKS past its registers",
+   "debugger": "0x636C6B64",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x636C6B64"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x6B64"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x64"
+    }
+   }
+  },
+  "0x40008FFC": {
+   "why": "CLOCKS end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40009000": {
+   "why": "CLOCKS XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4000A000": {
+   "why": "CLOCKS SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4000B000": {
+   "why": "CLOCKS CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4000C000": {
+   "why": "RESETS first register",
+   "debugger": "0x00DFEC9F",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00DFEC9F"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0xEC9F"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x9F"
+    }
+   }
+  },
+  "0x4000C008": {
+   "why": "RESETS last register",
+   "debugger": "0x01301360",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x01301360"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x1360"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x60"
+    }
+   }
+  },
+  "0x4000C00C": {
+   "why": "RESETS past its registers",
+   "debugger": "0x72737473",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x72737473"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x7473"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x73"
+    }
+   }
+  },
+  "0x4000CFFC": {
+   "why": "RESETS end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4000D000": {
+   "why": "RESETS XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4000E000": {
+   "why": "RESETS SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4000F000": {
+   "why": "RESETS CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40010000": {
+   "why": "PSM first register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4001000C": {
+   "why": "PSM last register",
+   "debugger": "0x0001FFFF",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x0001FFFF"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0xFFFF"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0xFF"
+    }
+   }
+  },
+  "0x40010010": {
+   "why": "PSM past its registers",
+   "debugger": "0x706F7772",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x706F7772"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x7772"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x72"
+    }
+   }
+  },
+  "0x40010FFC": {
+   "why": "PSM end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40011000": {
+   "why": "PSM XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40012000": {
+   "why": "PSM SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40013000": {
+   "why": "PSM CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40014000": {
+   "why": "IO_BANK0 first register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4001418C": {
+   "why": "IO_BANK0 last register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40014190": {
+   "why": "IO_BANK0 past its registers",
+   "debugger": "0x696F6230",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x696F6230"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x6230"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x30"
+    }
+   }
+  },
+  "0x40014FFC": {
+   "why": "IO_BANK0 end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40015000": {
+   "why": "IO_BANK0 XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40016000": {
+   "why": "IO_BANK0 SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40017000": {
+   "why": "IO_BANK0 CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40018000": {
+   "why": "IO_QSPI first register",
+   "debugger": "0x00003000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00003000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x3000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40018054": {
+   "why": "IO_QSPI last register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40018058": {
+   "why": "IO_QSPI past its registers",
+   "debugger": "0x696F6231",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x696F6231"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x6231"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x31"
+    }
+   }
+  },
+  "0x40018FFC": {
+   "why": "IO_QSPI end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40019000": {
+   "why": "IO_QSPI XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4001A000": {
+   "why": "IO_QSPI SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4001B000": {
+   "why": "IO_QSPI CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4001C000": {
+   "why": "PADS_BANK0 first register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4001C080": {
+   "why": "PADS_BANK0 last register",
+   "debugger": "0x0000005A",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x0000005A"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x005A"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x5A"
+    }
+   }
+  },
+  "0x4001C084": {
+   "why": "PADS_BANK0 past its registers",
+   "debugger": "0x70616430",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x70616430"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x6430"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x30"
+    }
+   }
+  },
+  "0x4001CFFC": {
+   "why": "PADS_BANK0 end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4001D000": {
+   "why": "PADS_BANK0 XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4001E000": {
+   "why": "PADS_BANK0 SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4001F000": {
+   "why": "PADS_BANK0 CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40020000": {
+   "why": "PADS_QSPI first register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40020018": {
+   "why": "PADS_QSPI last register",
+   "debugger": "0x0000005A",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x0000005A"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x005A"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x5A"
+    }
+   }
+  },
+  "0x4002001C": {
+   "why": "PADS_QSPI past its registers",
+   "debugger": "0x70616471",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x70616471"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x6471"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x71"
+    }
+   }
+  },
+  "0x40020FFC": {
+   "why": "PADS_QSPI end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40021000": {
+   "why": "PADS_QSPI XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40022000": {
+   "why": "PADS_QSPI SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40023000": {
+   "why": "PADS_QSPI CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40024000": {
+   "why": "XOSC first register",
+   "debugger": "0x00FAB000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00FAB000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0xB000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4002401C": {
+   "why": "XOSC last register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40024020": {
+   "why": "XOSC past its registers",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40024FFC": {
+   "why": "XOSC end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40025000": {
+   "why": "XOSC XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40026000": {
+   "why": "XOSC SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40027000": {
+   "why": "XOSC CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40028000": {
+   "why": "PLL_SYS first register",
+   "debugger": "0x80000001",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x80000001"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0001"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x01"
+    }
+   }
+  },
+  "0x4002800C": {
+   "why": "PLL_SYS last register",
+   "debugger": "0x00055000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00055000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x5000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40028010": {
+   "why": "PLL_SYS past its registers",
+   "debugger": "0x00504C4C",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00504C4C"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x4C4C"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x4C"
+    }
+   }
+  },
+  "0x40028FFC": {
+   "why": "PLL_SYS end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40029000": {
+   "why": "PLL_SYS XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4002A000": {
+   "why": "PLL_SYS SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4002B000": {
+   "why": "PLL_SYS CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4002C000": {
+   "why": "PLL_USB first register",
+   "debugger": "0x00000001",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000001"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0001"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x01"
+    }
+   }
+  },
+  "0x4002C00C": {
+   "why": "PLL_USB last register",
+   "debugger": "0x00077000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00077000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x7000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4002C010": {
+   "why": "PLL_USB past its registers",
+   "debugger": "0x00504C4C",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00504C4C"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x4C4C"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x4C"
+    }
+   }
+  },
+  "0x4002CFFC": {
+   "why": "PLL_USB end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4002D000": {
+   "why": "PLL_USB XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4002E000": {
+   "why": "PLL_USB SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4002F000": {
+   "why": "PLL_USB CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40030000": {
+   "why": "BUSCTRL first register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40030024": {
+   "why": "BUSCTRL last register",
+   "debugger": "0x0000001F",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x0000001F"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x001F"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x1F"
+    }
+   }
+  },
+  "0x40030028": {
+   "why": "BUSCTRL past its registers",
+   "debugger": "0x42555343",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x42555343"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x5343"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x43"
+    }
+   }
+  },
+  "0x40030FFC": {
+   "why": "BUSCTRL end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40031000": {
+   "why": "BUSCTRL XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40032000": {
+   "why": "BUSCTRL SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40033000": {
+   "why": "BUSCTRL CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40034000": {
+   "why": "UART0 first register",
+   "debugger": "not read (side effect or flash)",
+   "core": null
+  },
+  "0x40034FFC": {
+   "why": "UART0 last register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40035000": {
+   "why": "UART0 past its registers",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40036000": {
+   "why": "UART0 SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40037000": {
+   "why": "UART0 CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40038000": {
+   "why": "UART1 first register",
+   "debugger": "not read (side effect or flash)",
+   "core": null
+  },
+  "0x40038FFC": {
+   "why": "UART1 last register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40039000": {
+   "why": "UART1 past its registers",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4003A000": {
+   "why": "UART1 SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4003B000": {
+   "why": "UART1 CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4003C000": {
+   "why": "SPI0 first register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4003CFFC": {
+   "why": "SPI0 last register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4003D000": {
+   "why": "SPI0 past its registers",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4003E000": {
+   "why": "SPI0 SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4003F000": {
+   "why": "SPI0 CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40040000": {
+   "why": "SPI1 first register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40040FFC": {
+   "why": "SPI1 last register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40041000": {
+   "why": "SPI1 past its registers",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40042000": {
+   "why": "SPI1 SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40043000": {
+   "why": "SPI1 CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40044000": {
+   "why": "I2C0 first register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x400440FC": {
+   "why": "I2C0 last register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40044100": {
+   "why": "I2C0 past its registers",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40044FFC": {
+   "why": "I2C0 end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40045000": {
+   "why": "I2C0 XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40046000": {
+   "why": "I2C0 SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40047000": {
+   "why": "I2C0 CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40048000": {
+   "why": "I2C1 first register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x400480FC": {
+   "why": "I2C1 last register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40048100": {
+   "why": "I2C1 past its registers",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40048FFC": {
+   "why": "I2C1 end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40049000": {
+   "why": "I2C1 XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4004A000": {
+   "why": "I2C1 SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4004B000": {
+   "why": "I2C1 CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4004C000": {
+   "why": "ADC first register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4004C020": {
+   "why": "ADC last register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4004C024": {
+   "why": "ADC past its registers",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4004CFFC": {
+   "why": "ADC end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4004D000": {
+   "why": "ADC XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4004E000": {
+   "why": "ADC SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4004F000": {
+   "why": "ADC CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40050000": {
+   "why": "PWM first register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x400500B0": {
+   "why": "PWM last register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x400500B4": {
+   "why": "PWM past its registers",
+   "debugger": "0x50574D53",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x50574D53"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x4D53"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x53"
+    }
+   }
+  },
+  "0x40050FFC": {
+   "why": "PWM end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40051000": {
+   "why": "PWM XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40052000": {
+   "why": "PWM SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40053000": {
+   "why": "PWM CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40054000": {
+   "why": "TIMER first register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40054040": {
+   "why": "TIMER last register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40054044": {
+   "why": "TIMER past its registers",
+   "debugger": "0x54494D52",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x54494D52"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x4D52"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x52"
+    }
+   }
+  },
+  "0x40054FFC": {
+   "why": "TIMER end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40055000": {
+   "why": "TIMER XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40056000": {
+   "why": "TIMER SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40057000": {
+   "why": "TIMER CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40058000": {
+   "why": "WATCHDOG first register",
+   "debugger": "0x07000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x07000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4005802C": {
+   "why": "WATCHDOG last register",
+   "debugger": "0x00003E0C",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000E0C"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x660C"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x0C"
+    }
+   }
+  },
+  "0x40058030": {
+   "why": "WATCHDOG past its registers",
+   "debugger": "0x57444F47",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x57444F47"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x4F47"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x47"
+    }
+   }
+  },
+  "0x40058FFC": {
+   "why": "WATCHDOG end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40059000": {
+   "why": "WATCHDOG XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4005A000": {
+   "why": "WATCHDOG SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4005B000": {
+   "why": "WATCHDOG CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4005C000": {
+   "why": "RTC first register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4005C02C": {
+   "why": "RTC last register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4005C030": {
+   "why": "RTC past its registers",
+   "debugger": "0x00525443",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00525443"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x5443"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x43"
+    }
+   }
+  },
+  "0x4005CFFC": {
+   "why": "RTC end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4005D000": {
+   "why": "RTC XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4005E000": {
+   "why": "RTC SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4005F000": {
+   "why": "RTC CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40060000": {
+   "why": "ROSC first register",
+   "debugger": "0x00FAB000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00FAB000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0xB000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40060020": {
+   "why": "ROSC last register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40060024": {
+   "why": "ROSC past its registers",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40060FFC": {
+   "why": "ROSC end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40061000": {
+   "why": "ROSC XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40062000": {
+   "why": "ROSC SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40063000": {
+   "why": "ROSC CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40064000": {
+   "why": "VREG_AND_CHIP_RESET first register",
+   "debugger": "0x000010B1",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x000010B1"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x10B1"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0xB1"
+    }
+   }
+  },
+  "0x40064008": {
+   "why": "VREG_AND_CHIP_RESET last register",
+   "debugger": "0x00000100",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000100"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0100"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4006400C": {
+   "why": "VREG_AND_CHIP_RESET past its registers",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40064FFC": {
+   "why": "VREG_AND_CHIP_RESET end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40065000": {
+   "why": "VREG_AND_CHIP_RESET XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40066000": {
+   "why": "VREG_AND_CHIP_RESET SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x40067000": {
+   "why": "VREG_AND_CHIP_RESET CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x4006C000": {
+   "why": "TBMAN first register",
+   "debugger": "0x00000001",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000001"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0001"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x01"
+    }
+   }
+  },
+  "0x4006C004": {
+   "why": "TBMAN past its registers",
+   "debugger": "0x00000001",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000001"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0001"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x01"
+    }
+   }
+  },
+  "0x4006CFFC": {
+   "why": "TBMAN end of its 4 KB",
+   "debugger": "0x00000001",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000001"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0001"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x01"
+    }
+   }
+  },
+  "0x4006D000": {
+   "why": "TBMAN XOR alias",
+   "debugger": "0x00000001",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000001"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0001"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x01"
+    }
+   }
+  },
+  "0x4006E000": {
+   "why": "TBMAN SET alias",
+   "debugger": "0x00000001",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000001"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0001"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x01"
+    }
+   }
+  },
+  "0x4006F000": {
+   "why": "TBMAN CLR alias",
+   "debugger": "0x00000001",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000001"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0001"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x01"
+    }
+   }
+  },
+  "0x40070000": {
+   "why": "a hole (proposal \u00a76.A)",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read8": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write8": {
+     "ok": false,
+     "ended": "fault"
+    }
+   }
+  },
+  "0x50000000": {
+   "why": "DMA first register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50000AC4": {
+   "why": "DMA last register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50000AC8": {
+   "why": "DMA past its registers",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50000FFC": {
+   "why": "DMA end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50001000": {
+   "why": "DMA XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50002000": {
+   "why": "DMA SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50003000": {
+   "why": "DMA CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50100000": {
+   "why": "USB DPRAM first",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x501000FC": {
+   "why": "USB_DEVICE_DPRAM last register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50100100": {
+   "why": "USB_DEVICE_DPRAM past its registers",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50100800": {
+   "why": "USB DPRAM middle",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50100FFC": {
+   "why": "USB DPRAM last",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50101000": {
+   "why": "USB DPRAM past",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50102000": {
+   "why": "USB_DEVICE_DPRAM SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50103000": {
+   "why": "USB_DEVICE_DPRAM CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50110000": {
+   "why": "USB first register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50110098": {
+   "why": "USB last register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x5011009C": {
+   "why": "USB past its registers",
+   "debugger": "0x00757362",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00757362"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x7362"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x62"
+    }
+   }
+  },
+  "0x50110FFC": {
+   "why": "USB end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50111000": {
+   "why": "USB XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50112000": {
+   "why": "USB SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50113000": {
+   "why": "USB CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50200000": {
+   "why": "PIO0 first register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50200140": {
+   "why": "PIO0 last register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50200144": {
+   "why": "PIO0 past its registers",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50200FFC": {
+   "why": "PIO0 end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50201000": {
+   "why": "PIO0 XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50202000": {
+   "why": "PIO0 SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50203000": {
+   "why": "PIO0 CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50300000": {
+   "why": "PIO1 first register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50300140": {
+   "why": "PIO1 last register",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50300144": {
+   "why": "PIO1 past its registers",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50300FFC": {
+   "why": "PIO1 end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50301000": {
+   "why": "PIO1 XOR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50302000": {
+   "why": "PIO1 SET alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x50303000": {
+   "why": "PIO1 CLR alias",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0x60000000": {
+   "why": "a hole (proposal \u00a76.A)",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read8": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write8": {
+     "ok": false,
+     "ended": "fault"
+    }
+   }
+  },
+  "0xA0000000": {
+   "why": "a hole (proposal \u00a76.A)",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read8": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write8": {
+     "ok": false,
+     "ended": "fault"
+    }
+   }
+  },
+  "0xD0000000": {
+   "why": "SIO first",
+   "debugger": "not reachable (SIO)",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0xD00000C0": {
+   "why": "SIO middle",
+   "debugger": "not reachable (SIO)",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0xD000017C": {
+   "why": "SIO last",
+   "debugger": "not reachable (SIO)",
+   "core": null
+  },
+  "0xD0000180": {
+   "why": "SIO past",
+   "debugger": "not reachable (SIO)",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    },
+    "write32": {
+     "ok": true,
+     "value": "0x00000001",
+     "stored": false
+    },
+    "write16": {
+     "ok": true,
+     "value": "0x0001",
+     "stored": false
+    },
+    "write8": {
+     "ok": true,
+     "value": "0x01",
+     "stored": false
+    }
+   }
+  },
+  "0xD00001A0": {
+   "why": "past the SIO",
+   "debugger": "not reachable (SIO)",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000100"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0xD00001C0": {
+   "why": "past the SIO",
+   "debugger": "not reachable (SIO)",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00010000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0xD00001E0": {
+   "why": "past the SIO",
+   "debugger": "not reachable (SIO)",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x01000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0xD0000FFC": {
+   "why": "SIO end of its 4 KB",
+   "debugger": "not reachable (SIO)",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0xE0000000": {
+   "why": "PPB first",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0xE0000FFC": {
+   "why": "PPB end of its 4 KB",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0xE000E010": {
+   "why": "PPB first register",
+   "debugger": "not read (side effect or flash)",
+   "core": null
+  },
+  "0xE000EDA0": {
+   "why": "PPB last register",
+   "debugger": "0x1707FF3E",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x1707FF3E"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0xE000EDA4": {
+   "why": "PPB past its registers",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0xE0080000": {
+   "why": "PPB middle",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0xE00FFFFC": {
+   "why": "PPB last",
+   "debugger": "0x000000B1",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    }
+   }
+  },
+  "0xE0100000": {
+   "why": "PPB past",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": true,
+     "value": "0x00000000"
+    },
+    "read16": {
+     "ok": true,
+     "value": "0x0000"
+    },
+    "read8": {
+     "ok": true,
+     "value": "0x00"
+    },
+    "write32": {
+     "ok": true,
+     "value": "0x00000000",
+     "stored": false
+    },
+    "write16": {
+     "ok": true,
+     "value": "0x0000",
+     "stored": false
+    },
+    "write8": {
+     "ok": true,
+     "value": "0x00",
+     "stored": false
+    }
+   }
+  },
+  "0xFFFFFFFC": {
+   "why": "a hole (proposal \u00a76.A)",
+   "debugger": "0x00000000",
+   "core": {
+    "read32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "read8": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write32": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write16": {
+     "ok": false,
+     "ended": "fault"
+    },
+    "write8": {
+     "ok": false,
+     "ended": "fault"
+    }
+   }
+  }
+ },
+ "sram": {
+  "rule": "striped address A is bank (A >> 2) & 3, word (A - 0x20000000) >> 4 of that bank (non-striped 0x21000000 + bank * 0x10000 + word * 4)",
+  "confirmed": true,
+  "sample": [
+   {
+    "striped": "0x20030000",
+    "bank": 0,
+    "word": 12288
+   },
+   {
+    "striped": "0x20030004",
+    "bank": 1,
+    "word": 12288
+   },
+   {
+    "striped": "0x20030008",
+    "bank": 2,
+    "word": 12288
+   },
+   {
+    "striped": "0x2003000C",
+    "bank": 3,
+    "word": 12288
+   },
+   {
+    "striped": "0x20030010",
+    "bank": 0,
+    "word": 12289
+   },
+   {
+    "striped": "0x20030014",
+    "bank": 1,
+    "word": 12289
+   },
+   {
+    "striped": "0x20030018",
+    "bank": 2,
+    "word": 12289
+   },
+   {
+    "striped": "0x2003001C",
+    "bank": 3,
+    "word": 12289
+   },
+   {
+    "striped": "0x20030020",
+    "bank": 0,
+    "word": 12290
+   },
+   {
+    "striped": "0x20030024",
+    "bank": 1,
+    "word": 12290
+   },
+   {
+    "striped": "0x20030028",
+    "bank": 2,
+    "word": 12290
+   },
+   {
+    "striped": "0x2003002C",
+    "bank": 3,
+    "word": 12290
+   },
+   {
+    "striped": "0x20030030",
+    "bank": 0,
+    "word": 12291
+   },
+   {
+    "striped": "0x20030034",
+    "bank": 1,
+    "word": 12291
+   },
+   {
+    "striped": "0x20030038",
+    "bank": 2,
+    "word": 12291
+   },
+   {
+    "striped": "0x2003003C",
+    "bank": 3,
+    "word": 12291
+   }
+  ],
+  "past": {
+   "0x20042000": "0x00000000",
+   "0x20042FFC": "0x00000000",
+   "0x20043000": "0x00000000",
+   "0x20080000": "0x00000000",
+   "0x21040000": "0x00000000",
+   "0x21040FFC": "0x00000000"
+  }
+ },
+ "holes": {
+  "0x00004000": {
+   "write": "error",
+   "read_back": "0x00000000",
+   "mirrors_sram_start": false
+  },
+  "0x0FFFFFFC": {
+   "write": "error",
+   "read_back": "0x00000000",
+   "mirrors_sram_start": false
+  },
+  "0x20042000": {
+   "write": "error",
+   "read_back": "0x00000000",
+   "mirrors_sram_start": false
+  },
+  "0x20080000": {
+   "write": "error",
+   "read_back": "0x00000000",
+   "mirrors_sram_start": false
+  },
+  "0x21040000": {
+   "write": "error",
+   "read_back": "0x00000000",
+   "mirrors_sram_start": false
+  },
+  "0x30000000": {
+   "write": "error",
+   "read_back": "0x00000000",
+   "mirrors_sram_start": false
+  },
+  "0x40070000": {
+   "write": "error",
+   "read_back": "0x00000000",
+   "mirrors_sram_start": false
+  },
+  "0x60000000": {
+   "write": "error",
+   "read_back": "0x00000000",
+   "mirrors_sram_start": false
+  },
+  "0xA0000000": {
+   "write": "error",
+   "read_back": "0x00000000",
+   "mirrors_sram_start": false
+  },
+  "0xD0000180": {
+   "write": "written",
+   "read_back": "0x00000001",
+   "mirrors_sram_start": false
+  },
+  "0xE0100000": {
+   "write": "written",
+   "read_back": "0x00000000",
+   "mirrors_sram_start": false
+  },
+  "0xFFFFFFFC": {
+   "write": "error",
+   "read_back": "0x00000000",
+   "mirrors_sram_start": false
+  }
+ },
+ "gap_scan": {
+  "ADC": {
+   "nonzero_outside_registers": {},
+   "errors": 0,
+   "registers": 9
+  },
+  "BUSCTRL": {
+   "nonzero_outside_registers": {
+    "0x028": "0x42555343",
+    "0x030": "0x00000001"
+   },
+   "errors": 0,
+   "registers": 10
+  },
+  "CLOCKS": {
+   "nonzero_outside_registers": {
+    "0x0C8": "0x636C6B64",
+    "0x0D0": "0x00000001",
+    "0x0E0": "0x00000001"
+   },
+   "errors": 0,
+   "registers": 49
+  },
+  "I2C0": {
+   "nonzero_outside_registers": {},
+   "errors": 0,
+   "registers": 42
+  },
+  "I2C1": {
+   "nonzero_outside_registers": {},
+   "errors": 0,
+   "registers": 42
+  },
+  "IO_BANK0": {
+   "nonzero_outside_registers": {
+    "0x190": "0x696F6230",
+    "0x198": "0x00000003",
+    "0x1A8": "0x00000003"
+   },
+   "errors": 0,
+   "registers": 100
+  },
+  "IO_QSPI": {
+   "nonzero_outside_registers": {
+    "0x058": "0x696F6231",
+    "0x060": "0x00000003",
+    "0x070": "0x00000003"
+   },
+   "errors": 0,
+   "registers": 22
+  },
+  "PADS_BANK0": {
+   "nonzero_outside_registers": {
+    "0x084": "0x70616430",
+    "0x08C": "0x00000003",
+    "0x09C": "0x00000003"
+   },
+   "errors": 0,
+   "registers": 33
+  },
+  "PADS_QSPI": {
+   "nonzero_outside_registers": {
+    "0x01C": "0x70616471",
+    "0x024": "0x00000003",
+    "0x034": "0x00000003"
+   },
+   "errors": 0,
+   "registers": 7
+  },
+  "PLL_SYS": {
+   "nonzero_outside_registers": {
+    "0x010": "0x00504C4C",
+    "0x018": "0x00000001",
+    "0x028": "0x00000001"
+   },
+   "errors": 0,
+   "registers": 4
+  },
+  "PLL_USB": {
+   "nonzero_outside_registers": {
+    "0x010": "0x00504C4C",
+    "0x014": "0x00000001",
+    "0x018": "0x00000001"
+   },
+   "errors": 0,
+   "registers": 4
+  },
+  "PSM": {
+   "nonzero_outside_registers": {
+    "0x010": "0x706F7772",
+    "0x018": "0x00000003",
+    "0x028": "0x00000003"
+   },
+   "errors": 0,
+   "registers": 4
+  },
+  "PWM": {
+   "nonzero_outside_registers": {
+    "0x0B4": "0x50574D53",
+    "0x0BC": "0x00000001"
+   },
+   "errors": 0,
+   "registers": 45
+  },
+  "RESETS": {
+   "nonzero_outside_registers": {
+    "0x00C": "0x72737473",
+    "0x014": "0x00000003",
+    "0x024": "0x00000003"
+   },
+   "errors": 0,
+   "registers": 3
+  },
+  "ROSC": {
+   "nonzero_outside_registers": {
+    "0x028": "0x524F5343",
+    "0x030": "0x00000001",
+    "0x040": "0x00000001"
+   },
+   "errors": 0,
+   "registers": 9
+  },
+  "RTC": {
+   "nonzero_outside_registers": {
+    "0x030": "0x00525443",
+    "0x038": "0x00000003",
+    "0x03C": "0x00000002"
+   },
+   "errors": 0,
+   "registers": 12
+  },
+  "SPI0": {
+   "nonzero_outside_registers": {},
+   "errors": 0,
+   "registers": 18
+  },
+  "SPI1": {
+   "nonzero_outside_registers": {},
+   "errors": 0,
+   "registers": 18
+  },
+  "SYSCFG": {
+   "nonzero_outside_registers": {
+    "0x01C": "0x53434647",
+    "0x024": "0x00000001"
+   },
+   "errors": 0,
+   "registers": 7
+  },
+  "SYSINFO": {
+   "nonzero_outside_registers": {
+    "0x010": "0x7AF135DD",
+    "0x014": "0xB2430FD1",
+    "0x018": "0x14844000",
+    "0x01C": "0xEEE472ED",
+    "0x020": "0x8271EF7A",
+    "0x024": "0xB28EA9D2",
+    "0x028": "0xAC2F69C7",
+    "0x02C": "0xD26ABAE4",
+    "0x030": "0xF8C89B56",
+    "0x034": "0xAD300EC6",
+    "0x038": "0x3F594876",
+    "0x03C": "0xF4958AD7",
+    "0x044": "0x0696DFDF",
+    "0x048": "0x851F7F6B",
+    "0x04C": "0x380C56F0",
+    "0x050": "0x3218A32E",
+    "0x054": "0xF20789B2",
+    "0x058": "0x53A42358",
+    "0x05C": "0x331CE93C",
+    "0x060": "0x3AD7AD1E",
+    "0x064": "0xAC674BA4",
+    "0x068": "0xADB4B8D4",
+    "0x06C": "0xF76F73A5",
+    "0x070": "0x6AE50379",
+    "0x074": "0x31D6260A",
+    "0x078": "0x1F6C76C5",
+    "0x07C": "0x4E68DB44",
+    "0x080": "0x726A73A0",
+    "0x084": "0x73797369",
+    "0x08C": "0x00000003"
+   },
+   "errors": 0,
+   "registers": 3
+  },
+  "TBMAN": {
+   "nonzero_outside_registers": {
+    "0x004": "0x00000001",
+    "0x008": "0x00000001",
+    "0x00C": "0x00000001",
+    "0x010": "0x00000001",
+    "0x014": "0x00000001",
+    "0x018": "0x00000001",
+    "0x01C": "0x00000001",
+    "0x020": "0x00000001",
+    "0x024": "0x00000001",
+    "0x028": "0x00000001",
+    "0x02C": "0x00000001",
+    "0x030": "0x00000001",
+    "0x034": "0x00000001",
+    "0x038": "0x00000001",
+    "0x03C": "0x00000001",
+    "0x040": "0x00000001",
+    "0x044": "0x00000001",
+    "0x048": "0x00000001",
+    "0x04C": "0x00000001",
+    "0x050": "0x00000001",
+    "0x054": "0x00000001",
+    "0x058": "0x00000001",
+    "0x05C": "0x00000001",
+    "0x060": "0x00000001",
+    "0x064": "0x00000001",
+    "0x068": "0x00000001",
+    "0x06C": "0x00000001",
+    "0x070": "0x00000001",
+    "0x074": "0x00000001",
+    "0x078": "0x00000001",
+    "0x07C": "0x00000001",
+    "0x080": "0x00000001",
+    "0x084": "0x00000001",
+    "0x088": "0x00000001",
+    "0x08C": "0x00000001",
+    "0x090": "0x00000001",
+    "0x094": "0x00000001",
+    "0x098": "0x00000001",
+    "0x09C": "0x00000001",
+    "0x0A0": "0x00000001",
+    "0x0A4": "0x00000001",
+    "0x0A8": "0x00000001",
+    "0x0AC": "0x00000001",
+    "0x0B0": "0x00000001",
+    "0x0B4": "0x00000001",
+    "0x0B8": "0x00000001",
+    "0x0BC": "0x00000001",
+    "0x0C0": "0x00000001",
+    "0x0C4": "0x00000001",
+    "0x0C8": "0x00000001",
+    "0x0CC": "0x00000001",
+    "0x0D0": "0x00000001",
+    "0x0D4": "0x00000001",
+    "0x0D8": "0x00000001",
+    "0x0DC": "0x00000001",
+    "0x0E0": "0x00000001",
+    "0x0E4": "0x00000001",
+    "0x0E8": "0x00000001",
+    "0x0EC": "0x00000001",
+    "0x0F0": "0x00000001",
+    "0x0F4": "0x00000001",
+    "0x0F8": "0x00000001",
+    "0x0FC": "0x00000001",
+    "0x100": "0x00000001",
+    "0x104": "0x00000001",
+    "0x108": "0x00000001",
+    "0x10C": "0x00000001",
+    "0x110": "0x00000001",
+    "0x114": "0x00000001",
+    "0x118": "0x00000001",
+    "0x11C": "0x00000001",
+    "0x120": "0x00000001",
+    "0x124": "0x00000001",
+    "0x128": "0x00000001",
+    "0x12C": "0x00000001",
+    "0x130": "0x00000001",
+    "0x134": "0x00000001",
+    "0x138": "0x00000001",
+    "0x13C": "0x00000001",
+    "0x140": "0x00000001",
+    "0x144": "0x00000001",
+    "0x148": "0x00000001",
+    "0x14C": "0x00000001",
+    "0x150": "0x00000001",
+    "0x154": "0x00000001",
+    "0x158": "0x00000001",
+    "0x15C": "0x00000001",
+    "0x160": "0x00000001",
+    "0x164": "0x00000001",
+    "0x168": "0x00000001",
+    "0x16C": "0x00000001",
+    "0x170": "0x00000001",
+    "0x174": "0x00000001",
+    "0x178": "0x00000001",
+    "0x17C": "0x00000001",
+    "0x180": "0x00000001",
+    "0x184": "0x00000001",
+    "0x188": "0x00000001",
+    "0x18C": "0x00000001",
+    "0x190": "0x00000001",
+    "0x194": "0x00000001",
+    "0x198": "0x00000001",
+    "0x19C": "0x00000001",
+    "0x1A0": "0x00000001",
+    "0x1A4": "0x00000001",
+    "0x1A8": "0x00000001",
+    "0x1AC": "0x00000001",
+    "0x1B0": "0x00000001",
+    "0x1B4": "0x00000001",
+    "0x1B8": "0x00000001",
+    "0x1BC": "0x00000001",
+    "0x1C0": "0x00000001",
+    "0x1C4": "0x00000001",
+    "0x1C8": "0x00000001",
+    "0x1CC": "0x00000001",
+    "0x1D0": "0x00000001",
+    "0x1D4": "0x00000001",
+    "0x1D8": "0x00000001",
+    "0x1DC": "0x00000001",
+    "0x1E0": "0x00000001",
+    "0x1E4": "0x00000001",
+    "0x1E8": "0x00000001",
+    "0x1EC": "0x00000001",
+    "0x1F0": "0x00000001",
+    "0x1F4": "0x00000001",
+    "0x1F8": "0x00000001",
+    "0x1FC": "0x00000001",
+    "0x200": "0x00000001",
+    "0x204": "0x00000001",
+    "0x208": "0x00000001",
+    "0x20C": "0x00000001",
+    "0x210": "0x00000001",
+    "0x214": "0x00000001",
+    "0x218": "0x00000001",
+    "0x21C": "0x00000001",
+    "0x220": "0x00000001",
+    "0x224": "0x00000001",
+    "0x228": "0x00000001",
+    "0x22C": "0x00000001",
+    "0x230": "0x00000001",
+    "0x234": "0x00000001",
+    "0x238": "0x00000001",
+    "0x23C": "0x00000001",
+    "0x240": "0x00000001",
+    "0x244": "0x00000001",
+    "0x248": "0x00000001",
+    "0x24C": "0x00000001",
+    "0x250": "0x00000001",
+    "0x254": "0x00000001",
+    "0x258": "0x00000001",
+    "0x25C": "0x00000001",
+    "0x260": "0x00000001",
+    "0x264": "0x00000001",
+    "0x268": "0x00000001",
+    "0x26C": "0x00000001",
+    "0x270": "0x00000001",
+    "0x274": "0x00000001",
+    "0x278": "0x00000001",
+    "0x27C": "0x00000001",
+    "0x280": "0x00000001",
+    "0x284": "0x00000001",
+    "0x288": "0x00000001",
+    "0x28C": "0x00000001",
+    "0x290": "0x00000001",
+    "0x294": "0x00000001",
+    "0x298": "0x00000001",
+    "0x29C": "0x00000001",
+    "0x2A0": "0x00000001",
+    "0x2A4": "0x00000001",
+    "0x2A8": "0x00000001",
+    "0x2AC": "0x00000001",
+    "0x2B0": "0x00000001",
+    "0x2B4": "0x00000001",
+    "0x2B8": "0x00000001",
+    "0x2BC": "0x00000001",
+    "0x2C0": "0x00000001",
+    "0x2C4": "0x00000001",
+    "0x2C8": "0x00000001",
+    "0x2CC": "0x00000001",
+    "0x2D0": "0x00000001",
+    "0x2D4": "0x00000001",
+    "0x2D8": "0x00000001",
+    "0x2DC": "0x00000001",
+    "0x2E0": "0x00000001",
+    "0x2E4": "0x00000001",
+    "0x2E8": "0x00000001",
+    "0x2EC": "0x00000001",
+    "0x2F0": "0x00000001",
+    "0x2F4": "0x00000001",
+    "0x2F8": "0x00000001",
+    "0x2FC": "0x00000001",
+    "0x300": "0x00000001",
+    "0x304": "0x00000001",
+    "0x308": "0x00000001",
+    "0x30C": "0x00000001",
+    "0x310": "0x00000001",
+    "0x314": "0x00000001",
+    "0x318": "0x00000001",
+    "0x31C": "0x00000001",
+    "0x320": "0x00000001",
+    "0x324": "0x00000001",
+    "0x328": "0x00000001",
+    "0x32C": "0x00000001",
+    "0x330": "0x00000001",
+    "0x334": "0x00000001",
+    "0x338": "0x00000001",
+    "0x33C": "0x00000001",
+    "0x340": "0x00000001",
+    "0x344": "0x00000001",
+    "0x348": "0x00000001",
+    "0x34C": "0x00000001",
+    "0x350": "0x00000001",
+    "0x354": "0x00000001",
+    "0x358": "0x00000001",
+    "0x35C": "0x00000001",
+    "0x360": "0x00000001",
+    "0x364": "0x00000001",
+    "0x368": "0x00000001",
+    "0x36C": "0x00000001",
+    "0x370": "0x00000001",
+    "0x374": "0x00000001",
+    "0x378": "0x00000001",
+    "0x37C": "0x00000001",
+    "0x380": "0x00000001",
+    "0x384": "0x00000001",
+    "0x388": "0x00000001",
+    "0x38C": "0x00000001",
+    "0x390": "0x00000001",
+    "0x394": "0x00000001",
+    "0x398": "0x00000001",
+    "0x39C": "0x00000001",
+    "0x3A0": "0x00000001",
+    "0x3A4": "0x00000001",
+    "0x3A8": "0x00000001",
+    "0x3AC": "0x00000001",
+    "0x3B0": "0x00000001",
+    "0x3B4": "0x00000001",
+    "0x3B8": "0x00000001",
+    "0x3BC": "0x00000001",
+    "0x3C0": "0x00000001",
+    "0x3C4": "0x00000001",
+    "0x3C8": "0x00000001",
+    "0x3CC": "0x00000001",
+    "0x3D0": "0x00000001",
+    "0x3D4": "0x00000001",
+    "0x3D8": "0x00000001",
+    "0x3DC": "0x00000001",
+    "0x3E0": "0x00000001",
+    "0x3E4": "0x00000001",
+    "0x3E8": "0x00000001",
+    "0x3EC": "0x00000001",
+    "0x3F0": "0x00000001",
+    "0x3F4": "0x00000001",
+    "0x3F8": "0x00000001",
+    "0x3FC": "0x00000001",
+    "0x400": "0x00000001",
+    "0x404": "0x00000001",
+    "0x408": "0x00000001",
+    "0x40C": "0x00000001",
+    "0x410": "0x00000001",
+    "0x414": "0x00000001",
+    "0x418": "0x00000001",
+    "0x41C": "0x00000001",
+    "0x420": "0x00000001",
+    "0x424": "0x00000001",
+    "0x428": "0x00000001",
+    "0x42C": "0x00000001",
+    "0x430": "0x00000001",
+    "0x434": "0x00000001",
+    "0x438": "0x00000001",
+    "0x43C": "0x00000001",
+    "0x440": "0x00000001",
+    "0x444": "0x00000001",
+    "0x448": "0x00000001",
+    "0x44C": "0x00000001",
+    "0x450": "0x00000001",
+    "0x454": "0x00000001",
+    "0x458": "0x00000001",
+    "0x45C": "0x00000001",
+    "0x460": "0x00000001",
+    "0x464": "0x00000001",
+    "0x468": "0x00000001",
+    "0x46C": "0x00000001",
+    "0x470": "0x00000001",
+    "0x474": "0x00000001",
+    "0x478": "0x00000001",
+    "0x47C": "0x00000001",
+    "0x480": "0x00000001",
+    "0x484": "0x00000001",
+    "0x488": "0x00000001",
+    "0x48C": "0x00000001",
+    "0x490": "0x00000001",
+    "0x494": "0x00000001",
+    "0x498": "0x00000001",
+    "0x49C": "0x00000001",
+    "0x4A0": "0x00000001",
+    "0x4A4": "0x00000001",
+    "0x4A8": "0x00000001",
+    "0x4AC": "0x00000001",
+    "0x4B0": "0x00000001",
+    "0x4B4": "0x00000001",
+    "0x4B8": "0x00000001",
+    "0x4BC": "0x00000001",
+    "0x4C0": "0x00000001",
+    "0x4C4": "0x00000001",
+    "0x4C8": "0x00000001",
+    "0x4CC": "0x00000001",
+    "0x4D0": "0x00000001",
+    "0x4D4": "0x00000001",
+    "0x4D8": "0x00000001",
+    "0x4DC": "0x00000001",
+    "0x4E0": "0x00000001",
+    "0x4E4": "0x00000001",
+    "0x4E8": "0x00000001",
+    "0x4EC": "0x00000001",
+    "0x4F0": "0x00000001",
+    "0x4F4": "0x00000001",
+    "0x4F8": "0x00000001",
+    "0x4FC": "0x00000001",
+    "0x500": "0x00000001",
+    "0x504": "0x00000001",
+    "0x508": "0x00000001",
+    "0x50C": "0x00000001",
+    "0x510": "0x00000001",
+    "0x514": "0x00000001",
+    "0x518": "0x00000001",
+    "0x51C": "0x00000001",
+    "0x520": "0x00000001",
+    "0x524": "0x00000001",
+    "0x528": "0x00000001",
+    "0x52C": "0x00000001",
+    "0x530": "0x00000001",
+    "0x534": "0x00000001",
+    "0x538": "0x00000001",
+    "0x53C": "0x00000001",
+    "0x540": "0x00000001",
+    "0x544": "0x00000001",
+    "0x548": "0x00000001",
+    "0x54C": "0x00000001",
+    "0x550": "0x00000001",
+    "0x554": "0x00000001",
+    "0x558": "0x00000001",
+    "0x55C": "0x00000001",
+    "0x560": "0x00000001",
+    "0x564": "0x00000001",
+    "0x568": "0x00000001",
+    "0x56C": "0x00000001",
+    "0x570": "0x00000001",
+    "0x574": "0x00000001",
+    "0x578": "0x00000001",
+    "0x57C": "0x00000001",
+    "0x580": "0x00000001",
+    "0x584": "0x00000001",
+    "0x588": "0x00000001",
+    "0x58C": "0x00000001",
+    "0x590": "0x00000001",
+    "0x594": "0x00000001",
+    "0x598": "0x00000001",
+    "0x59C": "0x00000001",
+    "0x5A0": "0x00000001",
+    "0x5A4": "0x00000001",
+    "0x5A8": "0x00000001",
+    "0x5AC": "0x00000001",
+    "0x5B0": "0x00000001",
+    "0x5B4": "0x00000001",
+    "0x5B8": "0x00000001",
+    "0x5BC": "0x00000001",
+    "0x5C0": "0x00000001",
+    "0x5C4": "0x00000001",
+    "0x5C8": "0x00000001",
+    "0x5CC": "0x00000001",
+    "0x5D0": "0x00000001",
+    "0x5D4": "0x00000001",
+    "0x5D8": "0x00000001",
+    "0x5DC": "0x00000001",
+    "0x5E0": "0x00000001",
+    "0x5E4": "0x00000001",
+    "0x5E8": "0x00000001",
+    "0x5EC": "0x00000001",
+    "0x5F0": "0x00000001",
+    "0x5F4": "0x00000001",
+    "0x5F8": "0x00000001",
+    "0x5FC": "0x00000001",
+    "0x600": "0x00000001",
+    "0x604": "0x00000001",
+    "0x608": "0x00000001",
+    "0x60C": "0x00000001",
+    "0x610": "0x00000001",
+    "0x614": "0x00000001",
+    "0x618": "0x00000001",
+    "0x61C": "0x00000001",
+    "0x620": "0x00000001",
+    "0x624": "0x00000001",
+    "0x628": "0x00000001",
+    "0x62C": "0x00000001",
+    "0x630": "0x00000001",
+    "0x634": "0x00000001",
+    "0x638": "0x00000001",
+    "0x63C": "0x00000001",
+    "0x640": "0x00000001",
+    "0x644": "0x00000001",
+    "0x648": "0x00000001",
+    "0x64C": "0x00000001",
+    "0x650": "0x00000001",
+    "0x654": "0x00000001",
+    "0x658": "0x00000001",
+    "0x65C": "0x00000001",
+    "0x660": "0x00000001",
+    "0x664": "0x00000001",
+    "0x668": "0x00000001",
+    "0x66C": "0x00000001",
+    "0x670": "0x00000001",
+    "0x674": "0x00000001",
+    "0x678": "0x00000001",
+    "0x67C": "0x00000001",
+    "0x680": "0x00000001",
+    "0x684": "0x00000001",
+    "0x688": "0x00000001",
+    "0x68C": "0x00000001",
+    "0x690": "0x00000001",
+    "0x694": "0x00000001",
+    "0x698": "0x00000001",
+    "0x69C": "0x00000001",
+    "0x6A0": "0x00000001",
+    "0x6A4": "0x00000001",
+    "0x6A8": "0x00000001",
+    "0x6AC": "0x00000001",
+    "0x6B0": "0x00000001",
+    "0x6B4": "0x00000001",
+    "0x6B8": "0x00000001",
+    "0x6BC": "0x00000001",
+    "0x6C0": "0x00000001",
+    "0x6C4": "0x00000001",
+    "0x6C8": "0x00000001",
+    "0x6CC": "0x00000001",
+    "0x6D0": "0x00000001",
+    "0x6D4": "0x00000001",
+    "0x6D8": "0x00000001",
+    "0x6DC": "0x00000001",
+    "0x6E0": "0x00000001",
+    "0x6E4": "0x00000001",
+    "0x6E8": "0x00000001",
+    "0x6EC": "0x00000001",
+    "0x6F0": "0x00000001",
+    "0x6F4": "0x00000001",
+    "0x6F8": "0x00000001",
+    "0x6FC": "0x00000001",
+    "0x700": "0x00000001",
+    "0x704": "0x00000001",
+    "0x708": "0x00000001",
+    "0x70C": "0x00000001",
+    "0x710": "0x00000001",
+    "0x714": "0x00000001",
+    "0x718": "0x00000001",
+    "0x71C": "0x00000001",
+    "0x720": "0x00000001",
+    "0x724": "0x00000001",
+    "0x728": "0x00000001",
+    "0x72C": "0x00000001",
+    "0x730": "0x00000001",
+    "0x734": "0x00000001",
+    "0x738": "0x00000001",
+    "0x73C": "0x00000001",
+    "0x740": "0x00000001",
+    "0x744": "0x00000001",
+    "0x748": "0x00000001",
+    "0x74C": "0x00000001",
+    "0x750": "0x00000001",
+    "0x754": "0x00000001",
+    "0x758": "0x00000001",
+    "0x75C": "0x00000001",
+    "0x760": "0x00000001",
+    "0x764": "0x00000001",
+    "0x768": "0x00000001",
+    "0x76C": "0x00000001",
+    "0x770": "0x00000001",
+    "0x774": "0x00000001",
+    "0x778": "0x00000001",
+    "0x77C": "0x00000001",
+    "0x780": "0x00000001",
+    "0x784": "0x00000001",
+    "0x788": "0x00000001",
+    "0x78C": "0x00000001",
+    "0x790": "0x00000001",
+    "0x794": "0x00000001",
+    "0x798": "0x00000001",
+    "0x79C": "0x00000001",
+    "0x7A0": "0x00000001",
+    "0x7A4": "0x00000001",
+    "0x7A8": "0x00000001",
+    "0x7AC": "0x00000001",
+    "0x7B0": "0x00000001",
+    "0x7B4": "0x00000001",
+    "0x7B8": "0x00000001",
+    "0x7BC": "0x00000001",
+    "0x7C0": "0x00000001",
+    "0x7C4": "0x00000001",
+    "0x7C8": "0x00000001",
+    "0x7CC": "0x00000001",
+    "0x7D0": "0x00000001",
+    "0x7D4": "0x00000001",
+    "0x7D8": "0x00000001",
+    "0x7DC": "0x00000001",
+    "0x7E0": "0x00000001",
+    "0x7E4": "0x00000001",
+    "0x7E8": "0x00000001",
+    "0x7EC": "0x00000001",
+    "0x7F0": "0x00000001",
+    "0x7F4": "0x00000001",
+    "0x7F8": "0x00000001",
+    "0x7FC": "0x00000001",
+    "0x800": "0x00000001",
+    "0x804": "0x00000001",
+    "0x808": "0x00000001",
+    "0x80C": "0x00000001",
+    "0x810": "0x00000001",
+    "0x814": "0x00000001",
+    "0x818": "0x00000001",
+    "0x81C": "0x00000001",
+    "0x820": "0x00000001",
+    "0x824": "0x00000001",
+    "0x828": "0x00000001",
+    "0x82C": "0x00000001",
+    "0x830": "0x00000001",
+    "0x834": "0x00000001",
+    "0x838": "0x00000001",
+    "0x83C": "0x00000001",
+    "0x840": "0x00000001",
+    "0x844": "0x00000001",
+    "0x848": "0x00000001",
+    "0x84C": "0x00000001",
+    "0x850": "0x00000001",
+    "0x854": "0x00000001",
+    "0x858": "0x00000001",
+    "0x85C": "0x00000001",
+    "0x860": "0x00000001",
+    "0x864": "0x00000001",
+    "0x868": "0x00000001",
+    "0x86C": "0x00000001",
+    "0x870": "0x00000001",
+    "0x874": "0x00000001",
+    "0x878": "0x00000001",
+    "0x87C": "0x00000001",
+    "0x880": "0x00000001",
+    "0x884": "0x00000001",
+    "0x888": "0x00000001",
+    "0x88C": "0x00000001",
+    "0x890": "0x00000001",
+    "0x894": "0x00000001",
+    "0x898": "0x00000001",
+    "0x89C": "0x00000001",
+    "0x8A0": "0x00000001",
+    "0x8A4": "0x00000001",
+    "0x8A8": "0x00000001",
+    "0x8AC": "0x00000001",
+    "0x8B0": "0x00000001",
+    "0x8B4": "0x00000001",
+    "0x8B8": "0x00000001",
+    "0x8BC": "0x00000001",
+    "0x8C0": "0x00000001",
+    "0x8C4": "0x00000001",
+    "0x8C8": "0x00000001",
+    "0x8CC": "0x00000001",
+    "0x8D0": "0x00000001",
+    "0x8D4": "0x00000001",
+    "0x8D8": "0x00000001",
+    "0x8DC": "0x00000001",
+    "0x8E0": "0x00000001",
+    "0x8E4": "0x00000001",
+    "0x8E8": "0x00000001",
+    "0x8EC": "0x00000001",
+    "0x8F0": "0x00000001",
+    "0x8F4": "0x00000001",
+    "0x8F8": "0x00000001",
+    "0x8FC": "0x00000001",
+    "0x900": "0x00000001",
+    "0x904": "0x00000001",
+    "0x908": "0x00000001",
+    "0x90C": "0x00000001",
+    "0x910": "0x00000001",
+    "0x914": "0x00000001",
+    "0x918": "0x00000001",
+    "0x91C": "0x00000001",
+    "0x920": "0x00000001",
+    "0x924": "0x00000001",
+    "0x928": "0x00000001",
+    "0x92C": "0x00000001",
+    "0x930": "0x00000001",
+    "0x934": "0x00000001",
+    "0x938": "0x00000001",
+    "0x93C": "0x00000001",
+    "0x940": "0x00000001",
+    "0x944": "0x00000001",
+    "0x948": "0x00000001",
+    "0x94C": "0x00000001",
+    "0x950": "0x00000001",
+    "0x954": "0x00000001",
+    "0x958": "0x00000001",
+    "0x95C": "0x00000001",
+    "0x960": "0x00000001",
+    "0x964": "0x00000001",
+    "0x968": "0x00000001",
+    "0x96C": "0x00000001",
+    "0x970": "0x00000001",
+    "0x974": "0x00000001",
+    "0x978": "0x00000001",
+    "0x97C": "0x00000001",
+    "0x980": "0x00000001",
+    "0x984": "0x00000001",
+    "0x988": "0x00000001",
+    "0x98C": "0x00000001",
+    "0x990": "0x00000001",
+    "0x994": "0x00000001",
+    "0x998": "0x00000001",
+    "0x99C": "0x00000001",
+    "0x9A0": "0x00000001",
+    "0x9A4": "0x00000001",
+    "0x9A8": "0x00000001",
+    "0x9AC": "0x00000001",
+    "0x9B0": "0x00000001",
+    "0x9B4": "0x00000001",
+    "0x9B8": "0x00000001",
+    "0x9BC": "0x00000001",
+    "0x9C0": "0x00000001",
+    "0x9C4": "0x00000001",
+    "0x9C8": "0x00000001",
+    "0x9CC": "0x00000001",
+    "0x9D0": "0x00000001",
+    "0x9D4": "0x00000001",
+    "0x9D8": "0x00000001",
+    "0x9DC": "0x00000001",
+    "0x9E0": "0x00000001",
+    "0x9E4": "0x00000001",
+    "0x9E8": "0x00000001",
+    "0x9EC": "0x00000001",
+    "0x9F0": "0x00000001",
+    "0x9F4": "0x00000001",
+    "0x9F8": "0x00000001",
+    "0x9FC": "0x00000001",
+    "0xA00": "0x00000001",
+    "0xA04": "0x00000001",
+    "0xA08": "0x00000001",
+    "0xA0C": "0x00000001",
+    "0xA10": "0x00000001",
+    "0xA14": "0x00000001",
+    "0xA18": "0x00000001",
+    "0xA1C": "0x00000001",
+    "0xA20": "0x00000001",
+    "0xA24": "0x00000001",
+    "0xA28": "0x00000001",
+    "0xA2C": "0x00000001",
+    "0xA30": "0x00000001",
+    "0xA34": "0x00000001",
+    "0xA38": "0x00000001",
+    "0xA3C": "0x00000001",
+    "0xA40": "0x00000001",
+    "0xA44": "0x00000001",
+    "0xA48": "0x00000001",
+    "0xA4C": "0x00000001",
+    "0xA50": "0x00000001",
+    "0xA54": "0x00000001",
+    "0xA58": "0x00000001",
+    "0xA5C": "0x00000001",
+    "0xA60": "0x00000001",
+    "0xA64": "0x00000001",
+    "0xA68": "0x00000001",
+    "0xA6C": "0x00000001",
+    "0xA70": "0x00000001",
+    "0xA74": "0x00000001",
+    "0xA78": "0x00000001",
+    "0xA7C": "0x00000001",
+    "0xA80": "0x00000001",
+    "0xA84": "0x00000001",
+    "0xA88": "0x00000001",
+    "0xA8C": "0x00000001",
+    "0xA90": "0x00000001",
+    "0xA94": "0x00000001",
+    "0xA98": "0x00000001",
+    "0xA9C": "0x00000001",
+    "0xAA0": "0x00000001",
+    "0xAA4": "0x00000001",
+    "0xAA8": "0x00000001",
+    "0xAAC": "0x00000001",
+    "0xAB0": "0x00000001",
+    "0xAB4": "0x00000001",
+    "0xAB8": "0x00000001",
+    "0xABC": "0x00000001",
+    "0xAC0": "0x00000001",
+    "0xAC4": "0x00000001",
+    "0xAC8": "0x00000001",
+    "0xACC": "0x00000001",
+    "0xAD0": "0x00000001",
+    "0xAD4": "0x00000001",
+    "0xAD8": "0x00000001",
+    "0xADC": "0x00000001",
+    "0xAE0": "0x00000001",
+    "0xAE4": "0x00000001",
+    "0xAE8": "0x00000001",
+    "0xAEC": "0x00000001",
+    "0xAF0": "0x00000001",
+    "0xAF4": "0x00000001",
+    "0xAF8": "0x00000001",
+    "0xAFC": "0x00000001",
+    "0xB00": "0x00000001",
+    "0xB04": "0x00000001",
+    "0xB08": "0x00000001",
+    "0xB0C": "0x00000001",
+    "0xB10": "0x00000001",
+    "0xB14": "0x00000001",
+    "0xB18": "0x00000001",
+    "0xB1C": "0x00000001",
+    "0xB20": "0x00000001",
+    "0xB24": "0x00000001",
+    "0xB28": "0x00000001",
+    "0xB2C": "0x00000001",
+    "0xB30": "0x00000001",
+    "0xB34": "0x00000001",
+    "0xB38": "0x00000001",
+    "0xB3C": "0x00000001",
+    "0xB40": "0x00000001",
+    "0xB44": "0x00000001",
+    "0xB48": "0x00000001",
+    "0xB4C": "0x00000001",
+    "0xB50": "0x00000001",
+    "0xB54": "0x00000001",
+    "0xB58": "0x00000001",
+    "0xB5C": "0x00000001",
+    "0xB60": "0x00000001",
+    "0xB64": "0x00000001",
+    "0xB68": "0x00000001",
+    "0xB6C": "0x00000001",
+    "0xB70": "0x00000001",
+    "0xB74": "0x00000001",
+    "0xB78": "0x00000001",
+    "0xB7C": "0x00000001",
+    "0xB80": "0x00000001",
+    "0xB84": "0x00000001",
+    "0xB88": "0x00000001",
+    "0xB8C": "0x00000001",
+    "0xB90": "0x00000001",
+    "0xB94": "0x00000001",
+    "0xB98": "0x00000001",
+    "0xB9C": "0x00000001",
+    "0xBA0": "0x00000001",
+    "0xBA4": "0x00000001",
+    "0xBA8": "0x00000001",
+    "0xBAC": "0x00000001",
+    "0xBB0": "0x00000001",
+    "0xBB4": "0x00000001",
+    "0xBB8": "0x00000001",
+    "0xBBC": "0x00000001",
+    "0xBC0": "0x00000001",
+    "0xBC4": "0x00000001",
+    "0xBC8": "0x00000001",
+    "0xBCC": "0x00000001",
+    "0xBD0": "0x00000001",
+    "0xBD4": "0x00000001",
+    "0xBD8": "0x00000001",
+    "0xBDC": "0x00000001",
+    "0xBE0": "0x00000001",
+    "0xBE4": "0x00000001",
+    "0xBE8": "0x00000001",
+    "0xBEC": "0x00000001",
+    "0xBF0": "0x00000001",
+    "0xBF4": "0x00000001",
+    "0xBF8": "0x00000001",
+    "0xBFC": "0x00000001",
+    "0xC00": "0x00000001",
+    "0xC04": "0x00000001",
+    "0xC08": "0x00000001",
+    "0xC0C": "0x00000001",
+    "0xC10": "0x00000001",
+    "0xC14": "0x00000001",
+    "0xC18": "0x00000001",
+    "0xC1C": "0x00000001",
+    "0xC20": "0x00000001",
+    "0xC24": "0x00000001",
+    "0xC28": "0x00000001",
+    "0xC2C": "0x00000001",
+    "0xC30": "0x00000001",
+    "0xC34": "0x00000001",
+    "0xC38": "0x00000001",
+    "0xC3C": "0x00000001",
+    "0xC40": "0x00000001",
+    "0xC44": "0x00000001",
+    "0xC48": "0x00000001",
+    "0xC4C": "0x00000001",
+    "0xC50": "0x00000001",
+    "0xC54": "0x00000001",
+    "0xC58": "0x00000001",
+    "0xC5C": "0x00000001",
+    "0xC60": "0x00000001",
+    "0xC64": "0x00000001",
+    "0xC68": "0x00000001",
+    "0xC6C": "0x00000001",
+    "0xC70": "0x00000001",
+    "0xC74": "0x00000001",
+    "0xC78": "0x00000001",
+    "0xC7C": "0x00000001",
+    "0xC80": "0x00000001",
+    "0xC84": "0x00000001",
+    "0xC88": "0x00000001",
+    "0xC8C": "0x00000001",
+    "0xC90": "0x00000001",
+    "0xC94": "0x00000001",
+    "0xC98": "0x00000001",
+    "0xC9C": "0x00000001",
+    "0xCA0": "0x00000001",
+    "0xCA4": "0x00000001",
+    "0xCA8": "0x00000001",
+    "0xCAC": "0x00000001",
+    "0xCB0": "0x00000001",
+    "0xCB4": "0x00000001",
+    "0xCB8": "0x00000001",
+    "0xCBC": "0x00000001",
+    "0xCC0": "0x00000001",
+    "0xCC4": "0x00000001",
+    "0xCC8": "0x00000001",
+    "0xCCC": "0x00000001",
+    "0xCD0": "0x00000001",
+    "0xCD4": "0x00000001",
+    "0xCD8": "0x00000001",
+    "0xCDC": "0x00000001",
+    "0xCE0": "0x00000001",
+    "0xCE4": "0x00000001",
+    "0xCE8": "0x00000001",
+    "0xCEC": "0x00000001",
+    "0xCF0": "0x00000001",
+    "0xCF4": "0x00000001",
+    "0xCF8": "0x00000001",
+    "0xCFC": "0x00000001",
+    "0xD00": "0x00000001",
+    "0xD04": "0x00000001",
+    "0xD08": "0x00000001",
+    "0xD0C": "0x00000001",
+    "0xD10": "0x00000001",
+    "0xD14": "0x00000001",
+    "0xD18": "0x00000001",
+    "0xD1C": "0x00000001",
+    "0xD20": "0x00000001",
+    "0xD24": "0x00000001",
+    "0xD28": "0x00000001",
+    "0xD2C": "0x00000001",
+    "0xD30": "0x00000001",
+    "0xD34": "0x00000001",
+    "0xD38": "0x00000001",
+    "0xD3C": "0x00000001",
+    "0xD40": "0x00000001",
+    "0xD44": "0x00000001",
+    "0xD48": "0x00000001",
+    "0xD4C": "0x00000001",
+    "0xD50": "0x00000001",
+    "0xD54": "0x00000001",
+    "0xD58": "0x00000001",
+    "0xD5C": "0x00000001",
+    "0xD60": "0x00000001",
+    "0xD64": "0x00000001",
+    "0xD68": "0x00000001",
+    "0xD6C": "0x00000001",
+    "0xD70": "0x00000001",
+    "0xD74": "0x00000001",
+    "0xD78": "0x00000001",
+    "0xD7C": "0x00000001",
+    "0xD80": "0x00000001",
+    "0xD84": "0x00000001",
+    "0xD88": "0x00000001",
+    "0xD8C": "0x00000001",
+    "0xD90": "0x00000001",
+    "0xD94": "0x00000001",
+    "0xD98": "0x00000001",
+    "0xD9C": "0x00000001",
+    "0xDA0": "0x00000001",
+    "0xDA4": "0x00000001",
+    "0xDA8": "0x00000001",
+    "0xDAC": "0x00000001",
+    "0xDB0": "0x00000001",
+    "0xDB4": "0x00000001",
+    "0xDB8": "0x00000001",
+    "0xDBC": "0x00000001",
+    "0xDC0": "0x00000001",
+    "0xDC4": "0x00000001",
+    "0xDC8": "0x00000001",
+    "0xDCC": "0x00000001",
+    "0xDD0": "0x00000001",
+    "0xDD4": "0x00000001",
+    "0xDD8": "0x00000001",
+    "0xDDC": "0x00000001",
+    "0xDE0": "0x00000001",
+    "0xDE4": "0x00000001",
+    "0xDE8": "0x00000001",
+    "0xDEC": "0x00000001",
+    "0xDF0": "0x00000001",
+    "0xDF4": "0x00000001",
+    "0xDF8": "0x00000001",
+    "0xDFC": "0x00000001",
+    "0xE00": "0x00000001",
+    "0xE04": "0x00000001",
+    "0xE08": "0x00000001",
+    "0xE0C": "0x00000001",
+    "0xE10": "0x00000001",
+    "0xE14": "0x00000001",
+    "0xE18": "0x00000001",
+    "0xE1C": "0x00000001",
+    "0xE20": "0x00000001",
+    "0xE24": "0x00000001",
+    "0xE28": "0x00000001",
+    "0xE2C": "0x00000001",
+    "0xE30": "0x00000001",
+    "0xE34": "0x00000001",
+    "0xE38": "0x00000001",
+    "0xE3C": "0x00000001",
+    "0xE40": "0x00000001",
+    "0xE44": "0x00000001",
+    "0xE48": "0x00000001",
+    "0xE4C": "0x00000001",
+    "0xE50": "0x00000001",
+    "0xE54": "0x00000001",
+    "0xE58": "0x00000001",
+    "0xE5C": "0x00000001",
+    "0xE60": "0x00000001",
+    "0xE64": "0x00000001",
+    "0xE68": "0x00000001",
+    "0xE6C": "0x00000001",
+    "0xE70": "0x00000001",
+    "0xE74": "0x00000001",
+    "0xE78": "0x00000001",
+    "0xE7C": "0x00000001",
+    "0xE80": "0x00000001",
+    "0xE84": "0x00000001",
+    "0xE88": "0x00000001",
+    "0xE8C": "0x00000001",
+    "0xE90": "0x00000001",
+    "0xE94": "0x00000001",
+    "0xE98": "0x00000001",
+    "0xE9C": "0x00000001",
+    "0xEA0": "0x00000001",
+    "0xEA4": "0x00000001",
+    "0xEA8": "0x00000001",
+    "0xEAC": "0x00000001",
+    "0xEB0": "0x00000001",
+    "0xEB4": "0x00000001",
+    "0xEB8": "0x00000001",
+    "0xEBC": "0x00000001",
+    "0xEC0": "0x00000001",
+    "0xEC4": "0x00000001",
+    "0xEC8": "0x00000001",
+    "0xECC": "0x00000001",
+    "0xED0": "0x00000001",
+    "0xED4": "0x00000001",
+    "0xED8": "0x00000001",
+    "0xEDC": "0x00000001",
+    "0xEE0": "0x00000001",
+    "0xEE4": "0x00000001",
+    "0xEE8": "0x00000001",
+    "0xEEC": "0x00000001",
+    "0xEF0": "0x00000001",
+    "0xEF4": "0x00000001",
+    "0xEF8": "0x00000001",
+    "0xEFC": "0x00000001",
+    "0xF00": "0x00000001",
+    "0xF04": "0x00000001",
+    "0xF08": "0x00000001",
+    "0xF0C": "0x00000001",
+    "0xF10": "0x00000001",
+    "0xF14": "0x00000001",
+    "0xF18": "0x00000001",
+    "0xF1C": "0x00000001",
+    "0xF20": "0x00000001",
+    "0xF24": "0x00000001",
+    "0xF28": "0x00000001",
+    "0xF2C": "0x00000001",
+    "0xF30": "0x00000001",
+    "0xF34": "0x00000001",
+    "0xF38": "0x00000001",
+    "0xF3C": "0x00000001",
+    "0xF40": "0x00000001",
+    "0xF44": "0x00000001",
+    "0xF48": "0x00000001",
+    "0xF4C": "0x00000001",
+    "0xF50": "0x00000001",
+    "0xF54": "0x00000001",
+    "0xF58": "0x00000001",
+    "0xF5C": "0x00000001",
+    "0xF60": "0x00000001",
+    "0xF64": "0x00000001",
+    "0xF68": "0x00000001",
+    "0xF6C": "0x00000001",
+    "0xF70": "0x00000001",
+    "0xF74": "0x00000001",
+    "0xF78": "0x00000001",
+    "0xF7C": "0x00000001",
+    "0xF80": "0x00000001",
+    "0xF84": "0x00000001",
+    "0xF88": "0x00000001",
+    "0xF8C": "0x00000001",
+    "0xF90": "0x00000001",
+    "0xF94": "0x00000001",
+    "0xF98": "0x00000001",
+    "0xF9C": "0x00000001",
+    "0xFA0": "0x00000001",
+    "0xFA4": "0x00000001",
+    "0xFA8": "0x00000001",
+    "0xFAC": "0x00000001",
+    "0xFB0": "0x00000001",
+    "0xFB4": "0x00000001",
+    "0xFB8": "0x00000001",
+    "0xFBC": "0x00000001",
+    "0xFC0": "0x00000001",
+    "0xFC4": "0x00000001",
+    "0xFC8": "0x00000001",
+    "0xFCC": "0x00000001",
+    "0xFD0": "0x00000001",
+    "0xFD4": "0x00000001",
+    "0xFD8": "0x00000001",
+    "0xFDC": "0x00000001",
+    "0xFE0": "0x00000001",
+    "0xFE4": "0x00000001",
+    "0xFE8": "0x00000001",
+    "0xFEC": "0x00000001",
+    "0xFF0": "0x00000001",
+    "0xFF4": "0x00000001",
+    "0xFF8": "0x00000001",
+    "0xFFC": "0x00000001"
+   },
+   "errors": 0,
+   "registers": 1
+  },
+  "TIMER": {
+   "nonzero_outside_registers": {
+    "0x044": "0x54494D52",
+    "0x04C": "0x00000001",
+    "0x05C": "0x00000001"
+   },
+   "errors": 0,
+   "registers": 17
+  },
+  "VREG_AND_CHIP_RESET": {
+   "nonzero_outside_registers": {
+    "0x010": "0x4C44504F",
+    "0x018": "0x00000001",
+    "0x028": "0x00000001"
+   },
+   "errors": 0,
+   "registers": 3
+  },
+  "WATCHDOG": {
+   "nonzero_outside_registers": {
+    "0x030": "0x57444F47",
+    "0x038": "0x00000007",
+    "0x048": "0x00000007"
+   },
+   "errors": 0,
+   "registers": 12
+  },
+  "XOSC": {
+   "nonzero_outside_registers": {
+    "0x024": "0x584F5343",
+    "0x02C": "0x00000001",
+    "0x03C": "0x00000001"
+   },
+   "errors": 0,
+   "registers": 5
+  }
+ },
+ "timing": [
+  {
+   "slot": "0x20014000",
+   "address": "0x20018100",
+   "region": "striped_sram",
+   "op": "load",
+   "width": 32,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x20018100",
+   "region": "striped_sram",
+   "op": "store",
+   "width": 32,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x20018100",
+   "region": "striped_sram",
+   "op": "load",
+   "width": 16,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x20018100",
+   "region": "striped_sram",
+   "op": "store",
+   "width": 16,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x20018100",
+   "region": "striped_sram",
+   "op": "load",
+   "width": 8,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x20018100",
+   "region": "striped_sram",
+   "op": "store",
+   "width": 8,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x20040100",
+   "region": "sram4",
+   "op": "load",
+   "width": 32,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x20040100",
+   "region": "sram4",
+   "op": "store",
+   "width": 32,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x20040100",
+   "region": "sram4",
+   "op": "load",
+   "width": 16,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x20040100",
+   "region": "sram4",
+   "op": "store",
+   "width": 16,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x20040100",
+   "region": "sram4",
+   "op": "load",
+   "width": 8,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x20040100",
+   "region": "sram4",
+   "op": "store",
+   "width": 8,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x20041100",
+   "region": "sram5",
+   "op": "load",
+   "width": 32,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x20041100",
+   "region": "sram5",
+   "op": "store",
+   "width": 32,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x20041100",
+   "region": "sram5",
+   "op": "load",
+   "width": 16,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x20041100",
+   "region": "sram5",
+   "op": "store",
+   "width": 16,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x20041100",
+   "region": "sram5",
+   "op": "load",
+   "width": 8,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x20041100",
+   "region": "sram5",
+   "op": "store",
+   "width": 8,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x2100F100",
+   "region": "non_striped_sram",
+   "op": "load",
+   "width": 32,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x2100F100",
+   "region": "non_striped_sram",
+   "op": "store",
+   "width": 32,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x2100F100",
+   "region": "non_striped_sram",
+   "op": "load",
+   "width": 16,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x2100F100",
+   "region": "non_striped_sram",
+   "op": "store",
+   "width": 16,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x2100F100",
+   "region": "non_striped_sram",
+   "op": "load",
+   "width": 8,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x2100F100",
+   "region": "non_striped_sram",
+   "op": "store",
+   "width": 8,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x00000100",
+   "region": "rom",
+   "op": "load",
+   "width": 32,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x00000100",
+   "region": "rom",
+   "op": "load",
+   "width": 16,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x00000100",
+   "region": "rom",
+   "op": "load",
+   "width": 8,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x40014000",
+   "region": "apb_io_bank0_gpio0_status",
+   "op": "load",
+   "width": 32,
+   "raw": 130,
+   "overhead": 2,
+   "per_access": 4.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x40014000",
+   "region": "apb_io_bank0_gpio0_status",
+   "op": "load",
+   "width": 16,
+   "raw": 130,
+   "overhead": 2,
+   "per_access": 4.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x40014000",
+   "region": "apb_io_bank0_gpio0_status",
+   "op": "load",
+   "width": 8,
+   "raw": 130,
+   "overhead": 2,
+   "per_access": 4.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x4001C05C",
+   "region": "apb_pads_bank0_gpio22",
+   "op": "load",
+   "width": 32,
+   "raw": 130,
+   "overhead": 2,
+   "per_access": 4.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x4001C05C",
+   "region": "apb_pads_bank0_gpio22",
+   "op": "store",
+   "width": 32,
+   "raw": 162,
+   "overhead": 2,
+   "per_access": 5.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x4001C05C",
+   "region": "apb_pads_bank0_gpio22",
+   "op": "load",
+   "width": 16,
+   "raw": 130,
+   "overhead": 2,
+   "per_access": 4.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x4001C05C",
+   "region": "apb_pads_bank0_gpio22",
+   "op": "store",
+   "width": 16,
+   "raw": 162,
+   "overhead": 2,
+   "per_access": 5.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x4001C05C",
+   "region": "apb_pads_bank0_gpio22",
+   "op": "load",
+   "width": 8,
+   "raw": 130,
+   "overhead": 2,
+   "per_access": 4.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x4001C05C",
+   "region": "apb_pads_bank0_gpio22",
+   "op": "store",
+   "width": 8,
+   "raw": 162,
+   "overhead": 2,
+   "per_access": 5.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x14000000",
+   "region": "ahb_xip_ctrl_ctrl",
+   "op": "load",
+   "width": 32,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x14000000",
+   "region": "ahb_xip_ctrl_ctrl",
+   "op": "load",
+   "width": 16,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0x14000000",
+   "region": "ahb_xip_ctrl_ctrl",
+   "op": "load",
+   "width": 8,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0xD0000004",
+   "region": "sio_gpio_in",
+   "op": "load",
+   "width": 32,
+   "raw": 34,
+   "overhead": 2,
+   "per_access": 1.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0xD0000004",
+   "region": "sio_gpio_in",
+   "op": "load",
+   "width": 16,
+   "raw": 34,
+   "overhead": 2,
+   "per_access": 1.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0xD0000004",
+   "region": "sio_gpio_in",
+   "op": "load",
+   "width": 8,
+   "raw": 34,
+   "overhead": 2,
+   "per_access": 1.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0xD000001C",
+   "region": "sio_gpio_out_xor",
+   "op": "load",
+   "width": 32,
+   "raw": 34,
+   "overhead": 2,
+   "per_access": 1.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0xD000001C",
+   "region": "sio_gpio_out_xor",
+   "op": "store",
+   "width": 32,
+   "raw": 34,
+   "overhead": 2,
+   "per_access": 1.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0xD000001C",
+   "region": "sio_gpio_out_xor",
+   "op": "load",
+   "width": 16,
+   "raw": 34,
+   "overhead": 2,
+   "per_access": 1.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0xD000001C",
+   "region": "sio_gpio_out_xor",
+   "op": "store",
+   "width": 16,
+   "raw": 34,
+   "overhead": 2,
+   "per_access": 1.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0xD000001C",
+   "region": "sio_gpio_out_xor",
+   "op": "load",
+   "width": 8,
+   "raw": 34,
+   "overhead": 2,
+   "per_access": 1.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0xD000001C",
+   "region": "sio_gpio_out_xor",
+   "op": "store",
+   "width": 8,
+   "raw": 34,
+   "overhead": 2,
+   "per_access": 1.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0xE000E014",
+   "region": "ppb_syst_rvr",
+   "op": "load",
+   "width": 32,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0xE000E014",
+   "region": "ppb_syst_rvr",
+   "op": "load",
+   "width": 16,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": "0xE000E014",
+   "region": "ppb_syst_rvr",
+   "op": "load",
+   "width": 8,
+   "raw": 66,
+   "overhead": 2,
+   "per_access": 2.0
+  },
+  {
+   "slot": "0x20014000",
+   "address": null,
+   "region": "striped",
+   "op": "fetch",
+   "width": null,
+   "raw": 34,
+   "overhead": 2,
+   "per_access": 1.0
+  },
+  {
+   "slot": "0x20014002",
+   "address": null,
+   "region": "striped-halfword",
+   "op": "fetch",
+   "width": null,
+   "raw": 34,
+   "overhead": 2,
+   "per_access": 1.0
+  },
+  {
+   "slot": "0x20040C00",
+   "address": null,
+   "region": "sram4",
+   "op": "fetch",
+   "width": null,
+   "raw": 34,
+   "overhead": 2,
+   "per_access": 1.0
+  },
+  {
+   "slot": "0x20040C02",
+   "address": null,
+   "region": "sram4-halfword",
+   "op": "fetch",
+   "width": null,
+   "raw": 34,
+   "overhead": 2,
+   "per_access": 1.0
+  },
+  {
+   "slot": "0x20041C00",
+   "address": null,
+   "region": "sram5",
+   "op": "fetch",
+   "width": null,
+   "raw": 34,
+   "overhead": 2,
+   "per_access": 1.0
+  },
+  {
+   "slot": "0x20041C02",
+   "address": null,
+   "region": "sram5-halfword",
+   "op": "fetch",
+   "width": null,
+   "raw": 34,
+   "overhead": 2,
+   "per_access": 1.0
+  },
+  {
+   "slot": "0x2100D000",
+   "address": null,
+   "region": "nonstriped",
+   "op": "fetch",
+   "width": null,
+   "raw": 34,
+   "overhead": 2,
+   "per_access": 1.0
+  },
+  {
+   "slot": "0x2100D002",
+   "address": null,
+   "region": "nonstriped-halfword",
+   "op": "fetch",
+   "width": null,
+   "raw": 34,
+   "overhead": 2,
+   "per_access": 1.0
+  }
+ ],
+ "core_writes": {
+  "0x00003FFC": {
+   "read32": {
+    "ok": true,
+    "value": "0xBE00BE00"
+   },
+   "read16": {
+    "ok": true,
+    "value": "0xBE00"
+   },
+   "read8": {
+    "ok": true,
+    "value": "0x00"
+   },
+   "write32": {
+    "ok": true,
+    "value": "0xBE00BE00",
+    "stored": false
+   },
+   "write16": {
+    "ok": true,
+    "value": "0xBE00",
+    "stored": false
+   },
+   "write8": {
+    "ok": true,
+    "value": "0x00",
+    "stored": false
+   }
+  },
+  "0x00004000": {
+   "read32": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "read16": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "read8": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write32": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write16": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write8": {
+    "ok": false,
+    "ended": "fault"
+   }
+  },
+  "0x0FFFFFFC": {
+   "read32": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "read16": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "read8": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write32": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write16": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write8": {
+    "ok": false,
+    "ended": "fault"
+   }
+  },
+  "0x2003FFFC": {
+   "read32": {
+    "ok": true,
+    "value": "0xABA713A2"
+   },
+   "read16": {
+    "ok": true,
+    "value": "0x13A2"
+   },
+   "read8": {
+    "ok": true,
+    "value": "0xA2"
+   },
+   "write32": {
+    "ok": true,
+    "value": "0xA5C3965A",
+    "stored": true
+   },
+   "write16": {
+    "ok": true,
+    "value": "0x965A",
+    "stored": true
+   },
+   "write8": {
+    "ok": true,
+    "value": "0x5A",
+    "stored": true
+   }
+  },
+  "0x20040000": {
+   "read32": {
+    "ok": true,
+    "value": "0x4BD881FA"
+   },
+   "read16": {
+    "ok": true,
+    "value": "0x81FA"
+   },
+   "read8": {
+    "ok": true,
+    "value": "0xFA"
+   },
+   "write32": {
+    "ok": true,
+    "value": "0xA5C3965A",
+    "stored": true
+   },
+   "write16": {
+    "ok": true,
+    "value": "0x965A",
+    "stored": true
+   },
+   "write8": {
+    "ok": true,
+    "value": "0x5A",
+    "stored": true
+   }
+  },
+  "0x20040800": {
+   "read32": {
+    "ok": true,
+    "value": "0x2827A552"
+   },
+   "read16": {
+    "ok": true,
+    "value": "0xA552"
+   },
+   "read8": {
+    "ok": true,
+    "value": "0x52"
+   },
+   "write32": {
+    "ok": true,
+    "value": "0xA5C3965A",
+    "stored": true
+   },
+   "write16": {
+    "ok": true,
+    "value": "0x965A",
+    "stored": true
+   },
+   "write8": {
+    "ok": true,
+    "value": "0x5A",
+    "stored": true
+   }
+  },
+  "0x20040FFC": {
+   "read32": {
+    "ok": true,
+    "value": "0x32974A67"
+   },
+   "read16": {
+    "ok": true,
+    "value": "0x4A67"
+   },
+   "read8": {
+    "ok": true,
+    "value": "0x67"
+   },
+   "write32": {
+    "ok": true,
+    "value": "0xA5C3965A",
+    "stored": true
+   },
+   "write16": {
+    "ok": true,
+    "value": "0x965A",
+    "stored": true
+   },
+   "write8": {
+    "ok": true,
+    "value": "0x5A",
+    "stored": true
+   }
+  },
+  "0x20041000": {
+   "read32": {
+    "ok": true,
+    "value": "0x7CB01352"
+   },
+   "read16": {
+    "ok": true,
+    "value": "0x1352"
+   },
+   "read8": {
+    "ok": true,
+    "value": "0x52"
+   },
+   "write32": {
+    "ok": true,
+    "value": "0xA5C3965A",
+    "stored": true
+   },
+   "write16": {
+    "ok": true,
+    "value": "0x965A",
+    "stored": true
+   },
+   "write8": {
+    "ok": true,
+    "value": "0x5A",
+    "stored": true
+   }
+  },
+  "0x20041FFC": {
+   "read32": {
+    "ok": true,
+    "value": "0xFFFFFFFF"
+   },
+   "read16": {
+    "ok": true,
+    "value": "0xFFFF"
+   },
+   "read8": {
+    "ok": true,
+    "value": "0xFF"
+   },
+   "write32": {
+    "ok": true,
+    "value": "0xA5C3965A",
+    "stored": true
+   },
+   "write16": {
+    "ok": true,
+    "value": "0x965A",
+    "stored": true
+   },
+   "write8": {
+    "ok": true,
+    "value": "0x5A",
+    "stored": true
+   }
+  },
+  "0x20042000": {
+   "read32": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "read16": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "read8": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write32": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write16": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write8": {
+    "ok": false,
+    "ended": "fault"
+   }
+  },
+  "0x20080000": {
+   "read32": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "read16": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "read8": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write32": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write16": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write8": {
+    "ok": false,
+    "ended": "fault"
+   }
+  },
+  "0x2103FFFC": {
+   "read32": {
+    "ok": true,
+    "value": "0xABA713A2"
+   },
+   "read16": {
+    "ok": true,
+    "value": "0x13A2"
+   },
+   "read8": {
+    "ok": true,
+    "value": "0xA2"
+   },
+   "write32": {
+    "ok": true,
+    "value": "0xA5C3965A",
+    "stored": true
+   },
+   "write16": {
+    "ok": true,
+    "value": "0x965A",
+    "stored": true
+   },
+   "write8": {
+    "ok": true,
+    "value": "0x5A",
+    "stored": true
+   }
+  },
+  "0x21040000": {
+   "read32": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "read16": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "read8": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write32": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write16": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write8": {
+    "ok": false,
+    "ended": "fault"
+   }
+  },
+  "0x30000000": {
+   "read32": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "read16": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "read8": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write32": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write16": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write8": {
+    "ok": false,
+    "ended": "fault"
+   }
+  },
+  "0x40070000": {
+   "read32": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "read16": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "read8": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write32": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write16": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write8": {
+    "ok": false,
+    "ended": "fault"
+   }
+  },
+  "0x60000000": {
+   "read32": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "read16": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "read8": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write32": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write16": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write8": {
+    "ok": false,
+    "ended": "fault"
+   }
+  },
+  "0xA0000000": {
+   "read32": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "read16": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "read8": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write32": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write16": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write8": {
+    "ok": false,
+    "ended": "fault"
+   }
+  },
+  "0xD0000180": {
+   "read32": {
+    "ok": true,
+    "value": "0x00000000"
+   },
+   "read16": {
+    "ok": true,
+    "value": "0x0000"
+   },
+   "read8": {
+    "ok": true,
+    "value": "0x00"
+   },
+   "write32": {
+    "ok": true,
+    "value": "0x00000001",
+    "stored": false
+   },
+   "write16": {
+    "ok": true,
+    "value": "0x0001",
+    "stored": false
+   },
+   "write8": {
+    "ok": true,
+    "value": "0x01",
+    "stored": false
+   }
+  },
+  "0xE0100000": {
+   "read32": {
+    "ok": true,
+    "value": "0x00000000"
+   },
+   "read16": {
+    "ok": true,
+    "value": "0x0000"
+   },
+   "read8": {
+    "ok": true,
+    "value": "0x00"
+   },
+   "write32": {
+    "ok": true,
+    "value": "0x00000000",
+    "stored": false
+   },
+   "write16": {
+    "ok": true,
+    "value": "0x0000",
+    "stored": false
+   },
+   "write8": {
+    "ok": true,
+    "value": "0x00",
+    "stored": false
+   }
+  },
+  "0xFFFFFFFC": {
+   "read32": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "read16": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "read8": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write32": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write16": {
+    "ok": false,
+    "ended": "fault"
+   },
+   "write8": {
+    "ok": false,
+    "ended": "fault"
+   }
+  },
+  "0x20030000": {
+   "write32": {
+    "ok": true,
+    "value": "0xA5C3965A",
+    "stored": true
+   },
+   "write16": {
+    "ok": true,
+    "value": "0x965A",
+    "stored": true
+   },
+   "write8": {
+    "ok": true,
+    "value": "0x5A",
+    "stored": true
+   }
+  },
+  "0x20038000": {
+   "write32": {
+    "ok": true,
+    "value": "0xA5C3965A",
+    "stored": true
+   },
+   "write16": {
+    "ok": true,
+    "value": "0x965A",
+    "stored": true
+   },
+   "write8": {
+    "ok": true,
+    "value": "0x5A",
+    "stored": true
+   }
+  },
+  "0x2100C000": {
+   "write32": {
+    "ok": true,
+    "value": "0xA5C3965A",
+    "stored": true
+   },
+   "write16": {
+    "ok": true,
+    "value": "0x965A",
+    "stored": true
+   },
+   "write8": {
+    "ok": true,
+    "value": "0x5A",
+    "stored": true
+   }
+  },
+  "0x2101C000": {
+   "write32": {
+    "ok": true,
+    "value": "0xA5C3965A",
+    "stored": true
+   },
+   "write16": {
+    "ok": true,
+    "value": "0x965A",
+    "stored": true
+   },
+   "write8": {
+    "ok": true,
+    "value": "0x5A",
+    "stored": true
+   }
+  },
+  "0x2102C000": {
+   "write32": {
+    "ok": true,
+    "value": "0xA5C3965A",
+    "stored": true
+   },
+   "write16": {
+    "ok": true,
+    "value": "0x965A",
+    "stored": true
+   },
+   "write8": {
+    "ok": true,
+    "value": "0x5A",
+    "stored": true
+   }
+  },
+  "0x00000100": {
+   "write32": {
+    "ok": true,
+    "value": "0x2080E796",
+    "stored": false
+   },
+   "write16": {
+    "ok": true,
+    "value": "0xE796",
+    "stored": false
+   },
+   "write8": {
+    "ok": true,
+    "value": "0x96",
+    "stored": false
+   }
+  }
+ }
+}

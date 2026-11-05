@@ -1,0 +1,260 @@
+{
+ "schema": 1,
+ "kind": "identity",
+ "provenance": {
+  "chip": {
+   "chip_id": "0x20002927",
+   "cpuid": "0x410CC601",
+   "rom_version": 3
+  },
+  "date": "2026-11-04 19:01:34",
+  "openocd": "Open On-Chip Debugger 0.12.0",
+  "swd_khz": 5000,
+  "picosim": {
+   "commit": "8d69161720ee0dd37b6eef862f47973c931c2e3f",
+   "dirty": true
+  },
+  "agent": null,
+  "campaign": "0",
+  "run_id": null,
+  "runs": 1,
+  "agreed": null,
+  "target": "openocd",
+  "chip_label": "chip1"
+ },
+ "facts": [
+  {
+   "id": "identity.chip_id",
+   "value": "0x20002927",
+   "source": "measured",
+   "address": "0x40000000"
+  },
+  {
+   "id": "identity.platform",
+   "value": "0x00000000",
+   "source": "measured",
+   "address": "0x40000004"
+  },
+  {
+   "id": "identity.gitref_rp2040",
+   "value": "0xE0C912E8",
+   "source": "measured",
+   "address": "0x40000040"
+  },
+  {
+   "id": "identity.cpuid",
+   "value": "0x410CC601",
+   "source": "measured",
+   "address": "0xE000ED00"
+  },
+  {
+   "id": "identity.mpu_type",
+   "value": "0x00000800",
+   "source": "measured",
+   "address": "0xE000ED90"
+  },
+  {
+   "id": "identity.fp_ctrl",
+   "value": "0x00000041",
+   "source": "measured",
+   "address": "0xE0002000"
+  },
+  {
+   "id": "identity.dwt_ctrl",
+   "value": "0x20000000",
+   "source": "measured",
+   "address": "0xE0001000"
+  },
+  {
+   "id": "identity.demcr",
+   "value": "0x01000000",
+   "source": "measured",
+   "address": "0xE000EDFC"
+  },
+  {
+   "id": "identity.dhcsr",
+   "value": "0x00030003",
+   "source": "measured",
+   "address": "0xE000EDF0"
+  },
+  {
+   "id": "identity.resets_reset",
+   "value": "0x00DFEC9F",
+   "source": "measured",
+   "address": "0x4000C000"
+  },
+  {
+   "id": "identity.resets_done",
+   "value": "0x01301360",
+   "source": "measured",
+   "address": "0x4000C008"
+  },
+  {
+   "id": "identity.vtor",
+   "value": "0x00000000",
+   "source": "measured",
+   "address": "0xE000ED08"
+  },
+  {
+   "id": "identity.aircr",
+   "value": "0xFA050000",
+   "source": "measured",
+   "address": "0xE000ED0C"
+  },
+  {
+   "id": "identity.ccr",
+   "value": "0x00000208",
+   "source": "measured",
+   "address": "0xE000ED14"
+  },
+  {
+   "id": "identity.syst_calib",
+   "value": "0x0000270F",
+   "source": "measured",
+   "address": "0xE000E01C"
+  },
+  {
+   "id": "identity.cpuid.matches_sdk",
+   "value": true,
+   "source": "measured",
+   "prediction": {
+    "value": "0x410CC601",
+    "from": "Pico SDK (Cortex-M0+ r0p1)"
+   }
+  },
+  {
+   "id": "identity.chip_revision",
+   "value": 2,
+   "source": "measured",
+   "unit": "CHIP_ID[31:28]"
+  },
+  {
+   "id": "identity.mpu_regions",
+   "value": 8,
+   "source": "measured",
+   "prediction": {
+    "value": 8,
+    "from": "Pico SDK"
+   }
+  },
+  {
+   "id": "identity.breakpoints",
+   "value": 4,
+   "source": "measured"
+  },
+  {
+   "id": "identity.watchpoints",
+   "value": 2,
+   "source": "measured"
+  },
+  {
+   "id": "identity.has_mtb",
+   "value": false,
+   "source": "measured",
+   "note": "ARMv6-M has no ETM and no DWT cycle counter; an MTB would trace branches"
+  },
+  {
+   "id": "identity.rom.version",
+   "value": 3,
+   "source": "measured",
+   "prediction": {
+    "value": 3,
+    "from": "RP2040-B2 boot ROM"
+   }
+  },
+  {
+   "id": "identity.rom.magic",
+   "value": "4d7501",
+   "source": "measured",
+   "prediction": {
+    "value": "4d7501",
+    "from": "boot ROM ('Mu', 1)"
+   }
+  },
+  {
+   "id": "identity.rom.sha256",
+   "value": "ef07d54bdd259c7858483606118a3c704976801823c38ac5a2fcdffacd2d83fe",
+   "source": "measured"
+  },
+  {
+   "id": "identity.swd.read_bytes_per_s",
+   "value": 79545,
+   "source": "measured",
+   "unit": "B/s"
+  },
+  {
+   "id": "identity.swd.write_bytes_per_s",
+   "value": 94744,
+   "source": "measured",
+   "unit": "B/s"
+  },
+  {
+   "id": "identity.swd.sram_round_trip_ok",
+   "value": true,
+   "source": "measured"
+  }
+ ],
+ "rom_table": [
+  {
+   "entry": "0xFFF0F003",
+   "base": "0xE000E000",
+   "present": true,
+   "cid": [
+    "0x0D",
+    "0xE0",
+    "0x05",
+    "0xB1"
+   ],
+   "pid": [
+    "0x08",
+    "0xB0",
+    "0x0B",
+    "0x00"
+   ],
+   "part": "SCS (M0+)"
+  },
+  {
+   "entry": "0xFFF02003",
+   "base": "0xE0001000",
+   "present": true,
+   "cid": [
+    "0x0D",
+    "0xE0",
+    "0x05",
+    "0xB1"
+   ],
+   "pid": [
+    "0x0A",
+    "0xB0",
+    "0x0B",
+    "0x00"
+   ],
+   "part": "DWT"
+  },
+  {
+   "entry": "0xFFF03003",
+   "base": "0xE0002000",
+   "present": true,
+   "cid": [
+    "0x0D",
+    "0xE0",
+    "0x05",
+    "0xB1"
+   ],
+   "pid": [
+    "0x0B",
+    "0xB0",
+    "0x0B",
+    "0x00"
+   ],
+   "part": "BPU"
+  }
+ ],
+ "rom": {
+  "sha256": "ef07d54bdd259c7858483606118a3c704976801823c38ac5a2fcdffacd2d83fe",
+  "magic": "4d7501",
+  "version": 3,
+  "seconds": 0.178
+ },
+ "packet_bytes": 8176
+}

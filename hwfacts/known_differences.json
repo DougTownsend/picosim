@@ -1,0 +1,4 @@
+{
+ "about": "Differences between picosim and the real RP2040 that are understood. tests/test_hwfacts.py fails only on a difference that is not listed here. Each entry matches by class (faults, decoder, flags, memory, timing), a regex on the encoding's name (from picosim/discover/v6m.py) and optionally a regex on the detail.",
+ "known": []
+}

@@ -719,7 +719,31 @@ func _add_topics() -> void:
 		_sub("Reading a timing result") +
 		"A timing test marks regions with [code]bl bench_start[/code] and [code]bl bench_stop[/code] (in picosim they do nothing). On the chip they read the [b]SysTick[/b] counter, which counts processor clock cycles; the cost of measuring (21 cycles, found by a calibration run) is taken off. [b]picosim[/b] is what picosim's RP2040 model (datasheet Table 81) says the region takes; [b]Difference[/b] is the chip minus the model, and [b]Per instr.[/b] divides it by the repetitions named in the region's comment ([code]@ MULS x 64[/code]). A program with no [code]bench_start[/code] / [code]bench_stop[/code] is timed in stretches instead: every run of its own code between OS calls, from the start of main or the return from [code]putchar[/code] / [code]getchar[/code] up to and including the next call or main's return (18 cycles of measuring overhead). A program that never ends, such as an echo loop, is stopped after 100 calls.\n" +
 		_note("Write your own", "Any [code].s[/code] file works as a test: load it and use [b]The loaded program[/b]. To time part of it, put [code]bl bench_start[/code] before and [code]bl bench_stop[/code] after, with a comment naming the region. The suite's files are in the [code]hwtests[/code] folder; [code]docs/hardware-testing.md[/code] explains everything in more depth.") +
-		_note("Save report…", "writes every result as a Markdown report and the full data as JSON, to analyse or compare later. From a terminal, [code]python3 -m picosim.hwtest --report results.md[/code] runs the whole suite without the window.", "green"), 2)
+		_note("Save report…", "writes every result as a Markdown report and the full data as JSON, to analyse or compare later. From a terminal, [code]python3 -m picosim.hwtest --report results.md[/code] runs the whole suite without the window.", "green") +
+		_sub("Hardware facts") +
+		"The third group in the list, [b]Hardware facts (Level 5 discovery)[/b], shows what picosim's discovery campaigns measured on the chip and where picosim differs: see " + _link("discovery", "Hardware facts (Level 5 discovery)") + ".\n", 2)
+
+	_topic("discovery", "Hardware facts (Level 5 discovery)", _h("Hardware facts (Level 5 discovery)") +
+		"The last group in the Testing window. Where the tests above check programs, the [b]discovery campaigns[/b] measure the chip itself, one subject each, and record every result as a [i]fact[/i] with where it came from. picosim's Level 5 will be built from these facts; until then they show exactly where picosim and the real RP2040 differ.\n" +
+		_grid(["Campaign", "What it measures"], [
+			["[b]0[/b] Identity", "Which chip, boot ROM and debug parts this is."],
+			["[b]A[/b] Memory map", "Every region and peripheral: what each size of access does there, and how many cycles it takes."],
+			["[b]C[/b] Registers", "Every peripheral register's value after reset and which bits can be written, against the datasheet."],
+			["[b]B[/b] Encodings", "Every 16-bit instruction encoding (and a sample of the 32-bit ones): how each ends, and the registers, flags and memory it leaves."],
+			["[b]D[/b] Timing", "The cycles each instruction takes, alone and in pairs, and exception entry and return."],
+			["[b]E[/b] Random programs", "Short random programs compared with picosim; one that differs is shrunk to the smallest program that still does."],
+			["[b]F[/b] Flashed programs", "The chip as a flashed program sees it. It writes the board's flash, so it is backed up first (see below)."],
+			["[b]G[/b] Peripherals", "The SIO divider, interpolators, FIFOs, spinlocks, GPIO overrides and SysTick."],
+		], 1) +
+		_sub("Reading the list") +
+		"Each campaign shows [b]not run[/b], [b]partial[/b] (with how many batches of the stage it stopped in are done), or [b]done[/b], with the number of differences from picosim. The group's right column says whose results these are: the [b]RP2040[/b]'s, or the [b]stand-in[/b]'s when you chose Stand-in (an emulator's results are kept apart, so they are never taken for measurements).\n" +
+		_sub("A campaign's page") +
+		"• At the top: what it measures, then its [b]provenance[/b]: the chip, when it was measured, through which OpenOCD, picosim's commit, the on-chip agent and whether a repeat run agreed.\n" +
+		"• The table lists its [b]differences[/b] (or, if it has none, the facts it measured). Click one for its smallest example: the instruction, and the registers and flags it ran with. A row marked ▶ has " + _k("Open in picosim") + ": it loads a small program in the main window that sets those registers and flags and runs the instruction, so you can step through what picosim does with it.\n" +
+		"• " + _k("Run") + " starts the campaign from the beginning on the chip you are connected to; " + _k("Resume") + " carries on where a stopped one left off; " + _k("Stop") + " stops it after the batch it is in. Progress and the log appear below the table. If the campaign needs you (for example to unplug the board), a box says what to do.\n" +
+		_sub("Campaign F and the flash") +
+		"F is the only campaign that changes the board for good: it writes the target Pico's flash. Its " + _k("Run") + " first shows every backup and restore step. The flash is read twice, over the debug probe and over USB in BOOTSEL mode (which needs you), the two copies must match, and the backup is stored twice. F cannot start without that backup, and at the end the original is written back and checked byte for byte. If a session ends before the restore, every campaign refuses to start until " + _k("Restore the flash now") + " has put it back.\n" +
+		_note("From a terminal", "everything here also works without the window: [code]python3 -m picosim.discover identity --target standin[/code] runs a campaign, [code]python3 -m picosim.discover status[/code] lists them, and [code]python3 -m picosim.discover check[/code] replays the recorded cases in picosim and writes [code]hwfacts/report.md[/code].", "green"), 2)
 
 	_section("Inside the CPU", 3)
 

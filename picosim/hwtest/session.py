@@ -11,6 +11,16 @@ Messages to the GUI (all {'type': 'hw', 'event': ...}):
   summary   a test's result (lockstep.py / bench.py summaries)
   error     a test could not run: message
   done      the run is over
+
+Level 5 discovery (picosim/discover; the Testing window's "Hardware facts"
+group) runs its campaigns on the same connection, in the same worker:
+  discover_start     a campaign begins: campaign, fresh
+  discover_log       a line of its log: campaign, text
+  discover_progress  a stage's batches: campaign, done, total, step
+  discover_ask       the campaign needs the person (BOOTSEL, a replug):
+                     message; it waits for hw_discover_answer (or Stop)
+  discover_done      it ended: campaign, ok, stopped, message, restore
+                     (True: the flash needs restoring), row (its new status)
 """
 
 import json
@@ -48,6 +58,8 @@ class Session:
         self._rows = []
         self._rows_path = None
         self._rows_at = 0.0
+        self.discovering = ''        # the campaign running, if one is
+        self._answer = threading.Event()
 
     # ── what the GUI asks ───────────────────────────────────────────────────
 
@@ -111,6 +123,7 @@ class Session:
 
     def stop(self):
         self.stop_flag.set()
+        self._answer.set()            # a campaign waiting for the person gives up
 
     def run(self, tests, input_text='', max_steps=20000, stop_on_diff=False):
         """tests: [{'path', 'kind', 'title'?}] run one after the other."""
@@ -205,6 +218,150 @@ class Session:
             self.q.put({'type': 'hw', 'event': 'steps', 'path': self._rows_path, 'rows': self._rows})
             self._rows = []
         self._rows_at = time.monotonic()
+
+    # ── Level 5 discovery ───────────────────────────────────────────────────
+
+    def _discover_ready(self):
+        if self.thread is not None:
+            self.thread.join(2.0)
+        if self.busy():
+            return "Testing is busy; stop the run first"
+        if not self.target:
+            return "connect to a chip first"
+        return ''
+
+    def discover_run(self, campaign, fresh=False, extra=(), confirmed=False):
+        """Run (fresh: from the start) or resume one campaign on this
+        connection, through the command line's own code.  Campaign F needs
+        `confirmed` (the window's confirmation) and a checked flash backup.
+        Returns why it can't start, or ''."""
+        from ..discover.cases import ORDER
+        if campaign not in ORDER:
+            return f"there is no campaign called {campaign!r}"
+        err = self._discover_ready()
+        if err:
+            return err
+        if campaign == 'flashed':
+            from ..discover.overview import flash_status
+            fs = flash_status()
+            if not confirmed:
+                return "Campaign F writes the board's flash: confirm its steps first"
+            if not fs['ready']:
+                return fs['message']
+        argv = [campaign, '--target', self.target.kind, '--speed', str(int(self.target.args[3] or 5000))]
+        argv += (['--fresh'] if fresh else []) + [str(x) for x in extra]
+        if campaign == 'flashed':
+            argv.append('--yes')          # the window asked already
+
+        def work():
+            self._discover(campaign, argv, fresh)
+            self.status(busy=False)
+        self._start(work)
+        return ''
+
+    def _discover(self, campaign, argv, fresh):
+        from ..discover.__main__ import parser, run_campaign
+        from ..discover.campaign import read_status
+        from ..discover.flashguard import FlashGuardError
+        from ..discover.overview import row
+        from ..discover.runner import RunError
+        kind = self.target.kind
+        self.discovering = campaign
+        self.q.put({'type': 'hw', 'event': 'discover_start', 'campaign': campaign, 'fresh': fresh})
+
+        def log(text):
+            self.q.put({'type': 'hw', 'event': 'discover_log', 'campaign': campaign, 'text': str(text)})
+            if self.target:
+                self.target.log(f"discover {campaign}: {text}")
+
+        def progress(done, total):
+            try:
+                step = read_status(campaign, 'standin' if kind == 'standin' else 'openocd').get('step', '')
+            except (OSError, ValueError):
+                step = ''
+            self.q.put({'type': 'hw', 'event': 'discover_progress', 'campaign': campaign,
+                        'done': done, 'total': total, 'step': step})
+        ok, msg, restore = False, '', False
+        try:
+            a = parser().parse_args(argv)
+            path = run_campaign(a, self.target, log=log, progress=progress, stop_flag=self.stop_flag,
+                                ask=self._ask)
+            ok = True
+            msg = f"facts: {path}" if path else ''
+        except SystemExit as e:              # argparse refused an option
+            msg = f"bad options for the campaign ({e})"
+        except FlashGuardError as e:
+            msg, restore = str(e), True
+        except RunError as e:
+            msg = str(e)
+        except (TargetError, RSPError) as e:
+            msg = str(e)
+            if _lost(e):
+                msg = "The connection to the chip was lost. " + msg + "\n\n" + self.target.explain()
+                self.error = f"Connection lost. Full log: {self.target.log_path}"
+                self._close()
+            else:
+                msg += f"\n\nFull log: {self.target.log_path}"
+        except Exception as e:               # noqa: BLE001 - report it; keep the session alive
+            msg = f"internal error: {e!r}"
+        self.discovering = ''
+        self.q.put({'type': 'hw', 'event': 'discover_done', 'campaign': campaign, 'ok': ok,
+                    'stopped': self.stop_flag.is_set(), 'message': msg, 'restore': restore,
+                    'row': row(campaign, kind)})
+
+    def discover_flash(self, action):
+        """Campaign F's flash backup ('backup') or restore ('restore'), with
+        flashguard, on this connection."""
+        err = self._discover_ready()
+        if err:
+            return err
+        if action not in ('backup', 'restore'):
+            return f"unknown flash action {action!r}"
+
+        def work():
+            from ..discover import flashguard as G
+            name = 'flashed'
+            self.discovering = name
+            self.q.put({'type': 'hw', 'event': 'discover_start', 'campaign': name, 'flash': action})
+
+            def log(text):
+                self.q.put({'type': 'hw', 'event': 'discover_log', 'campaign': name, 'text': str(text)})
+            ok, msg = False, ''
+            try:
+                g = G.FlashGuard.from_target(self.target, ask=self._ask, log=log)
+                if action == 'backup':
+                    b = g.backup()
+                    msg = f"Backed up and checked: {b.bin_path} (copy: {b.cache_bin_path})"
+                else:
+                    r = g.restore()
+                    msg = (f"Restored. Backup SHA-256 {r.backup_sha256}; read back {r.readback_sha256}. "
+                           f"Boot check: {'ok' if r.boot_ok else 'NOT confirmed'} ({r.boot_detail})")
+                ok = True
+            except G.FlashGuardError as e:
+                msg = str(e)
+            except Exception as e:               # noqa: BLE001
+                msg = f"internal error: {e!r}"
+            self.discovering = ''
+            from ..discover.overview import row
+            self.q.put({'type': 'hw', 'event': 'discover_done', 'campaign': name, 'ok': ok,
+                        'stopped': self.stop_flag.is_set(), 'message': msg, 'flash': action,
+                        'restore': False, 'row': row(name, self.target.kind if self.target else 'openocd')})
+            self.status(busy=False)
+        self._start(work)
+        return ''
+
+    def _ask(self, message):
+        """A campaign needs the person: ask in the window, wait for the answer."""
+        self._answer.clear()
+        self.q.put({'type': 'hw', 'event': 'discover_ask', 'campaign': self.discovering, 'message': str(message)})
+        while not self._answer.wait(0.2):
+            pass
+        if self.stop_flag.is_set():
+            raise RuntimeError("stopped while waiting for you")
+        return ''
+
+    def answer(self):
+        self._answer.set()
 
     def drain(self, limit=200):
         out = []
