@@ -129,7 +129,8 @@ def row(name, kind='openocd', label='chip1'):
            'state': state if state in C.STATUS_NAMES else 'not run', 'step': s.get('step') or '',
            'differences': s.get('differences'), 'updated': s.get('updated', ''),
            'facts': s.get('facts') or '', 'available': mod is not None, 'error': err,
-           'agent_based': bool(getattr(mod, 'AGENT_BASED', False))}
+           'agent_based': bool(getattr(mod, 'AGENT_BASED', False)),
+           'compared_with': s.get('compared_with') or 'picosim'}
     if out['state'] == 'partial':
         pr = progress(name, kind, label, out['step'] or None)
         if pr:
@@ -146,6 +147,14 @@ def campaigns(kind='openocd', label='chip1'):
 def _facts_doc(name, kind, label, status):
     """The campaign's facts document (validated), or (None, why)."""
     path = status.get('facts') or ''
+    files = [p for p in (status.get('files') or {}).values() if p]
+    if len(files) > 1:                          # campaign D: timing.json and exceptions.json
+        path = files
+    if isinstance(path, list):                  # campaign G writes one document per block
+        doc, where = _merged_docs([p for p in path if p])
+        if doc is not None and status.get('compared_with'):
+            doc['compared_with'] = status['compared_with']
+        return doc, where
     if not path or not os.path.exists(path):
         return None, ''
     try:
@@ -153,6 +162,29 @@ def _facts_doc(name, kind, label, status):
             return FX.validate(json.load(f)), path
     except (OSError, ValueError, FX.FactsError) as e:
         return None, f"{path} can't be read: {e}"
+
+
+def _merged_docs(paths):
+    """Several facts documents as one: every fact, each document's tables
+    under its file name (sio, gpio, …), the first one's provenance."""
+    docs = []
+    for p in paths:
+        if not os.path.exists(p):
+            continue
+        try:
+            with open(p) as f:
+                docs.append((p, FX.validate(json.load(f))))
+        except (OSError, ValueError, FX.FactsError) as e:
+            return None, f"{p} can't be read: {e}"
+    if not docs:
+        return None, ''
+    merged = {'provenance': docs[0][1].get('provenance') or {}, 'facts': []}
+    for p, d in docs:
+        merged['facts'] += d.get('facts', [])
+        merged[os.path.splitext(os.path.basename(p))[0]] = {k: v for k, v in d.items()
+                                                            if k not in ('provenance', 'facts')}
+    folder = os.path.dirname(docs[0][0])
+    return merged, folder + os.sep + ' + '.join(os.path.basename(p) for p, _ in docs)
 
 
 def provenance(doc):
@@ -205,38 +237,52 @@ def _label(d, path):
     return path or 'difference'
 
 
+def _read_vs(item):
+    """'field: chip X, model Y; …' for a row with 'read' and 'predicted'."""
+    rd, pr = item.get('read'), item.get('predicted')
+    if not isinstance(rd, dict) or not isinstance(pr, dict):
+        return ''
+    return '; '.join(f"{k}: chip {rd.get(k)}, model {pr.get(k)}" for k in rd)
+
+
 def differences(doc):
     """Every difference a facts document records, as dicts:
-        what, kind ('picosim' | 'expected' | 'pending'), where, cases,
+        what, kind ('picosim' | 'datasheet' | 'expected' | 'pending'), where, cases,
         detail, known, example (check._example's form, or None), program
     from (1) any 'differences' list in its tables, whose items are check
     groups (with an example) or plain sentences, and (2) facts whose
     measured value is not the one predicted."""
     out = []
+    # campaign C compares the chip with the SVD, not with picosim
+    plain = 'datasheet' if doc.get('compared_with') == 'datasheet' else 'picosim'
 
     def walk(o, path):
         if isinstance(o, dict):
-            ds = o.get('differences')
-            if isinstance(ds, list):
+            ds = [x for k, v in o.items() if (k == 'differences' or k.endswith('_differences'))
+                  and isinstance(v, list) for x in v]          # e.g. G's interp_differences
+            if ds:
                 for item in ds:
                     if isinstance(item, dict):
                         ex = item.get('example') if isinstance(item.get('example'), dict) else None
                         status = str(item.get('status', 'differs'))
                         out.append({
                             'what': str(item.get('encoding') or item.get('name') or item.get('what')
-                                        or (ex or {}).get('name') or _label(o, path)),
-                            'kind': 'pending' if status.startswith('pending') else 'picosim',
+                                        or (ex or {}).get('name')
+                                        or (f"INTERP{item['interp']} case {item.get('id')}" if 'interp' in item else '')
+                                        or _label(o, path)),
+                            'kind': 'pending' if status.startswith('pending') else plain,
                             'class': item.get('class') or '', 'where': path,
                             'cases': item.get('cases', item.get('n')),
-                            'detail': str(item.get('detail') or (ex or {}).get('detail') or status),
+                            'detail': str(item.get('detail') or (ex or {}).get('detail') or _read_vs(item)
+                                          or status),
                             'known': item.get('known') or '',
                             'example': ex if ex and ex.get('code') else None,
                             'program': item.get('program') or (ex or {}).get('program') or ''})
                     elif isinstance(item, str):
-                        out.append({'what': _label(o, path), 'kind': 'picosim', 'class': '', 'where': path,
+                        out.append({'what': _label(o, path), 'kind': plain, 'class': '', 'where': path,
                                     'cases': None, 'detail': item, 'known': '', 'example': None, 'program': ''})
             for k, v in o.items():
-                if k not in ('differences', 'provenance', 'facts'):
+                if k not in ('differences', 'provenance', 'facts') and not k.endswith('_differences'):
                     walk(v, f"{path}.{k}" if path else str(k))
         elif isinstance(o, list):
             for v in o:
@@ -253,8 +299,8 @@ def differences(doc):
             out.append({'what': f['id'], 'kind': 'expected', 'class': '', 'where': 'facts', 'cases': None,
                         'detail': f"measured {v}; expected {p['value']} (from {p.get('from', '?')})",
                         'known': '', 'example': None, 'program': ''})
-    order = {'picosim': 0, 'expected': 1, 'pending': 2}
-    out.sort(key=lambda d: order.get(d['kind'], 3))
+    order = {'picosim': 0, 'datasheet': 1, 'expected': 2, 'pending': 3}
+    out.sort(key=lambda d: order.get(d['kind'], 4))
     for i, d in enumerate(out):
         d['index'] = i
         d['openable'] = bool(d['example'] or (d['program'] and str(d['program']).endswith('.s')))
@@ -364,8 +410,8 @@ def case_program(diff, campaign, out_dir=None):
         "@",
         "@ The registers and flags are set as the case had them on the chip, then the",
         "@ case's instruction(s) run and BKPT stops the program. Addresses in the",
-        "@ registers are the chip's: picosim (until it has the chip's full memory map)",
-        "@ has only 64 KiB, so an address may mean something else here, and a branch",
+        "@ registers are the chip's, and picosim has the same memory map, but this",
+        "@ program is in flash rather than at the chip's slot in SRAM, so a branch",
         "@ lands in this program rather than in the chip's sled.",
         f"@ On the chip: SP was PSP {ex.get('psp', '?')}, PRIMASK {ex.get('primask', '?')}; here SP is picosim's stack.",
         "",
@@ -405,8 +451,9 @@ def flash_status(state_path=None):
                 'backup': {}, 'restorable': False}
     if not st:
         return {'state': None, 'ready': False, 'pending_restore': False, 'backup': {}, 'restorable': False,
-                'message': "No flash backup has been made yet, so campaign F can't start. "
-                           "Back the flash up first (it needs you: see the steps)."}
+                'message': "No flash backup yet, so campaign F can't start. Press Flash backup…, "
+                           "then Back up. Don't press any BOOTSEL button beforehand: picosim pops "
+                           "up a message when it needs you."}
     b = st.get('backup') or {}
     copies = [p for p in (b.get('bin'), b.get('cache_bin')) if p and os.path.exists(p)]
     pending = st['state'] == 'written'
@@ -434,14 +481,16 @@ FLASH_STEPS = {
     'backup': [
         "Identify the flash through OpenOCD: it must be the RP2040's 2 MB flash at 0x10000000.",
         "Backup A: read the whole flash over SWD (the debug probe).",
-        "Backup B: read it again over USB with picotool. This needs you: unplug the TARGET Pico's "
-        "USB, hold its BOOTSEL button, plug it back in and let go.",
+        "Backup B: read it again over USB with picotool. A message pops up when it needs you: "
+        "put the TARGET Pico (never the probe) in BOOTSEL mode, by unplugging its USB, holding "
+        "its BOOTSEL button, plugging it back in and letting go.",
         "Compare the two backups' SHA-256. If they differ they are both read once more; if they still "
         "differ, everything stops and nothing is written.",
         "Read the flash's unique ID (still in BOOTSEL). No ID, no backup.",
         "Store the image twice (~/picosim-flash-backups and the cache), each with a .sha256 file and a "
         ".uf2 for drag-and-drop restore; every file is read back and checked.",
-        "Plug the target back in normally.",
+        "A last message asks you to plug the TARGET back in normally (no button). macOS may say "
+        "\u201cDisk Not Ejected Properly\u201d: that is expected.",
     ],
     'run': [
         "Check over SWD that the flash still equals the backup, then record that it is being written "

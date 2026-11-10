@@ -1,45 +1,46 @@
 """
 Replay one recorded case in picosim's core and say how picosim ends it.
 
-picosim (until Stage 2) has one flat 64 KiB space, so the chip's addresses
-are mapped onto it:
-
-    chip                                   picosim
-    ROM          0x00000000-0x00003FFF     0x0000-0x3FFF   (hwfacts/rom.bin if present)
-    the sled     slot-0x4000 .. slot+0x4000 0x4000-0xBFFF  (slot at 0x8000 + slot % 4)
-    scratch      SCRATCH (+4 KiB)          0xC000-0xCFFF
-    PSP area     PSP_LO..PSP_HI            0xF000-0xF7FF
-
-The window around the slot starts on a word, so an address keeps its
-alignment in picosim (word loads, PC-relative literals).  A register value
-inside one of these ranges is mapped on the way in; on
-the way out a chip value and a picosim value are the same if they are equal
-or if the chip's maps to picosim's (same()).  Once picosim has the chip's
-real memory map (Stage 2) the map becomes the identity: SimMap(direct=True).
+picosim has the chip's memory map (memmap.py), so a case runs at its chip
+addresses: the ROM (hwfacts/rom.bin if present, else zeros), the sled
+around the slot (slot-0x4000 .. slot+0x4000), the scratch window and the PSP
+area, all in SRAM.  The one exception is a window picosim does not have (the
+non-striped SRAM alias at 0x21000000, a D1 code site): it is moved to SPARE,
+a free part of SRAM, keeping its offset in its word so an address keeps its
+alignment (word loads, PC-relative literals).  A register value inside a
+moved window is mapped on the way in; on the way out a chip value and a
+picosim value are the same if they are equal or if the chip's maps to
+picosim's (same()).
 """
 
 import os
 
 from .. import timing
 from .._picosim_core import CPUCore
+from ..memmap import Image, ROM_BASE, ROM_SIZE, span
 from . import formats as F
 
-SIM_SLOT = 0x8000
-SIM_SLED = (0x4000, 0xC000)
-SIM_SCRATCH = 0xC000
-SIM_PSP = 0xF000
+SLED_REACH = 0x4000                 # the sled picosim lays out on each side of the slot
+SPARE = 0x20030000                  # where a window picosim does not have is moved
 HWFACTS = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'hwfacts')
 
 
 class SimMap:
+    """Chip address <-> picosim address: the identity, except for windows
+    outside picosim's memory, which move to SPARE."""
+
     def __init__(self, lay, slot, direct=False):
         self.direct = direct
-        self.ranges = [] if direct else [
-            (0, 0x4000, 0),
-            ((slot & ~3) - 0x4000, (slot & ~3) + 0x4000, SIM_SLED[0]),
-            (lay['SCRATCH'], lay['SCRATCH'] + lay['SCRATCH_MAX'], SIM_SCRATCH),
-            (lay['PSP_LO'], lay['PSP_HI'], SIM_PSP),
-        ]
+        sled = ((slot & ~3) - SLED_REACH, (slot & ~3) + SLED_REACH)
+        self.windows = [sled, (lay['SCRATCH'], lay['SCRATCH'] + lay['SCRATCH_MAX']),
+                        (lay['PSP_LO'], lay['PSP_HI'])]
+        self.ranges = []                  # (chip lo, chip hi, picosim lo)
+        spare = SPARE
+        for lo, hi in ([] if direct else self.windows):
+            if span(lo, hi - lo) is None:
+                self.ranges.append((lo, hi, spare))
+                spare += (hi - lo + 0xFFF) & ~0xFFF
+        self.sled = (self.to_sim(sled[0]), self.to_sim(sled[0]) + (sled[1] - sled[0]))
 
     def to_sim(self, v):
         for lo, hi, s in self.ranges:
@@ -64,7 +65,7 @@ def rom():
     global _ROM
     if _ROM is None:
         p = os.path.join(HWFACTS, 'rom.bin')
-        _ROM = open(p, 'rb').read()[:0x4000] if os.path.exists(p) else bytes(0x4000)
+        _ROM = open(p, 'rb').read()[:ROM_SIZE] if os.path.exists(p) else bytes(ROM_SIZE)
     return _ROM
 
 
@@ -82,16 +83,19 @@ def run(case, lay, scratch_words, max_steps=None, code=None, lenient_bus=False):
     nzcv, 'changed': [(offset, value)], 'error': text, 'profile': [...]}."""
     code = case['code_bytes'] if code is None else code
     m = SimMap(lay, case['slot'])
-    slot = m.to_sim(case['slot'])                     # SIM_SLOT, plus the chip slot's offset in its word
-    mem = bytearray(0x10000)
-    mem[0:0x4000] = rom()
-    mem[SIM_SLED[0]:SIM_SLED[1]] = F.SLED_HALF.to_bytes(2, 'little') * ((SIM_SLED[1] - SIM_SLED[0]) // 2)
-    mem[slot:slot + len(code)] = code
+    slot = m.to_sim(case['slot'])
+    mem = Image()
+    mem.write(ROM_BASE, rom())
+    lo, hi = m.sled
+    mem.write(lo, F.SLED_HALF.to_bytes(2, 'little') * ((hi - lo) // 2))
+    mem.write(slot, code)
     pat = F.pattern(case['seed'], scratch_words) if scratch_words else b''
-    mem[SIM_SCRATCH:SIM_SCRATCH + len(pat)] = pat
+    scratch = m.to_sim(lay['SCRATCH'])
+    if pat:
+        mem.write(scratch, pat)
     core = CPUCore()
     core.strict = True
-    core.load_memory(bytes(mem), 0)
+    mem.load_into(core)
 
     def bus(*a):
         if lenient_bus:                  # timing only: a peripheral reads as 0
@@ -137,12 +141,12 @@ def run(case, lay, scratch_words, max_steps=None, code=None, lenient_bus=False):
     if kind == 'fault':
         if pc == slot + len(code) and _udf_at(core, pc):
             kind = 'fell-through'
-        elif pc != slot and SIM_SLED[0] <= pc < SIM_SLED[1] and _udf_at(core, pc):
+        elif pc != slot and m.sled[0] <= pc < m.sled[1] and _udf_at(core, pc):
             kind = 'sled'
     regs = list(core.regs)
     changed = []
     if scratch_words:
-        now = core.get_mem_slice(SIM_SCRATCH, 4 * scratch_words)
+        now = core.get_mem_slice(scratch, 4 * scratch_words)
         for i in range(scratch_words):
             if now[4 * i:4 * i + 4] != pat[4 * i:4 * i + 4]:
                 changed.append((4 * i, int.from_bytes(now[4 * i:4 * i + 4], 'little')))
@@ -152,7 +156,7 @@ def run(case, lay, scratch_words, max_steps=None, code=None, lenient_bus=False):
 
 
 def _udf_at(core, pc):
-    return core.get_mem_slice(pc, 2) == F.SLED_HALF.to_bytes(2, 'little')
+    return span(pc, 2) is not None and core.get_mem_slice(pc, 2) == F.SLED_HALF.to_bytes(2, 'little')
 
 
 def body_cycles(case, lay, scratch_words=0):

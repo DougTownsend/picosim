@@ -41,6 +41,14 @@ XN_TARGET = 0xE0100001            # execute-never system space: a fetch there fa
 STAGES = ('B1', 'B2', 'B3', 'B4', 'B5')
 # These branch to SP: they would run whatever the stack holds (never run)
 SP_TARGET = {0x46EF: 'MOV PC,SP', 0x4768: 'BX SP', 0x47E8: 'BLX SP'}
+# These leave SP where no input can keep it valid (v6m.safe_inputs gives
+# them sp_result None): 2*SP, or SP+PC, lands outside memory (0x4008xxxx),
+# and MOV SP,PC puts the stack on the code being run.  The next exception
+# entry then cannot stack its frame and the core locks up: ADD SP,SP did,
+# B1 batch 27 on the chip (2026-11-10, "clearing lockup after double
+# fault").  Never run.
+SP_UNCONTROLLED = {0x44ED: 'ADD SP,SP', 0x44FD: 'ADD SP,PC', 0x46FD: 'MOV SP,PC'}
+NEVER_RUN = {**SP_TARGET, **SP_UNCONTROLLED}
 STACK_NAMES = ('PUSH', 'POP', '[SP', 'SP,#')
 
 
@@ -68,7 +76,7 @@ def b1():
     for hw in range(0x10000):
         if v6m.is_prefix32(hw):
             continue
-        if hw in SP_TARGET:
+        if hw in NEVER_RUN:
             continue
         enc = v6m.decode16(hw)
         if enc.name.startswith('POP') and enc.cls == 'pc-writing':
@@ -84,7 +92,7 @@ def b1():
 def b2():
     out, n = [], 0
     for hw in range(0x10000):
-        if v6m.is_prefix32(hw) or v6m.group(hw) != 'data':
+        if v6m.is_prefix32(hw) or v6m.group(hw) != 'data' or hw in NEVER_RUN:
             continue
         enc = v6m.decode16(hw)
         if enc.cls == 'pc-writing':
@@ -263,7 +271,9 @@ def run(ctx):
         FX.record_raw(_run_path(ctx, s), ctx.kind)
     defined = sum(1 for hw in range(0x10000) if not v6m.is_prefix32(hw)
                   and v6m.classify(hw) not in ('undefined', 'udf'))
-    fs = [FX.fact('encodings.v6m_defined_16bit', defined, source='derived', note='from v6m.py (the ARM ARM)')]
+    fs = [FX.fact('encodings.v6m_defined_16bit', defined, source='derived', note='from v6m.py (the ARM ARM)'),
+          FX.fact('encodings.never_run', {f"0x{hw:04X}": name for hw, name in sorted(NEVER_RUN.items())},
+                  source='derived', note='a branch to SP, or an SP no input can keep valid: they would lock the core up')]
     if 'B1' in summary:
         fs.append(FX.fact('encodings.B1.endings', summary['B1']['endings']))
     prov = ctx.provenance(state0, campaign='B')

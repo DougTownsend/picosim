@@ -370,11 +370,11 @@ func _cause(name: String, st: Dictionary) -> String:
 		var text := str(row.get("shown", row.get("text", "?"))).strip_edges()
 		text = " ".join(text.split(" ", false))
 		var line := int(row.get("line", 0))
-		if line > 0 and addr >= 0x3000:
+		if line > 0 and not Backend.in_os(addr):
 			# the line as the student wrote it, without its comment
 			var src := str(row.get("source", "")).get_slice("@", 0).get_slice("/*", 0).strip_edges()
 			return "%s   (line %d)" % [src if src != "" else text, line]
-		return "%s   (at %04X, the built-in OS)" % [text, addr]
+		return "%s   (at %08X, the built-in OS)" % [text, addr]
 	match str(st.get("action", "")):
 		"call": return "the function call (Step over)"
 		"run": return "running the program"

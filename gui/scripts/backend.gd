@@ -176,6 +176,41 @@ static func set_color(c: Control, item: StringName, col: Color) -> void:
 		c.add_theme_color_override(item, col)
 
 
+## picosim's memory map, the RP2040's (picosim/memmap.py): the boot ROM,
+## flash (picosim's OS in its first 256 bytes, then the program), SRAM
+## (the program's variables and the stack).  Everything else is I/O.
+const ROM_BASE := 0x00000000
+const ROM_END := 0x00004000
+const FLASH_BASE := 0x10000000
+const FLASH_END := 0x10200000
+const OS_END := 0x10000100          # the OS is FLASH_BASE..OS_END; the program starts here
+const MAIN_PTR := 0x100000FC        # where the OS keeps main's address
+const SRAM_BASE := 0x20000000
+const SRAM_END := 0x20042000        # the stack starts here (SP's first value)
+
+
+## The [base, end] of the memory holding `a` (ROM, flash or SRAM), or [] for I/O.
+static func memory_of(a: int) -> Array:
+	for r in [[ROM_BASE, ROM_END], [FLASH_BASE, FLASH_END], [SRAM_BASE, SRAM_END]]:
+		if a >= r[0] and a < r[1]:
+			return r
+	return []
+
+
+static func is_memory(a: int) -> bool:
+	return not memory_of(a).is_empty()
+
+
+## The address is in picosim's built-in OS (the first 256 bytes of flash).
+static func in_os(a: int) -> bool:
+	return a >= FLASH_BASE and a < OS_END
+
+
+## An address as picosim shows it: 8 hex digits, no 0x (10000104).
+static func addr(a: Variant) -> String:
+	return "%08X" % int(a)
+
+
 static func hex32(v: Variant) -> String:
 	return "0x%08X" % int(v)
 

@@ -14,7 +14,7 @@ const HelpButton := preload("res://scripts/help_button.gd")
 var tabs: TabContainer
 var tree: Tree
 var follow: CheckBox
-var mem_hint: Button       # "this step wrote 0x3024 · see it in the Memory tab"
+var mem_hint: Button       # "this step wrote 0x20000010 · see it in the Memory tab"
 var btn_main: Button       # Skip to main: run the OS's start-up (levels 2+)
 var disasm_hidden := false   # the walkthrough lists the program instead (set_disasm_hidden)
 var items := {}          # addr -> TreeItem
@@ -29,7 +29,7 @@ var mem_view
 var _bps_key = null       # the breakpoints the ● column shows
 var _cur_key = null       # [address, colour] of the ▶ row
 var _dim_labels: Array[Label] = []
-const COLUMNS := [[0, "", 22, false], [1, "Address", 86, false], [2, "Raw", 96, false],
+const COLUMNS := [[0, "", 22, false], [1, "Address", 100, false], [2, "Raw", 96, false],
 	[3, "Label", 100, false], [4, "Instruction", 190, false], [5, "Source (line in your file)", 220, true]]
 
 
@@ -191,7 +191,7 @@ func set_program(prog: Dictionary) -> void:
 		var a := int(row["addr"])
 		if row.get("os", false) and str(row["label"]) not in ["", "_start"] and not str(row["label"]).begins_with("."):
 			os_names.append(str(row["label"]))
-		it.set_text(1, "%04X" % a)
+		it.set_text(1, "%08X" % a)
 		if raw:
 			it.set_text(2, row["raw"])
 		it.set_text(3, row["label"])
@@ -200,7 +200,7 @@ func set_program(prog: Dictionary) -> void:
 		if line > 0:
 			it.set_text(5, "%3d   %s" % [line, row["source"]])
 			it.set_tooltip_text(5, "Line %d of %s:\n%s" % [line,
-				"the built-in OS (os.s)" if int(row["addr"]) < 0x3000 else "your file", row["source"]])
+				"the built-in OS (os.s)" if Backend.in_os(int(row["addr"])) else "your file", row["source"]])
 		_color_row(it)
 		it.set_metadata(0, a)
 		it.set_tooltip_text(0, "Toggle breakpoint")
@@ -246,7 +246,7 @@ func update_state(st: Dictionary) -> void:
 		if cur_item != null:
 			for c in COLUMNS.size():
 				cur_item.clear_custom_bg_color(c)
-			cur_item.set_text(1, "" if cur_item == os_item else "%04X" % int(cur_item.get_metadata(0)))
+			cur_item.set_text(1, "" if cur_item == os_item else "%08X" % int(cur_item.get_metadata(0)))
 		cur_item = items.get(addr)
 		# inside the closed OS fold, mark the fold itself
 		if cur_item != null and cur_item.get_parent() == os_item and os_item.collapsed:
@@ -254,7 +254,7 @@ func update_state(st: Dictionary) -> void:
 		if cur_item != null:
 			for c in COLUMNS.size():
 				cur_item.set_custom_bg_color(c, Palette.c("pc_row"))
-			cur_item.set_text(1, "▶%04X" % addr)
+			cur_item.set_text(1, "▶%08X" % addr)
 	if cur_item != null and follow.button_pressed:
 		tree.scroll_to_item(cur_item, true)
 	_show_mem_hint(st)
@@ -268,7 +268,7 @@ func _show_mem_hint(st: Dictionary) -> void:
 	var on := Level.at_least(2) and tabs.current_tab == 0 and not acc.is_empty()
 	if on:
 		var a: Dictionary = acc[-1]
-		Backend.set_text(mem_hint, "this step %s 0x%04X · see it in the Memory tab ▸" % [
+		Backend.set_text(mem_hint, "this step %s 0x%08X · see it in the Memory tab ▸" % [
 			"wrote" if a["kind"] == "write" else "read", int(a["addr"])])
 		Backend.set_color(mem_hint, "font_color", Palette.c("accent"))
 	mem_hint.visible = on

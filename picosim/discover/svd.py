@@ -124,6 +124,28 @@ def predicted_mask(reg):
     return m
 
 
+NOT_STORED_TAGS = ('SC', 'WC', 'RF', 'RWF', 'WF')
+# PPB registers whose writes set, clear or reset rather than store (ARMv6-M ARM B3.4, B3.3)
+PPB_NOT_STORED = {0xE000E100, 0xE000E180, 0xE000E200, 0xE000E280,   # NVIC_ISER/ICER/ISPR/ICPR: write 1 to set/clear
+                  0xE000E018}                                         # SYST_CVR: any write clears it
+
+
+def not_stored_mask(reg):
+    """Documented bits a write does not simply store, so reading back says
+    nothing about whether they can be written: write-only fields, write-1-
+    to-clear and self-clearing ones (the SVD's oneToClear, the headers' SC,
+    WC, RF, RWF, WF), and the PPB's set/clear registers."""
+    if reg['addr'] in PPB_NOT_STORED:
+        return 0xFFFFFFFF
+    m = 0
+    for f in reg['fields']:
+        if f['access'] == 'write-only' or f['modified_write'] or f['tag'] in NOT_STORED_TAGS:
+            m |= ((1 << (f['hi'] - f['lo'] + 1)) - 1) << f['lo']
+    if reg['access'] == 'write-only' and not reg['fields']:
+        m = 0xFFFFFFFF
+    return m
+
+
 def defined_mask(reg):
     m = 0
     for f in reg['fields']:

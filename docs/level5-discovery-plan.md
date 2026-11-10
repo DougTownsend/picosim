@@ -702,6 +702,87 @@ Found on the board (2026-11-05, the first real memory-map run):
   uninitialised SRAM: power-up contents in the first run, the first run's
   leftovers in the repeat).
 
+Found on the board (2026-11-10, campaign C's write masks):
+- A debugger write to TIMER's TIMEHW through its SET alias (0x40056000)
+  is refused by the bus: OpenOCD re-reads the DP and answers E0E. The plain
+  write (0x40054000) and the XOR alias (0x40055000) are accepted. C used
+  to stop on that one write, on every Run and Resume ("Could not finish:
+  writing memory at 0x40056000 failed"). Now a refused write is recorded
+  as `'bus error'` in that register's masks, listed in the fact
+  `registers.refused_writes`, and the sweep goes on; a write with no
+  answer (a hang: reconnect, so the chip is reset) still stops the run.
+  The stand-in does not map TIMER (its reads there fail, so C skipped it
+  as "not readable"), which is why this never showed before the board;
+  `tests/test_discover_resets.py` (RefusedWriteTest) covers it with a fake
+  target. Why the SET alias in particular is refused is not yet known (CLR
+  is the next write; the next board run says whether it is refused too).
+  The next run: SET and CLR are both refused, for TIMEHW and TIMELW.
+- That first complete run reported 128 differences from the SVD; 109 were
+  the comparison's own mistakes, now fixed (`registers.compare_row`):
+  S3 reset values were compared for blocks C never resets (CLOCKS, XOSC,
+  PLL_SYS, USB, IO_QSPI, the PPB…: they hold what the boot ROM and OpenOCD
+  set), and S1 values (after `reset halt`: the last program's leftovers,
+  e.g. PWM counters still running) were compared as reset values; writable
+  bits were compared for write-only, write-1-to-clear and self-clearing
+  fields, which the SVD marks (oneToClear, the headers' SC/WC) but
+  `predicted_mask` counted as writable (`svd.not_stored_mask`); and a field
+  with a minimum (I2C HCNT ≥ 6, LCNT ≥ 8, SPKLEN ≥ 1: writing 0 reads the
+  minimum) looked partly read-only, because only the 0 and all-ones
+  patterns were used (`registers.writable_bits` now uses all four). The
+  window had also called them "differences from picosim"; C compares the
+  chip with the SVD, and picosim models none of these registers, so they
+  are now "differences from the datasheet (SVD)", in yellow.
+- The 19 that are real (chip vs SVD; none touches picosim):
+  BUSCTRL BUS_PRIORITY_ACK resets to 1 (SVD 0); I2C0/1 IC_RX_TL and
+  IC_TX_TL saturate at 15 (SVD: 8 bits); IC_ENABLE.ABORT clears itself (SVD
+  does not say so); IC_DMA_TDLR/RDLR hold no written value at all (why is
+  not yet known); IO_BANK0 INTR0–3's LEVEL_LOW bits read 1 after reset
+  (they mirror the pins, which are low); TIMER DBGPAUSE bit 0 is writable
+  but undocumented; the M0+ MPU is smaller than the SVD says (MPU_RNR 3
+  bits, RASR without TEX, RBAR's REGION reads RNR).
+- The same day's B/D/E/G runs:
+  - D1–D3: every one of the 232 single forms and 1600 ordered pairs took
+    exactly the cycles picosim's timing.py predicts. D's 27 differences
+    are all D4's, exception entry against the Arm TRM: SVC 13 cycles,
+    PendSV and IRQ26–31 12, the TRM's 15 (picosim has no exceptions yet:
+    Stage 4). D now counts these apart (status `picosim_differences`,
+    `compared_with`), and the window reads exceptions.json too (it read
+    only timing.json, so none of the 27 was listed).
+  - E: no differences.
+  - G: 48 interpolator cases where the chip and `interp_model.py` (the
+    stand-in's datasheet model) disagree: after a POP the chip's
+    accumulator has bits 29/28 set (e.g. ACCUM1 0x3000000B, model
+    0x0000000B), plus PEEK values that follow from it. Not yet explained;
+    the model is the suspect. The window never listed them (they are in
+    `interp_differences`, and G's status gives a list of files, which made
+    the window's detail fail: "stat: path should be string … not list").
+  - F's flash backup stopped at `flash info 0` (E74): OpenOCD 0.12 prints
+    the bank, then fails the rp2040 driver's missing protection check.
+    flashguard now reads the bank with `flash banks`.
+  - D4's 31 "not as expected" were the comparison's (re-scored from the same
+    run: 0 of 174): entry latency was compared with the TRM's 15 cycles,
+    which start at the interrupt signal, while D4 starts at the end of the
+    trigger store (now recorded, not compared: 12 cycles, SVC 13); the
+    stacked PC, "taken 1 instruction after CPSIE" and "preempted after 2"
+    expected a pend to act at once, which the ARMv6-M ARM only guarantees
+    after DSB/ISB (the chip: 2 NOPs later; now each its own fact, and any
+    PC in the slide is a valid frame); the disabled-IRQ check compared the
+    whole ISPR (the boot ROM leaves XIP and SIO FIFO IRQs pending), now bit
+    26 alone; the interrupted LDM/STM/PUSH/POP compared a sentence with a
+    table, now a derived verdict (all four: abandoned and restarted).
+  - B1 batch 27: ADD SP,SP (0x44ED) doubled SP to 0x4008xxxx, the next
+    exception could not stack, and the core locked up (OpenOCD: "clearing
+    lockup after double fault"; the run stopped "between cases"). It, ADD
+    SP,PC and MOV SP,PC (v6m's sp_result None) are now never run
+    (`encodings.SP_UNCONTROLLED`, fact `encodings.never_run`), and the
+    runner treats OpenOCD's lockup message as that case locking up (one
+    retry, then recorded) instead of stopping. The stand-in has no lockup.
+  - BOOTSEL was held on both Picos, which stops the probe's firmware: every
+    BOOTSEL prompt and the Flash backup window now say which Pico is which.
+  - Stand-in test runs pruned the board session's log while it was open
+    (both in hwtest/logs, newest 20 kept); stand-in logs now go to
+    hwtest/logs/standin.
+
 Safety additions:
 - The PADS_BANK0 SWCLK/SWD pads and VOLTAGE_SELECT are never written;
   branches to SP (MOV PC,SP, BX SP, BLX SP) are never run; POP {PC} is

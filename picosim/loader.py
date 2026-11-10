@@ -9,7 +9,8 @@ import os
 import struct
 from dataclasses import dataclass, field
 
-from .cpu import CPU, SimulatorError, MEM_SIZE
+from .cpu import CPU, SimulatorError
+from .memmap import Image, MAIN_PTR, OS_BASE, OS_END, span, fmt
 
 
 class LoadError(Exception):
@@ -26,7 +27,7 @@ class Program:
     main_addr: int = 0
     # address -> (line number, source line) for the student's file and the OS
     source: dict = field(default_factory=dict)
-    image: bytes = b''         # memory as loaded, for clone()
+    image: Image = None        # memory as loaded, for clone()
     os_entry: int = 0
     # the program's sections: name ('text', 'data', 'bss') -> (start, end)
     sections: dict = field(default_factory=dict)
@@ -34,7 +35,7 @@ class Program:
     def clone(self):
         """A fresh copy of this program, exactly as it was just after loading
         (no assembling: Step back rebuilds the machine from this)."""
-        cpu = _build_cpu(bytearray(self.image), self.os_entry, self.asm_map, self.sym_map)
+        cpu = _build_cpu(self.image, self.os_entry, self.asm_map, self.sym_map)
         return Program(self.path, cpu, self.asm_map, self.sym_map, self.label_map,
                        self.main_addr, self.source, self.image, self.os_entry, self.sections)
 
@@ -100,7 +101,7 @@ def _source_map(elf_path, s_path):
 
 def _sections(elf_path):
     """{'text': (start, end), 'data': …, 'bss': …} of the program's own
-    sections (at 0x3000 and up), for the Memory tab's map."""
+    sections (in flash after the OS, and SRAM), for the Memory tab's map."""
     from elftools.elf.elffile import ELFFile
     out = {}
     try:
@@ -108,7 +109,7 @@ def _sections(elf_path):
             for sec in ELFFile(f).iter_sections():
                 name = sec.name.lstrip('.')
                 a, n = sec['sh_addr'], sec['sh_size']
-                if name in ('text', 'data', 'bss') and n and 0x3000 <= a < MEM_SIZE:
+                if name in ('text', 'data', 'bss') and n and a >= OS_END and span(a, n):
                     out[name] = (a, a + n)
     except (OSError, ValueError):
         pass
@@ -119,8 +120,6 @@ def load_program(path, trace=False, verbose=False):
     """Assemble (if needed), load and link `path` with the OS; return a Program."""
     from elftools.common.exceptions import ELFError
     from .sim import assemble, load_elf, elf_symbol
-    from .memory import FlatRAM, Memory
-    from .gpio import GPIO
 
     os_elf_path = build_os_elf(verbose)
 
@@ -161,22 +160,25 @@ def load_program(path, trace=False, verbose=False):
                         "before its first instruction; that is where the program starts.")
     user_entry = start
 
-    # Merge memories: OS owns 0x0000-0x2FFF, user owns 0x3000-0xFFFF
-    memory = bytearray(MEM_SIZE)
-    memory[0x0000:0x3000] = os_memory[0x0000:0x3000]
-    memory[0x3000:      ] = user_memory[0x3000:      ]
+    # Merge memories: the OS owns flash up to OS_END; the program owns the
+    # rest of flash and SRAM
+    os_size = OS_END - OS_BASE
+    memory = Image()
+    memory.flash[:] = (os_memory.flash[:os_size].ljust(os_size, b'\xff') +
+                       user_memory.flash[os_size:])
+    memory.sram[:] = user_memory.sram
 
-    # Write user main()'s Thumb address into the OS pointer slot at 0x2FFC
-    struct.pack_into('<I', memory, 0x2FFC, user_entry | 1)
+    # Write user main()'s Thumb address into the OS pointer slot
+    memory[MAIN_PTR:MAIN_PTR + 4] = struct.pack('<I', user_entry | 1)
 
     asm_map = {**os_asm,  **user_asm}
     sym_map = {**os_syms, **user_syms}
 
     if verbose:
-        print(f"Loaded '{input_file}'  main=0x{user_entry:04X}  "
+        print(f"Loaded '{input_file}'  main={fmt(user_entry)}  "
               f"{len(asm_map)} instructions disassembled")
 
-    image = bytes(memory)
+    image = memory
     cpu = _build_cpu(memory, os_entry, asm_map, sym_map, trace)
 
     # label_map: name → addr, restricted to addresses that have disassembly.
@@ -191,10 +193,11 @@ def load_program(path, trace=False, verbose=False):
 
 
 def _build_cpu(memory, os_entry, asm_map, sym_map, trace=False):
-    """A CPU on `memory` with the simulated RP2040 peripherals attached."""
-    from .memory import FlatRAM, Memory
+    """A CPU on `memory` (an Image, which is not changed) with the simulated
+    RP2040 peripherals attached."""
+    from .memory import Memory
     from .gpio import GPIO
-    cpu = CPU(Memory(FlatRAM(memory)), os_entry, asm_map, sym_map, trace=trace)
+    cpu = CPU(Memory(memory), os_entry, asm_map, sym_map, trace=trace)
     gpio = GPIO()
     cpu.add_peripheral(gpio)
     cpu.gpio = gpio

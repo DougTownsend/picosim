@@ -182,11 +182,14 @@ class MemoryTabDataTest(unittest.TestCase):
     def test_regions(self):
         s = server(os.path.join(EX, '04_memory.s'))
         r = [m for m in s.out if m.get('type') == 'program'][-1]['regions']
-        self.assertEqual(r['sections']['text'], [0x3000, 0x3024])
-        self.assertEqual(r['sections']['data'], [0x3024, 0x3038])
+        self.assertEqual(r['sections']['text'], [0x10000100, 0x10000124])   # flash, after the OS
+        self.assertEqual(r['sections']['data'], [0x20000000, 0x20000014])   # SRAM
+        self.assertEqual(r['program_end'], 0x10000124)
+        self.assertEqual(r['data_end'], 0x20000014)
+        self.assertEqual([m['name'] for m in r['memories']], ['ROM', 'Flash', 'SRAM'])
         kinds = {k for _, _, k in r['runs']}
         self.assertEqual(kinds, {'insn', 'lit'})
-        self.assertEqual(r['os_code_end'], 0x1C)   # _start, putchar, getchar, bench_start/stop
+        self.assertEqual(r['os_code_end'], 0x1000001C)   # _start, putchar, getchar, bench_start/stop
 
     def test_loads_and_stores(self):
         s = server(os.path.join(EX, '04_memory.s'), skip_boot=True, step_over_os=True)
@@ -198,21 +201,21 @@ class MemoryTabDataTest(unittest.TestCase):
                 reads.append((a['kind'], a['addr'], a['size']))
             if s.core.halted:
                 break
-        self.assertIn(('read', 0x3024, 4), reads)          # ldr r0, [r1]: numbers[0]
-        self.assertIn(('read', 0x3030, 4), reads)          # numbers[3]
-        self.assertIn(('write', 0x3034, 4), reads)         # str r2, [r1]: total
-        self.assertIn(('write', 0xFFF8, 4), reads)         # push {r7, lr}
+        self.assertIn(('read', 0x20000000, 4), reads)      # ldr r0, [r1]: numbers[0]
+        self.assertIn(('read', 0x2000000C, 4), reads)      # numbers[3]
+        self.assertIn(('write', 0x20000010, 4), reads)     # str r2, [r1]: total
+        self.assertIn(('write', 0x20041FF8, 4), reads)     # push {r7, lr}
 
     def test_stack_notes(self):
         s = server(os.path.join(EX, '07_function.s'), skip_boot=True, step_over_os=True)
         s.cmd_step_insn({})                                 # push {r7, lr}
         st = state(s)['stack']
-        self.assertEqual(st['addr'], 0xFFF8)
+        self.assertEqual(st['addr'], 0x20041FF8)
         self.assertEqual(len(st['data']), 16)               # 8 bytes, as hex
-        self.assertIn('R7 saved by push {r7, lr}', st['notes'][str(0xFFF8)]['note'])
-        self.assertEqual(st['notes'][str(0xFFF8)]['func'], 'main')
-        self.assertIn('LR saved by push {r7, lr}', st['notes'][str(0xFFFC)]['note'])
-        self.assertEqual(st['notes'][str(0xFFFC)]['reg'], 'LR')
+        self.assertIn('R7 saved by push {r7, lr}', st['notes'][str(0x20041FF8)]['note'])
+        self.assertEqual(st['notes'][str(0x20041FF8)]['func'], 'main')
+        self.assertIn('LR saved by push {r7, lr}', st['notes'][str(0x20041FFC)]['note'])
+        self.assertEqual(st['notes'][str(0x20041FFC)]['reg'], 'LR')
 
     def test_no_accesses_while_running(self):
         s = server(os.path.join(EX, '04_memory.s'))
@@ -220,3 +223,32 @@ class MemoryTabDataTest(unittest.TestCase):
         s.run_slice()
         if s.running:
             self.assertEqual(state(s)['mem_access'], [])
+
+
+class Stage2Test(unittest.TestCase):
+    """The RP2040 memory map as the student meets it."""
+
+    def test_store_into_flash_is_explained_truthfully(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, 'store.s')
+            with open(path, 'w') as f:
+                f.write(".syntax unified\n.cpu cortex-m0plus\n.thumb\nmain:\n"
+                        "        ldr     r1, =total\n        movs    r0, #5\n        str     r0, [r1]\n"
+                        "        bx      lr\n        .align 2\ntotal:  .word   0\n")
+            s = server(path, skip_boot=True)
+            for _ in range(3):
+                s.cmd_step_insn({})
+            e = state(s)['explain']['now']
+        self.assertIn('did not finish', e['simple'])
+        self.assertIn('Write to read-only memory', e['fault'])
+        self.assertIn('would not stop', e['fault'])          # a Pico loses the value; it does not crash
+        self.assertNotIn('crash here too', e['fault'])
+
+    def test_walkthrough_names_branch_targets(self):
+        s = server(os.path.join(EX, '07_function.s'))
+        s.cmd_walkthrough({'compact': True})
+        wt = [m for m in s.out if m.get('type') == 'walkthrough'][-1]
+        shown = {st['shown'] for st in wt['steps'] if 'shown' in st}
+        self.assertIn('bl       twice', shown)
+        self.assertIn('bl       putchar', shown)

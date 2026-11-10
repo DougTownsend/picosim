@@ -99,7 +99,7 @@ const BOXES := {
 	"marinc": [170, 344, 44, 32, "+4", "incr",
 		"MAR incrementer: steps MAR to the next word between the transfers of PUSH, POP, LDM and STM (MAR+4)."],
 	"mem": [30, 430, 230, 150, "MEMORY / I-O", "mem",
-		"64 KB RAM at 0x0000–0xFFFF; addresses from 0x10000 up are memory-mapped I/O (GPIO: SIO at 0xD0000000, IO_BANK0, PADS_BANK0). Reads fill MDR; writes take their data from MDR."],
+		"The RP2040's memory: flash at 0x10000000 (the OS, then your code), SRAM at 0x20000000 (your variables and the stack); other addresses are memory-mapped I/O (GPIO: SIO at 0xD0000000, IO_BANK0, PADS_BANK0). Reads fill MDR; writes take their data from MDR."],
 	"mdr": [290, 430, 115, 40, "MDR", "reg",
 		"Memory Data Register: data just read from memory, or data about to be written."],
 	"loadext": [290, 340, 115, 32, "LOAD EXT", "box",
@@ -1092,7 +1092,7 @@ func _draw_box(id: String, active: bool, changes: Array) -> void:
 				_text(r.position + Vector2(0, 45) * _scale, line, 11, C_DIM, mono, bw)
 		"mem":
 			_text(r.position + Vector2(8, 18) * _scale, b[4], 13, title_col)
-			_text(r.position + Vector2(8, 36) * _scale, "64 KB RAM + I/O (simplified map)", 11, C_DIM)
+			_text(r.position + Vector2(8, 36) * _scale, "flash + SRAM + I/O (RP2040 map)", 11, C_DIM)
 			var line := ""
 			if _has("R/W=READ"):
 				line = "read  M[%s]" % Backend.hex32(before.get("MAR", 0))

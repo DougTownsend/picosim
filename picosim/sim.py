@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 ARMv6-M (Cortex-M0+) Simulator
-Flat 16-bit address space, similar in spirit to the LC-3 simulator.
+The RP2040's memory map (memmap.py): the OS in ROM at 0x00000000, the program
+in flash at 0x10000000, its variables and stack in SRAM at 0x20000000.
 Loads ELF files compiled with arm-none-eabi-gcc -mthumb -mcpu=cortex-m0plus.
 """
 
@@ -12,7 +13,8 @@ from elftools.elf.elffile import ELFFile
 from elftools.elf.sections import SymbolTableSection
 import capstone
 
-from .cpu import CPU, SimulatorError, MEM_SIZE
+from .cpu import CPU, SimulatorError
+from .memmap import Image, span, fmt
 
 
 # ── ELF loader ─────────────────────────────────────────────────────────────────
@@ -20,12 +22,12 @@ from .cpu import CPU, SimulatorError, MEM_SIZE
 def load_elf(path):
     """
     Parse an ELF file and return:
-      - memory bytes (bytearray, MEM_SIZE long)
+      - memory (a memmap.Image: ROM, flash and SRAM)
       - entry point address
       - dict mapping address -> disassembly string
       - dict mapping address -> symbol name
     """
-    memory = bytearray(MEM_SIZE)
+    memory = Image()
     asm_map = {}      # addr -> "mnemonic  op_str" (or ".word 0x…" for data)
     sym_map = {}      # addr -> name
     marks = {}        # section index -> [(addr, 't' code | 'd' data), ...]
@@ -69,13 +71,13 @@ def load_elf(path):
             memsz  = seg.header.p_memsz
             data   = seg.data()
 
-            if vaddr + memsz > MEM_SIZE:
+            if memsz and span(vaddr, memsz) is None:
                 raise SimulatorError(
-                    f"Segment at 0x{vaddr:04X} size {memsz} overflows "
-                    f"16-bit address space (max 0x{MEM_SIZE:X})"
-                )
-            memory[vaddr:vaddr + filesz] = data
-            # bss (memsz > filesz) is already zero from bytearray
+                    f"The program has {memsz} bytes at {fmt(vaddr)}, which is not inside one of "
+                    f"ROM, flash (0x10000000, 2 MB) or SRAM (0x20000000, 264 KB)")
+            if filesz:
+                memory[vaddr:vaddr + filesz] = data
+            # bss (memsz > filesz) is already zero in SRAM
 
         # ── disassemble all executable sections ──────────────────────────────
         cs = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB | capstone.CS_MODE_MCLASS)
@@ -86,7 +88,7 @@ def load_elf(path):
                 continue
             sh_addr = section['sh_addr']
             sh_size = section['sh_size']
-            if sh_size == 0 or sh_addr + sh_size > MEM_SIZE:
+            if sh_size == 0 or span(sh_addr, sh_size) is None:
                 continue
             # code and data regions, from the mapping symbols (all code if none)
             m = sorted(set(marks.get(idx, [])))
@@ -213,7 +215,7 @@ def print_state(cpu, asm_map, sym_map):
     pc = cpu.pc
     label = sym_map.get(pc, "")
     asm = asm_map.get(pc, "???")
-    print(f"  PC 0x{pc:04X}: {asm}")
+    print(f"  PC {fmt(pc)}: {asm}")
     print(f"  PC Label: {label if label else 'N/A'}")
     # GPIO (only shown when pins have been configured)
     if cpu.gpio is not None and cpu.gpio.any_configured():
@@ -255,7 +257,7 @@ def run_interactive(cpu, asm_map, sym_map, label_map):
 
 
 def _parse_addr(text, label_map):
-    """A hex address (0x3000 or 3000) or a label name."""
+    """A hex address (0x10000004 or 10000004) or a label name."""
     try:
         return int(text, 16)
     except ValueError:
@@ -309,7 +311,7 @@ def _command(cpu, asm_map, sym_map, label_map, op, parts):
                     cpu.step()
                     cpu.check_halt()
                     if cpu.pc in breakpoints:
-                        print(f"  Breakpoint hit at 0x{cpu.pc:04X}")
+                        print(f"  Breakpoint hit at {fmt(cpu.pc)}")
                         break
             except SimulatorError as e:
                 print(f"  ERROR: {e}")
@@ -329,10 +331,10 @@ def _command(cpu, asm_map, sym_map, label_map, op, parts):
         count = int(parts[2]) if len(parts) > 2 else 8
         for i in range(count):
             a = (base + i * 4) & 0xFFFFFFFF
-            v = cpu.mem_read32(a)    # RAM, or a simulated I/O register
+            v = cpu.mem_read32(a)    # memory, or a simulated I/O register
             sym = sym_map.get(a, "")
             sym_str = f" <{sym}>" if sym else ""
-            print(f"  0x{a:04X}{sym_str}: 0x{v:08X}  ({v})")
+            print(f"  {fmt(a)}{sym_str}: 0x{v:08X}  ({v})")
 
     elif op == 'b':
         if len(parts) < 2:
@@ -341,7 +343,7 @@ def _command(cpu, asm_map, sym_map, label_map, op, parts):
         _BREAKPOINTS.add(addr_b)
         lbl = sym_map.get(addr_b, "")
         lbl_str = f" <{lbl}>" if lbl else ""
-        print(f"  Breakpoint set at 0x{addr_b:04X}{lbl_str}")
+        print(f"  Breakpoint set at {fmt(addr_b)}{lbl_str}")
 
     elif op == 'db':
         bp = _BREAKPOINTS
@@ -349,25 +351,25 @@ def _command(cpu, asm_map, sym_map, label_map, op, parts):
             print("  Usage: db <addr_hex>"); return
         addr_b = _parse_addr(parts[1], label_map)
         bp.discard(addr_b)
-        print(f"  Breakpoint removed at 0x{addr_b:04X}")
+        print(f"  Breakpoint removed at {fmt(addr_b)}")
 
     elif op == 'lb':
         bp = _BREAKPOINTS
         if not bp: print("  No breakpoints.")
-        for a in sorted(bp): print(f"  0x{a:04X}")
+        for a in sorted(bp): print(f"  {fmt(a)}")
 
     elif op in ('d', 'dis', 'disasm'):
         base = _parse_addr(parts[1], label_map) if len(parts) > 1 else cpu.pc
         count = int(parts[2]) if len(parts) > 2 else 10
         shown = 0
         a = base
-        while shown < count and a < MEM_SIZE:
+        while shown < count and span(a, 2) is not None:
             sym = sym_map.get(a, "")
             if sym: print(f"  <{sym}>:")
             asm = asm_map.get(a)
             if asm:
                 marker = "=>" if a == cpu.pc else "  "
-                print(f"  {marker} 0x{a:04X}: {asm}")
+                print(f"  {marker} {fmt(a)}: {asm}")
                 shown += 1
                 # advance: peek at instruction size
                 hw = cpu.mem_read16(a)
@@ -513,7 +515,7 @@ def run_gui(input_file):
 def main():
     import argparse
     parser = argparse.ArgumentParser(
-        description="ARMv6-M (Cortex-M0+) Simulator — flat 16-bit address space"
+        description="ARMv6-M (Cortex-M0+) Simulator — the RP2040 memory map"
     )
     parser.add_argument("input", nargs="?", help=".s assembly file or .elf binary to load")
     parser.add_argument("--run", "-r", action="store_true",

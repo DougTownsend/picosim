@@ -71,7 +71,7 @@ def main(argv=None):
                               f"{c['io']} I/O differences, {c['diff']} differences; memory: "
                               f"{r['memory']['different_words']} words differ")
                         for row in r.get('diff_rows', [])[:5]:
-                            print(f"    step {row['n']} 0x{row['addr']:04X} {row['text']}: {', '.join(row['diffs'])}")
+                            print(f"    step {row['n']} 0x{row['addr']:08X} {row['text']}: {', '.join(row['diffs'])}")
                     else:
                         for g in r['regions']:
                             d = g.get('diff')

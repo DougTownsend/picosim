@@ -46,13 +46,13 @@ class ListingTest(unittest.TestCase):
     def test_source_lines_and_labels(self):
         s = server(os.path.join(EX, '03_count_loop.s'))
         rows = {r['addr']: r for r in next(m for m in s.out if m['type'] == 'program')['listing']}
-        self.assertEqual(rows[0x3010]['shown'].split(), ['bne', 'loop'])
-        self.assertEqual(rows[0x3008]['shown'].split(), ['bl', 'putchar'])
-        self.assertEqual(rows[0x3006]['line'], 24)
-        self.assertTrue(rows[0x3006]['source'].startswith("adds r0, #'0'"))
-        self.assertEqual(rows[0x3006]['text'].split()[0], 'adds')     # the raw text is unchanged
-        self.assertEqual(rows[0x000C]['source'], '')                   # a literal pool row
-        self.assertEqual(rows[0x0010]['source'], 'svc #2')             # the OS's own source
+        self.assertEqual(rows[0x10000110]['shown'].split(), ['bne', 'loop'])
+        self.assertEqual(rows[0x10000108]['shown'].split(), ['bl', 'putchar'])
+        self.assertEqual(rows[0x10000106]['line'], 24)
+        self.assertTrue(rows[0x10000106]['source'].startswith("adds r0, #'0'"))
+        self.assertEqual(rows[0x10000106]['text'].split()[0], 'adds')     # the raw text is unchanged
+        self.assertEqual(rows[0x1000000C]['source'], '')                   # a literal pool row
+        self.assertEqual(rows[0x10000010]['source'], 'svc #2')             # the OS's own source
 
     def test_symbolic_and_tidy(self):
         self.assertEqual(symbolic('bl       #0x10', {0x10: 'putchar'}).split(), ['bl', 'putchar'])
@@ -108,14 +108,14 @@ class StepTest(unittest.TestCase):
     def test_level1_starts_at_main_and_steps_over_putchar(self):
         s = server(os.path.join(EX, '01_hello.s'), skip_boot=True, step_over_os=True)
         c = s.core
-        self.assertEqual(c.pc, 0x3000)
+        self.assertEqual(c.pc, 0x10000100)
         self.assertEqual(s.boot_steps, 3)
         presses = 0
         while not c.halted and presses < 50:
             s.cmd_step_insn({})
             drive(s)
             presses += 1
-            self.assertTrue(c.halted or c.pc >= 0x3000, hex(c.pc))   # never inside the OS
+            self.assertTrue(c.halted or c.pc >= 0x10000100, hex(c.pc))   # never inside the OS
         self.assertEqual(printed(s), 'Hi!\n')
         self.assertEqual(presses, 11)        # one per line of main
 
@@ -124,7 +124,7 @@ class StepTest(unittest.TestCase):
         s = server(os.path.join(EX, '01_hello.s'), skip_boot=True, step_over_os=True)
         for _ in range(8):
             s.cmd_step_insn({})
-        self.assertEqual(s.core.pc, 0x3016)
+        self.assertEqual(s.core.pc, 0x10000116)
         self.assertEqual(printed(s), 'Hi!')
 
     def test_level1_getchar_waits_then_continues(self):
@@ -137,46 +137,46 @@ class StepTest(unittest.TestCase):
         drive(s)
         self.assertFalse(s.running)
         self.assertEqual(s.core.regs[0], ord('a'))
-        self.assertGreaterEqual(s.core.pc, 0x3000)
+        self.assertGreaterEqual(s.core.pc, 0x10000100)
 
     def test_step_over_function_and_breakpoint_inside(self):
         s = server(os.path.join(EX, '07_function.s'))
         c = s.core
-        while c.pc != 0x3008:                # bl print_digit
+        while c.pc != 0x10000108:                # bl print_digit
             s.cmd_step_insn({})
         s.cmd_step_over({})
         drive(s)
-        self.assertEqual(c.pc, 0x300C)
+        self.assertEqual(c.pc, 0x1000010C)
         self.assertEqual(printed(s), '4')
         # a breakpoint inside the call stops the Step over there
-        s.breakpoints.add(0x3026)
-        while c.pc != 0x3012:
+        s.breakpoints.add(0x10000126)
+        while c.pc != 0x10000112:
             s.cmd_step_insn({})
         s.cmd_step_over({})
         drive(s)
-        self.assertEqual(c.pc, 0x3026)
+        self.assertEqual(c.pc, 0x10000126)
         self.assertFalse(s.running)
 
     def test_step_over_plain_instruction_is_a_step(self):
         s = server(os.path.join(EX, '02_add.s'), skip_boot=True)
         s.cmd_step_over({})
         drive(s)
-        self.assertEqual(s.core.pc, 0x3002)
+        self.assertEqual(s.core.pc, 0x10000102)
 
     def test_options_reload_a_fresh_program(self):
         s = server(os.path.join(EX, '01_hello.s'))
-        self.assertEqual(s.core.pc, 0)
+        self.assertEqual(s.core.pc, 0x10000000)       # _start
         s.cmd_set_options({'skip_boot': True, 'step_over_os': True})
-        self.assertEqual(s.core.pc, 0x3000)
+        self.assertEqual(s.core.pc, 0x10000100)
 
     def test_step_over_on_pipeline(self):
         s = server(os.path.join(EX, '07_function.s'))
         s.cmd_set_machine({'machine': 'm0plus'})
-        while s.core.pc != 0x3004:           # bl twice
+        while s.core.pc != 0x10000104:           # bl twice
             s.cmd_step_insn({})
         s.cmd_step_over({})
         drive(s)
-        self.assertEqual(s.core.pc, 0x3008)
+        self.assertEqual(s.core.pc, 0x10000108)
         self.assertEqual(s.core.regs[0], 4)
 
 
@@ -190,18 +190,18 @@ class ChangedByTest(unittest.TestCase):
         s.cmd_step_insn({})
         s.cmd_step_insn({})                     # 3002 movs r0, #'H'
         st = self.state(s)
-        self.assertEqual(st['changed_by']['R0'], 0x3002)
+        self.assertEqual(st['changed_by']['R0'], 0x10000102)
         self.assertEqual(st['action'], 'step')
 
     def test_actions_without_one_instruction(self):
         s = server(os.path.join(EX, '07_function.s'))
-        while s.core.pc != 0x3008:
+        while s.core.pc != 0x10000108:
             s.cmd_step_insn({})
         s.cmd_step_over({})
         drive(s)
         st = self.state(s)
         self.assertEqual(st['action'], 'call')
-        self.assertEqual(st['changed_by']['LR'], 0x3008)     # the bl itself
+        self.assertEqual(st['changed_by']['LR'], 0x10000108)     # the bl itself
         self.assertNotIn('R0', st['changed_by'])             # inside the call
         s.cmd_set_reg({'reg': 5, 'value': 9})
         self.assertEqual(self.state(s)['action'], 'edit')
@@ -227,10 +227,10 @@ class ChallengeTest(unittest.TestCase):
 
     def test_parse_and_values(self):
         c = challenge.parse('@ Challenge: do it\n@ Expect: output "a\\n"\n@ Expect: R0 = \'H\'\n'
-                            '@ Expect: r12 = -1\n@ Expect: SP = 0x10000\n\tmovs r0, #1\n@ Expect: R1 = 5\n')
+                            '@ Expect: r12 = -1\n@ Expect: SP = 0x20042000\n\tmovs r0, #1\n@ Expect: R1 = 5\n')
         self.assertEqual(c['task'], 'do it')
         self.assertEqual([k for _, k in c['checks']],
-                         [('output', None, 'a\n'), ('reg', 0, 72), ('reg', 12, 0xFFFFFFFF), ('reg', 13, 0x10000)])
+                         [('output', None, 'a\n'), ('reg', 0, 72), ('reg', 12, 0xFFFFFFFF), ('reg', 13, 0x20042000)])
         self.assertIsNone(challenge.parse('@ Title: x\n'))
         with self.assertRaises(challenge.ChallengeError):
             challenge.parse('@ Expect: R2 is 7\n')
@@ -346,7 +346,7 @@ class StepBackTest(unittest.TestCase):
         while s.core.steps > s.boot_steps:
             s.cmd_step_back({})
             backs += 1
-            self.assertGreaterEqual(s.core.pc, 0x3000, hex(s.core.pc))
+            self.assertGreaterEqual(s.core.pc, 0x10000100, hex(s.core.pc))
         self.assertEqual(backs, 11)             # one per press of Step
         s._send_state_now()
         self.assertFalse(s.out[-1]['can_back'])

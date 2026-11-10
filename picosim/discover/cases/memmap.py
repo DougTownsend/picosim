@@ -158,12 +158,31 @@ def debugger_read(t, a):
     """'0x...' value, 'error' (a DAP fault) or 'hang' (no answer; reconnected)."""
     from ...hwtest.rsp import RSPError
     try:
-        return f"0x{t.rsp.read32(a):08X}"
+        v = t.rsp.read32(a)
     except RSPError as e:
         if 'in time' in str(e) or 'connection' in str(e) or 'out of step' in str(e):
             t.reconnect()
             return 'hang'
         return 'error'
+    if getattr(t, 'check_link', None):
+        t.check_link()           # a dead debug port reads as 0: stop rather than record it
+    return f"0x{v:08X}"
+
+
+def debugger_write(t, a, v):
+    """'ok', 'error' (the bus refused it: a DAP fault, OpenOCD's E0E) or
+    'hang' (no answer; reconnected, which resets the chip)."""
+    from ...hwtest.rsp import RSPError
+    try:
+        t.rsp.write32(a, v)
+    except RSPError as e:
+        if 'in time' in str(e) or 'connection' in str(e) or 'out of step' in str(e):
+            t.reconnect()
+            return 'hang'
+        return 'error'
+    if getattr(t, 'check_link', None):
+        t.check_link()
+    return 'ok'
 
 
 def gap_scan(t, base, side):

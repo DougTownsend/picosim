@@ -425,7 +425,7 @@ def report_markdown(data):
             if r['memory']['different_words']:
                 out += ["", "Memory words that differ (picosim address: picosim / RP2040):", ""]
                 for d in r['memory']['first'][:20]:
-                    out.append(f"- 0x{d['addr']:04X}: {_hex(d['sim'])} / {_hex(d['hw'])}")
+                    out.append(f"- 0x{d['addr']:08X}: {_hex(d['sim'])} / {_hex(d['hw'])}")
             if r['gpio'].get('diffs'):
                 out += ["", "GPIO registers that differ: " + ', '.join(r['gpio']['diffs'])]
             if r['gpio'].get('info'):
@@ -444,7 +444,7 @@ def report_markdown(data):
         if rows:
             out += ["", f"### Differences in {r['title']}", ""]
             for row in rows[:30]:
-                out.append(f"- step {row['n']}, 0x{row['addr']:04X} `{row['text']}` "
+                out.append(f"- step {row['n']}, 0x{row['addr']:08X} `{row['text']}` "
                            f"(line {row['line']}): {', '.join(row['diffs'])}")
                 for k in ('sim', 'hw'):
                     regs = row[k]['regs']

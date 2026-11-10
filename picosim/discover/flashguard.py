@@ -10,7 +10,7 @@ the code proves it.  Every check below stops the procedure when it fails
 to do).  Nothing is ever a warning that lets the procedure carry on.
 
 Backup (FlashGuard.backup(), before anything is written):
-  1. Identify the flash through OpenOCD (`flash probe 0`, `flash info 0`):
+  1. Identify the flash through OpenOCD (`flash probe 0`, `flash banks`):
      it must be the RP2040's flash at 0x10000000 and exactly 2 MiB.
   2. Backup A over SWD: `flash read_bank 0 <file>`, the whole chip.
   3. Backup B over USB, an independent path: you put the TARGET Pico in
@@ -206,8 +206,8 @@ def parse_flash_id(output):
     if len(found) > 1:
         raise FlashGuardError(
             "picotool reported more than one flash ID (" + ', '.join(found) + "), so more than "
-            "one Pico seems to be in BOOTSEL mode. Leave only the TARGET Pico in BOOTSEL mode "
-            "and try again.")
+            "one Pico seems to be in BOOTSEL mode. " + WHICH_PICO + " Unplug the probe Pico, plug it "
+            "back in without holding BOOTSEL, and try again.")
     return found[0] if found else None
 
 
@@ -295,6 +295,18 @@ def default_run_picotool(args, timeout=T_PICOTOOL):
     except OSError as e:
         raise FlashGuardError(f"picotool could not be started ({e}).")
     return p.returncode, p.stdout
+
+
+# Said with every prompt that asks for BOOTSEL: on 2026-11-10 BOOTSEL was
+# held on both Picos, which stops the probe's firmware and loses the target.
+WHICH_PICO = ("Only the TARGET Pico: the one being tested, whose three debug pins (SWCLK, GND, "
+              "SWDIO) are wired to the other Pico. Never press BOOTSEL on the PROBE Pico (the one "
+              "running the debug probe firmware): its USB cable must stay plugged in the whole time.")
+BOOTSEL_HOW = ("Unplug the TARGET Pico's USB cable (leave the three debug wires connected). Hold "
+               "down its BOOTSEL button, plug the cable back in, then let go. A drive called "
+               "RPI-RP2 appears: leave it alone, and don't copy anything onto it.")
+LOST_HINT = ("If a drive called RPI-RP2 is showing, a Pico is in BOOTSEL mode: unplug both Picos, "
+             "plug them back in without holding any button, then press Disconnect and Connect.")
 
 
 def default_ask(message):
@@ -466,8 +478,9 @@ class FlashGuard:
             raise
         except Exception as e:
             raise FlashGuardError(
-                f"OpenOCD command '{cmd}' failed: {e}. Check the debug probe's wires and "
-                "that the target Pico has power, then start this step again.")
+                f"OpenOCD command '{cmd}' failed: {e}. The debugger could not reach the target. "
+                + LOST_HINT + " Otherwise check the three debug wires and that the target Pico "
+                "has power, then start this step again.")
         return out or ''
 
     def _halt(self):
@@ -494,11 +507,15 @@ class FlashGuard:
                 "OpenOCD could not identify the target's flash chip ('flash probe 0' said: "
                 f"{out.strip() or 'nothing'}). Nothing has been read or written. Check the debug "
                 "probe's wires and that the target Pico has power.")
-        info = self._mon('flash info 0')
+        # 'flash banks', not 'flash info 0': OpenOCD 0.12's 'flash info' runs a
+        # protection check the rp2040 driver lacks ("Flash protection check is
+        # not implemented"), so it fails after printing (E74, 2026-11-10).
+        # 'flash banks' prints the same bank line, with the size just probed.
+        info = self._mon('flash banks')
         m = re.search(r'size\s+(0x[0-9a-fA-F]+|\d+)', info)
         if _looks_failed(info) or not m or 'rp2040' not in info.lower():
             raise FlashGuardError(
-                "OpenOCD's 'flash info 0' did not report the RP2040 flash and its size. "
+                "OpenOCD's 'flash banks' did not report the RP2040 flash and its size. "
                 f"It said: {info.strip()[:300] or 'nothing'}. Nothing has been read or written.")
         size = int(m.group(1), 0)
         if size != self.expected_size:
@@ -531,8 +548,7 @@ class FlashGuard:
         if rc != 0:
             raise FlashGuardError(
                 f"picotool failed while {what} (exit status {rc}). It said:\n{(out or '').strip()}\n"
-                "Is the TARGET Pico in BOOTSEL mode? (Hold its BOOTSEL button while plugging in "
-                "its USB cable; an RPI-RP2 drive appears.) Is only one Pico in BOOTSEL mode?")
+                "Is the TARGET Pico in BOOTSEL mode (an RPI-RP2 drive showing)? " + WHICH_PICO)
         return out or ''
 
     def _picotool_save(self, path, what):
@@ -550,8 +566,8 @@ class FlashGuard:
     def unique_id_via_picotool(self, prompt=False):
         """The flash's 64-bit unique ID, read by picotool (board in BOOTSEL)."""
         if prompt:
-            self.ask("Put the TARGET Pico in BOOTSEL mode: unplug its USB cable (leave the debug "
-                     "probe's wires on), hold its BOOTSEL button, plug the cable back in, then let go.")
+            self.ask("Put the TARGET Pico in BOOTSEL mode.\n\n" + BOOTSEL_HOW + "\n\n" + WHICH_PICO
+                     + "\n\nThen press \u201cDone: carry on\u201d.")
         out = self._picotool(['info', '-d'], "reading the flash's unique ID")
         uid = parse_flash_id(out)
         if not uid:
@@ -573,9 +589,8 @@ class FlashGuard:
 
         self.log("Backup A: reading the whole flash over SWD ...")
         a = self._read_bank(a_path, "backup A")
-        self.ask("Backup B needs you. Unplug the TARGET Pico's USB cable (leave the debug "
-                 "probe's wires on). Hold down its BOOTSEL button, plug the cable back in, then "
-                 "let go. An RPI-RP2 drive appears.")
+        self.ask("Backup A (over the debug wires) is done. Backup B needs you now.\n\n"
+                 + BOOTSEL_HOW + "\n\n" + WHICH_PICO + "\n\nThen press \u201cDone: carry on\u201d.")
         self.log("Backup B: reading the whole flash over USB with picotool ...")
         b = self._picotool_save(b_path, "backup B")
         sa, sb = sha256_bytes(a), sha256_bytes(b)
@@ -613,8 +628,10 @@ class FlashGuard:
         self.log(f"Backup done and checked: {backup.bin_path}\n  copy: {backup.cache_bin_path}\n"
                  f"  drag-and-drop copy: {backup.uf2_path}\n  SHA-256: {sa}\n  flash unique ID: {uid}")
         if return_to_run_mode:
-            self.ask("Now unplug the TARGET Pico's USB cable and plug it back in normally "
-                     "(without holding BOOTSEL).")
+            self.ask("The backup is done and checked. Now unplug the TARGET Pico's USB cable and plug it "
+                     "back in normally, without holding BOOTSEL. The RPI-RP2 drive disappears; macOS "
+                     "may say \u201cDisk Not Ejected Properly\u201d: that is expected and harmless.\n\n"
+                     "Then press \u201cDone: carry on\u201d.")
             self._reconnect()
         return backup
 

@@ -23,8 +23,9 @@ hwtest = ["unicorn>=2.0"]
 picosim = "picosim.sim:main"
 
 [tool.setuptools]
-packages = ["picosim", "picosim.hwtest"]
+packages = ["picosim", "picosim.hwtest", "picosim.discover", "picosim.discover.cases"]
 
 [tool.setuptools.package-data]
 picosim = ["*.s", "*.ld", "*.c", "CMakeLists.txt"]
 "picosim.hwtest" = ["*.s", "*.ld"]
+"picosim.discover" = ["*.s", "fw/*.s"]

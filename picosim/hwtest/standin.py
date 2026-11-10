@@ -56,6 +56,13 @@ PERIPH = {                           # base -> size (with the atomic aliases)
     0x4001C000: 0x4000,              # PADS_BANK0
 }
 SYSINFO = (0x40000000, 0x1000)
+# Blocks whose clock is off after `reset halt` (clk_peri, clk_adc): on the
+# chip they never finish coming out of reset, and a debugger access to one
+# that has been released but is not done stalls the bus, and the debug port
+# with it, until the board is power-cycled.  {RESETS bit: (base, name)}
+CLOCKLESS = {0: (0x4004C000, 'ADC'), 16: (0x4003C000, 'SPI0'), 17: (0x40040000, 'SPI1'),
+             22: (0x40034000, 'UART0'), 23: (0x40038000, 'UART1')}
+RESETS_RESET, RESETS_DONE = 0x4000C000, 0x4000C008
 CHIP_ID = 0x20002927                 # a placeholder: revision 2, part 0x0002, manufacturer 0x927
 NONSTRIPED = (0x21000000, 0x40000)     # SRAM0-3 one bank after another (datasheet 2.6.2)
 SIO = (0xD0000000, 0x1000)
@@ -174,7 +181,17 @@ class Chip:
         base = addr & ~0x3FFF
         reg = base | (addr & 0xFFF)
         v = self.gpio.read32(reg & ~3)
+        if reg & ~3 == RESETS_DONE:
+            v &= ~sum(1 << b for b in CLOCKLESS)          # their clocks are off: never done
         return (v >> (8 * (addr & 3))) & ((1 << (8 * size)) - 1)
+
+    def _stall(self, a):
+        """A debugger access to `a`: in a clockless block released from reset,
+        it stalls the bus for good (until power_cycle())."""
+        reset = self.gpio.read32(RESETS_RESET)
+        for bit, (base, _) in CLOCKLESS.items():
+            if base <= a < base + 0x4000 and not reset >> bit & 1:
+                self.stalled = True
 
     def _periph_write(self, addr, size, value):
         """RP2040 datasheet §2.1.2: +0x1000 XOR, +0x2000 SET, +0x3000 CLR."""
@@ -624,7 +641,16 @@ class Chip:
             self.lockup = self.sleeping = False      # a new PC from the debugger leaves lockup
         self.uc.reg_write(_reg(REGS[n]), v & 0xFFFFFFFF)
 
+    stalled = False                  # the debug port no longer reaches the chip (see _stall)
+
+    def power_cycle(self):
+        self.stalled = False
+        self.reset()
+
     def read_mem(self, addr, n):
+        self._stall(addr)
+        if self.stalled:
+            return bytes(n)                  # as OpenOCD answers once the debug port is gone
         if self._plain(addr, n):
             return bytes(self.uc.mem_read(addr, n))
         return bytes(self._debug_byte(a) for a in range(addr, addr + n))
@@ -651,6 +677,9 @@ class Chip:
         return (v >> (8 * (a & 3))) & 0xFF
 
     def write_mem(self, addr, data):
+        self._stall(addr)
+        if self.stalled:
+            return
         if self._plain(addr, len(data)):
             self.uc.mem_write(addr, bytes(data))
             # Unicorn keeps translated code; new code there must not run the old

@@ -19,7 +19,7 @@ Differences are grouped by class (faults, decoder, flags, memory, timing)
 and by encoding, each with its first example, in report.md.  Things picosim
 cannot model yet are 'pending', never failures: exception details (stacked
 xPSR, EXC_RETURN, lockups, interrupts) until it has an exception model, and
-addresses outside its 64 KiB until Stage 2.
+addresses outside its memory map (ROM, flash, SRAM and the I/O it simulates).
 
 hwfacts/known_differences.json lists differences that are understood, each
 with a reason and a to-do; anything else is new, and tests/test_hwfacts.py

@@ -13,7 +13,7 @@ Which components an instruction uses depends only on its encoding (and, for
 B<cond>, on whether it was taken), so every encoding is clocked once on a
 scratch core and multiplied by how often it ran.  That keeps the counts
 exact without slowing a run down.  The one data-dependent split, memory
-accesses to RAM versus I/O, comes from the core's per-address profile.
+accesses to memory versus I/O, comes from the core's per-address profile.
 
 The 2-stage pipeline (RP2040 Cortex-M0+) has no control signals in picosim:
 its usage is an estimate from the datasheet-timed stage model (see
@@ -22,8 +22,8 @@ pipeline_usage) and is marked so.
 
 from functools import lru_cache
 
-from ._picosim_core import CPUCore
 from . import timing
+from .memmap import in_os, code_slot, scratch_core
 
 # ── the components ──────────────────────────────────────────────────────────
 # (id, label, group).  Datapath ids are the CPU diagram's box ids.
@@ -46,7 +46,7 @@ DATAPATH = [
 ]
 # memory accesses split by where they went (totals and per line only)
 MEM_SPLIT = [('mem:fetch', 'Memory: instruction fetch', 'memory split'),
-             ('mem:ram', 'Memory: RAM data', 'memory split'),
+             ('mem:ram', 'Memory: data (SRAM, flash)', 'memory split'),
              ('mem:sio', 'Memory: SIO (GPIO)', 'memory split'),
              ('mem:apb', 'Memory: APB peripherals', 'memory split'),
              ('mem:ahb', 'Memory: other AHB', 'memory split')]
@@ -207,15 +207,7 @@ def _wide(hw1):
 def _clock(hw1, hw2, flags=None):
     """Clock one encoding on a scratch core: [(state, [component ids])] per
     cycle and whether a branch was taken (None for non-branches)."""
-    c = CPUCore()
-    c.strict = False          # the states depend on the encoding alone, not on these values
-    c.write16(0x100, hw1)
-    c.write16(0x102, hw2)
-    for r in range(8):
-        c.set_reg(r, 0x400)
-    c.set_reg(14, 0x201)
-    c.sp = 0x800
-    c.pc = 0x100
+    c = scratch_core(hw1, hw2)     # in SRAM; only the states matter
     if flags is not None:
         c.N, c.Z, c.C, c.V = (flags >> 3) & 1, (flags >> 2) & 1, (flags >> 1) & 1, flags & 1
     wide = _wide(hw1)
@@ -294,7 +286,7 @@ def totals(profile, code_only=False, model='multicycle'):
     """{component id: count} over the whole run, plus '_cycles' and '_execs'."""
     acc = {}
     for rec in profile:
-        if code_only and rec['addr'] < 0x3000:
+        if code_only and in_os(rec['addr']):
             continue
         for k, v in address_usage_model(model, rec).items():
             acc[k] = acc.get(k, 0) + v
@@ -309,11 +301,11 @@ def per_line(profile, source, code_only=False, model='multicycle'):
     lines = {}
     for rec in sorted(profile, key=lambda r: r['addr']):
         a = rec['addr']
-        if code_only and a < 0x3000:
+        if code_only and in_os(a):
             continue
         line, text = source.get(a, (0, ''))
-        key = ('os' if a < 0x3000 else 'user', line if line else a)
-        e = lines.setdefault(key, {'line': line, 'text': text.strip(), 'os': a < 0x3000,
+        key = ('os' if in_os(a) else 'user', line if line else a)
+        e = lines.setdefault(key, {'line': line, 'text': text.strip(), 'os': in_os(a),
                                    'addrs': [], 'usage': {}})
         e['addrs'].append(a)
         for k, v in address_usage_model(model, rec).items():
@@ -338,7 +330,10 @@ def set_table(core, model='multicycle'):
         u = _usage(model, rec, _bus_of(rec))
         if u is None:
             continue
-        code = ((rec['addr'] >> 1) & 0x7FFF) << 1
+        slot = code_slot(rec['addr'])
+        if slot is None:
+            continue                            # code outside flash's first 64 KB has no trace code
+        code = slot << 1
         idx = {k: [[index[c] for c in ids] for ids in cyc] for k, cyc in u.items()}
         if 'always' in idx:
             entries += [(code, idx['always']), (code | 1, idx['always'])]
@@ -439,7 +434,7 @@ def _pipe_path(hw1, hw2, mc_cycles, taken, bus):
 def pipeline_usage(hw1, hw2=0, bus=None):
     """Estimated per-cycle block ids of one encoding on the 2-stage pipeline,
     in the same shape as encoding_usage.  `bus` is where a load/store's data
-    goes ('sio', 'apb_r', 'apb_w', or None for RAM): it sets the cycles."""
+    goes ('sio', 'apb_r', 'apb_w', or None for memory): it sets the cycles."""
     if bus is True:
         bus = 'sio'                    # the old sio=True
     mc = encoding_usage(hw1, hw2)
@@ -673,7 +668,7 @@ def write_export(path, fmt, rep, meta):
         elif view == 'lines':
             w.writerow(['line', 'source', 'address', 'os', 'cycles', 'executions'] + [r['id'] for r in rep['rows']])
             for j, col in enumerate(rep['cols']):
-                w.writerow([col['line'] or '', col['text'], f"0x{col['addr']:04X}", int(col['os']),
+                w.writerow([col['line'] or '', col['text'], f"0x{col['addr']:08X}", int(col['os']),
                             col['cycles'], col['execs']] + [v[j] for v in rep['values']])
         elif view == 'timeline':
             w.writerow(['cycle_start', 'cycle_end'] + [r['id'] for r in rep['rows']])

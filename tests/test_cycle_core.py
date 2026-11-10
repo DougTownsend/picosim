@@ -43,7 +43,7 @@ class Harness:
         elif num == 3:
             c.set_reg(0, self.inp.pop(0) if self.inp else 0xFFFFFFFF)
         elif num == 0:
-            self.out.extend(c.get_mem_slice(c.get_reg(1) & 0xFFFF, c.get_reg(2)))
+            self.out.extend(c.get_mem_slice(c.get_reg(1), c.get_reg(2)))
 
     def state(self):
         c = self.core

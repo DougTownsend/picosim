@@ -15,27 +15,20 @@ Timing-model tests.
 import os
 import unittest
 
-from picosim._picosim_core import CPUCore
+from picosim.memmap import scratch_core
 from picosim import timing
 from test_cycle_core import Harness, PROGRAMS, MAX_INSNS
 from picosim.loader import LoadError
 
 
 def run_one(hw1, hw2=0, regs=None, flags=None):
-    """Execute one instruction at 0x100 on a scratch core; return its record."""
-    c = CPUCore()
-    c.strict = False
-    c.write16(0x100, hw1)
-    c.write16(0x102, hw2)
-    for r in range(8):
-        c.set_reg(r, 0x400)
-    c.set_reg(14, 0x201)
-    c.sp = 0x800
+    """Execute one instruction on a scratch core (memmap.scratch_core, in
+    SRAM); return its record."""
+    c = scratch_core(hw1, hw2)
     for r, v in (regs or {}).items():
         c.set_reg(r, v)
     for f, v in (flags or {}).items():
         setattr(c, f, v)
-    c.pc = 0x100
     c.step()
     return c.recent(1)[0]
 

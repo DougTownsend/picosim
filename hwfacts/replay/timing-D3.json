@@ -1,0 +1,13 @@
+{
+ "name": "timing-D3",
+ "cases": 42,
+ "fraction": 1.0,
+ "layout": "lo",
+ "scratch_words": 64,
+ "flags": 3,
+ "campaign": "timing-D3",
+ "run_id": "20261110-143611",
+ "sha256": "8105ac931d91a7cde99ad43e7f53ffa54beb630ebdc86a28b80ea6ac983f1e77",
+ "timing": true,
+ "full_changes": {}
+}

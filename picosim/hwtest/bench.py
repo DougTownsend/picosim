@@ -35,6 +35,7 @@ import os
 import re
 
 from .. import timing
+from ..memmap import in_os
 from . import image as img
 from . import oscalls
 from .lockstep import SimSide, TestError, effective, start_chip
@@ -77,7 +78,7 @@ def _site_name(prog, site):
     n, src = prog.source.get(site, (0, ''))
     if '@' in src:
         return src.split('@', 1)[1].strip()
-    return f"region at line {n}" if n else f"region at 0x{site:04X}"
+    return f"region at line {n}" if n else f"region at 0x{site:08X}"
 
 
 class Bench:
@@ -314,7 +315,7 @@ def sim_stretches_of(sim, hwimg, cap=STRETCH_MAX):
     end = 'halted'
     while not c.halted:
         pc = c.pc
-        if pc < img.USER_BASE:                     # into the OS: the stretch ends
+        if in_os(pc):                              # into the OS: the stretch ends
             if cur is not None:
                 cur['until'] = io.get(pc, 'return')
                 stretches.append(cur)
@@ -351,7 +352,7 @@ def start_bench(target, sim, hwimg):
     start_chip(target, sim, hwimg, bench=True)
     if hwimg.timed:
         target.rsp.write_reg(0, img.to_hw(sim.prog.main_addr) | 1)
-        target.rsp.write_reg(15, img.to_hw(hwimg.timed['go']))
+        target.rsp.write_reg(15, hwimg.timed['go'])       # a chip address (os_hw.s's .text.hw)
 
 
 def run_chip(target, hwimg, input_text, timeout, stop_flag):
@@ -381,6 +382,7 @@ def run_chip(target, hwimg, input_text, timeout, stop_flag):
             break
         pc = img.to_sim(regs[15])
         if timed:
+            pc = regs[15]          # the timed OS's stops are chip addresses (.text.hw)
             # the timed OS's putchar / getchar: the I/O, then on past the BKPT
             # to its second SysTick read and its return
             if pc not in (timed['putchar'], timed['getchar']):
@@ -403,7 +405,7 @@ def run_chip(target, hwimg, input_text, timeout, stop_flag):
             break                  # main returned (or the program's own BKPT)
         r.write_reg(15, regs[14] & ~1)
     try:
-        table = r.read_mem(img.to_hw(img.BENCH_TABLE), 8 + 8 * img.BENCH_MAX)
+        table = r.read_mem(img.BENCH_TABLE, 8 + 8 * img.BENCH_MAX)
     except RSPError as e:
         raise TestError(f"could not read the results from the chip: {e}")
     count = min(int.from_bytes(table[:4], 'little'), img.BENCH_MAX)

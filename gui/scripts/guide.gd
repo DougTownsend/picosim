@@ -483,9 +483,12 @@ func _add_topics() -> void:
 			"Some programs have settings, such as which pin an LED is on. When a program has them, " + _k("⚙ Settings") + " appears next to " + _k("Reload") + ": pick your values and click " + _k("Apply and reload") + ". picosim remembers them for you and uses them when it runs or flashes the program; the file itself is not changed (a • on the button means you changed something). Not sure what your circuit uses? Open the [b]Buttons and LEDs[/b] example and set its FIND_PINS setting to [i]find my pins[/i].\n" + \
 			"To give your own program settings, end an [code].equ[/code] line with a comment that starts with [code]<-[/code], for example [code].equ LED_PIN, 15  @ <- the GPIO number of your LED[/code]. A comment like [code]@ <- 1: wired to GND; 0: wired to 3V3[/code] becomes a menu.\n"
 		programs += _sub("Memory map") + \
-			"• [code]0x0000–0x2FFF[/code] — the built-in OS\n" + \
-			"• [code]0x3000–0xFFFF[/code] — your code and data; the stack starts at the top of RAM ([code]SP = 0x00010000[/code]) and grows down\n" + \
-			"• [code]0x10000[/code] and up — memory-mapped I/O. The GPIO registers of the RP2040 are here: SIO at [code]0xD0000000[/code], IO_BANK0 at [code]0x40014000[/code], PADS_BANK0 at [code]0x4001C000[/code] (and RESETS at [code]0x4000C000[/code]). Writing them changes the " + _link("pico", "Pico board") + "'s pins. A pin follows the SIO registers only after its IO_BANK0 CTRL register is set to function 5 (SIO), as on the real chip. Any other address stops the program with a bus fault.\n"
+			"picosim uses the RP2040's own memory map, so every address is the one the real chip uses:\n" + \
+			"• [code]0x00000000–0x00003FFF[/code] — the boot ROM (empty in picosim)\n" + \
+			"• [code]0x10000000–0x100000FF[/code] — flash: the built-in OS\n" + \
+			"• [code]0x10000100[/code] upward — flash: your code and its constants ([code].text[/code]); a store here stops the program, because flash cannot be written\n" + \
+			"• [code]0x20000000–0x20041FFF[/code] — SRAM: your variables ([code].data[/code], [code].bss[/code]) from [code]0x20000000[/code], and the stack, which starts at the top ([code]SP = 0x20042000[/code]) and grows down\n" + \
+			"• Everything else is memory-mapped I/O. The GPIO registers of the RP2040 are here: SIO at [code]0xD0000000[/code], IO_BANK0 at [code]0x40014000[/code], PADS_BANK0 at [code]0x4001C000[/code] (and RESETS at [code]0x4000C000[/code]). Writing them changes the " + _link("pico", "Pico board") + "'s pins. A pin follows the SIO registers only after its IO_BANK0 CTRL register is set to function 5 (SIO), as on the real chip. Any other address stops the program with a bus fault.\n"
 	programs += _sub("Like the real chip")
 	if not Level.at_least(2):
 		programs += "picosim runs only the instructions the Pico's Cortex-M0+ processor has, and stops with a [b]CPU fault[/b] message in the console wherever a real Pico would crash. See " + _link("trouble", "Troubleshooting") + ".\n"
@@ -563,8 +566,8 @@ func _add_topics() -> void:
 			["[b]LR[/b] (R14)", "Link register: where to come back to. [code]bl[/code] puts the return address here before it jumps."],
 			["[b]PC[/b] (R15)", "Program counter: the address of the next instruction. It goes up by 2 (or 4) after each instruction, and jumps on a branch."],
 		], 1) + \
-		("When a program is loaded, the built-in OS has already called your main, so PC is [code]0x00003000[/code] (main), LR is [code]0x00000007[/code] (where main returns to, in the OS), R0 is [code]0x00003001[/code] (left over from the OS) and SP is [code]0x00010000[/code] (the top of RAM). The others start at 0.\n" if not Level.at_least(2) else \
-		"When a program is loaded, PC is [code]0x00000000[/code] (the start of the built-in OS), SP is [code]0x00010000[/code] (the top of RAM) and LR is [code]0xFFFFFFFF[/code] (nothing to return to). The others start at 0.\n") + \
+		("When a program is loaded, the built-in OS has already called your main, so PC is [code]0x10000100[/code] (main), LR is [code]0x10000007[/code] (where main returns to, in the OS), R0 is [code]0x10000101[/code] (left over from the OS) and SP is [code]0x20042000[/code] (the top of SRAM). The others start at 0.\n" if not Level.at_least(2) else \
+		"When a program is loaded, PC is [code]0x10000000[/code] (the start of the built-in OS, at the start of flash), SP is [code]0x20042000[/code] (the top of SRAM) and LR is [code]0xFFFFFFFF[/code] (nothing to return to). The others start at 0.\n") + \
 		_sub("Hex, decimal or signed") + \
 		"The menu at the panel's top right shows every register as " + _k("Hex") + " ([code]0x0000002A[/code]), " + _k("Decimal") + " ([code]42[/code]) or " + _k("Signed") + " (decimal, where values from [code]0x80000000[/code] up are negative, so [code]0xFFFFFFFF[/code] is −1). Hover a register to see all of these at once, plus its 32 bits in binary. See " + _link("numbers", "Hex, binary and ASCII") + ".\n" + \
 		_sub("Flags") + \
@@ -601,21 +604,21 @@ func _add_topics() -> void:
 		"• Constants are shown in hex: [code]movs r0, #'H'[/code] becomes [code]movs r0, #0x48[/code], and [code]#10[/code] becomes [code]#0xa[/code].\n" + \
 		"• Some lines are stored in a shorter form: [code]adds r4, r4, #1[/code] becomes [code]adds r4, #1[/code], which does the same thing. A few instructions have a second name: [code]bcs[/code] shows as [code]bhs[/code].\n" + \
 		"• Branches and calls show the label they go to ([code]bl putchar[/code], [code]bne loop[/code]), and the Label column shows where that label is.\n" + \
-		"• The first rows, from [code]0000[/code] to [code]0016[/code], are the built-in OS ([code]_start[/code], [code]putchar[/code], [code]getchar[/code]); their Source is the OS's file, [code]os.s[/code]. Your program starts at [code]3000[/code], the [code]main[/code] row." + (" At Level 1 ▶ never stops in them." if not Level.at_least(2) else "") + "\n" + \
+		"• The first rows, from [code]10000000[/code] to [code]1000001A[/code], are the built-in OS ([code]_start[/code], [code]putchar[/code], [code]getchar[/code]); their Source is the OS's file, [code]os.s[/code]. Your program starts at [code]10000100[/code], the [code]main[/code] row." + (" At Level 1 ▶ never stops in them." if not Level.at_least(2) else "") + "\n" + \
 		_sub("Breakpoints") + \
 		"Click the narrow first column of a row to put a red ● there; click again to remove it. " + _k("Run") + " stops when it reaches a breakpoint, [i]before[/i] running that instruction. Use one to run straight to the part you want to study, then step from there.\n"
 	if Level.at_least(2):
 		mem += _sub("Memory tab") + \
 			"Memory as a place you can look around in. It has five parts, and everything in it updates after each step.\n" + \
 			_grid(["Part", "What it shows"], [
-				["[b]The map[/b] (left)", "The whole of memory from low addresses (top) to high (bottom): the built-in OS, [b]your code[/b], [b]your data[/b], [b]free RAM[/b] and the [b]stack[/b], which grows down from the top of RAM, then the [b]I/O registers[/b], which are not RAM at all. [b]PC[/b] and [b]SP[/b] tags show where they point, an [b]R[/b] or [b]W[/b] tag marks the part the last step read or wrote, and the part you are looking at has a blue outline. Click a part to go there."],
+				["[b]The map[/b] (left)", "The whole of memory from low addresses (top) to high (bottom), in the RP2040's three memories: the [b]boot ROM[/b]; flash, with the built-in OS and [b]your code[/b]; SRAM, with [b]your data[/b], [b]free SRAM[/b] and the [b]stack[/b], which grows down from the top of SRAM; then the [b]I/O registers[/b], which are not memory at all. [b]PC[/b] and [b]SP[/b] tags show where they point, an [b]R[/b] or [b]W[/b] tag marks the part the last step read or wrote, and the part you are looking at has a blue outline. Click a part to go there."],
 				["[b]The bytes[/b] (middle)", "256 bytes, 16 to a row; each row starts with the address of its first byte and the columns are + 0 … + F. Every byte is coloured by what it is: an instruction, a literal or string stored with the code, data, or the stack. [color=" + _c("label") + "]Labels[/color] sit above the bytes they name, and a register that holds an address is tagged where it points ([color=" + _c("accent") + "]R1 ↓[/color]): that register is a [b]pointer[/b]. The ▶ instruction is shaded, and the column on the right shows the same bytes as characters."],
-				["[b]Last step[/b] (above the bytes)", "What the last instruction did to memory, in words: [i]ldr r0, [lb]r1] read a word at 3024 (numbers): the bytes 0A 00 00 00, which backwards (lowest byte first) make 0x0000000A = 10, now in R0[/i]. The bytes it read are outlined in [color=" + _c("accent") + "]blue[/color], the ones it wrote in [color=" + _c("changed") + "]yellow[/color]. With [b]Follow loads and stores[/b] ticked, the view moves to them by itself."],
-				["[b]The stack[/b] (right)", "Each word from SP up to the top of RAM as a box, the newest at the bottom with the [b]◀ SP[/b] tag. Each box says what put it there, such as [i]LR saved by push {r7, lr} (line 20)[/i], or that it looks like a return address, and boxes are grouped by the function that pushed them. A word the last step popped is shown faded just below SP, with the register it went into."],
+				["[b]Last step[/b] (above the bytes)", "What the last instruction did to memory, in words: [i]ldr r0, [lb]r1] read a word at 20000000 (numbers): the bytes 0A 00 00 00, which backwards (lowest byte first) make 0x0000000A = 10, now in R0[/i]. The bytes it read are outlined in [color=" + _c("accent") + "]blue[/color], the ones it wrote in [color=" + _c("changed") + "]yellow[/color]. With [b]Follow loads and stores[/b] ticked, the view moves to them by itself."],
+				["[b]The stack[/b] (right)", "Each word from SP up to the top of SRAM as a box, the newest at the bottom with the [b]◀ SP[/b] tag. Each box says what put it there, such as [i]LR saved by push {r7, lr} (line 20)[/i], or that it looks like a return address, and boxes are grouped by the function that pushed them. A word the last step popped is shown faded just below SP, with the register it went into."],
 				["[b]Inspector[/b] (bottom)", "Hover a byte to see everything about it: its address and label, what kind of byte it is, its value in hex, decimal and as a character, the word it belongs to (put together lowest byte first), and which registers point to it."],
 			], 1) + \
 			"• [b]Show[/b] — " + _k("Bytes") + " (every byte in hex), " + _k("Words") + " (4 bytes put together into one number, so [code]64 00 00 00[/code] shows as [code]00000064[/code]) or " + _k("Characters") + " (each byte as the character it codes, [code]\\0[/code] for the 0 that ends a string).\n" + \
-			"• [b]Go to[/b] — type an address ([code]0x3000[/code]) or any label of your program, data labels included ([code]numbers[/code]), and press " + _k("Enter") + ". " + _k("PC") + ", " + _k("SP") + " and " + _k("main") + " jump straight there. The mouse wheel scrolls the bytes.\n" + \
+			"• [b]Go to[/b] — type an address ([code]0x20000000[/code]) or any label of your program, data labels included ([code]numbers[/code]), and press " + _k("Enter") + ". " + _k("PC") + ", " + _k("SP") + " and " + _k("main") + " jump straight there. The mouse wheel scrolls the bytes.\n" + \
 			"• [b]Changing memory[/b] — click a byte to select it (an orange outline), type new bytes in hex on the right ([code]2a 00 00 00[/code]) and press " + _k("Enter") + ": a quick way to try your program on different data without editing the file. " + _k("◀ Step back") + " and " + _k("Reload") + " undo it.\n" + \
 			_note("Try this", "Open [b]Add up a list in memory[/b], tick Follow loads and stores and step through the loop. Each [code]ldr r0, [lb]r1][/code] outlines the next number, and the [b]R1 ↓[/b] tag moves 4 bytes along each pass: R1 is a pointer walking through the list.")
 	_topic("memory", "Disassembly" + (" & memory" if Level.at_least(2) else ""), mem)
@@ -715,7 +718,7 @@ func _add_topics() -> void:
 			["[color=" + _c("yellow") + "]I/O[/color]", "The instruction read a peripheral register and the chip returned something else (a real pin, a register picosim models more simply). picosim takes the chip's value and carries on. It does not count as a failure."],
 			["[color=" + _c("error") + "]✗[/color]", "A real difference: the registers, flags or memory named in red. picosim then takes the chip's values and carries on, so one run shows every difference (tick [b]Stop at the first difference[/b] to stop instead)."],
 		], 1) +
-		"The chip runs the program from its SRAM, where every address is picosim's address + [code]0x20000000[/code]. The RP2040 column shows those as picosim's addresses, so the two columns compare directly. At the end the whole of the program's memory ([code]0x3000[/code]–[code]0xFFFF[/code]), what it printed and the GPIO registers it wrote are compared too.\n" +
+		"The chip runs the program from its SRAM, because Testing never writes the chip's flash: the code that picosim has in flash at [code]0x10000000[/code] goes to [code]0x20020000[/code] on the chip, so a code address there is picosim's + [code]0x10020000[/code]. Data and the stack are at the same addresses on both. The RP2040 column shows code addresses as picosim's, so the two columns compare directly. At the end the program's memory (its code, its data from [code]0x20000000[/code] and the top 16 KB of SRAM, where the stack is), what it printed and the GPIO registers it wrote are compared too.\n" +
 		_sub("Reading a timing result") +
 		"A timing test marks regions with [code]bl bench_start[/code] and [code]bl bench_stop[/code] (in picosim they do nothing). On the chip they read the [b]SysTick[/b] counter, which counts processor clock cycles; the cost of measuring (21 cycles, found by a calibration run) is taken off. [b]picosim[/b] is what picosim's RP2040 model (datasheet Table 81) says the region takes; [b]Difference[/b] is the chip minus the model, and [b]Per instr.[/b] divides it by the repetitions named in the region's comment ([code]@ MULS x 64[/code]). A program with no [code]bench_start[/code] / [code]bench_stop[/code] is timed in stretches instead: every run of its own code between OS calls, from the start of main or the return from [code]putchar[/code] / [code]getchar[/code] up to and including the next call or main's return (18 cycles of measuring overhead). A program that never ends, such as an echo loop, is stopped after 100 calls.\n" +
 		_note("Write your own", "Any [code].s[/code] file works as a test: load it and use [b]The loaded program[/b]. To time part of it, put [code]bl bench_start[/code] before and [code]bl bench_stop[/code] after, with a comment naming the region. The suite's files are in the [code]hwtests[/code] folder; [code]docs/hardware-testing.md[/code] explains everything in more depth.") +
@@ -891,7 +894,7 @@ func _add_topics() -> void:
 			["Bus and its buffers", "a tri-state buffer drives the bus ([code]GatePC[/code], [code]GateADDR[/code], [code]GateMDR[/code], [code]GateALU[/code], [code]GateVEC[/code]); the Bus row counts cycles with any driver"],
 			["ALU, its A / B latches", "[code]ALUK[/code] selects an operation outside DECODE; the latches when [code]LD.ALUA[/code] / [code]LD.ALUB[/code] load them"],
 			["Muxes, adder, incrementers", "their select signal is set ([code]ADDR1MUX[/code], [code]ADDR2MUX[/code], [code]SR2MUX[/code], [code]PCMUX[/code], [code]PCINC[/code], [code]MAR+4[/code])"],
-			["Memory / I-O", "[code]MEM.EN[/code]. In Totals and Per line it is also split into instruction fetches and data accesses to RAM, the SIO (GPIO) and APB peripherals"],
+			["Memory / I-O", "[code]MEM.EN[/code]. In Totals and Per line it is also split into instruction fetches and data accesses to memory (SRAM, or constants in flash), the SIO (GPIO) and APB peripherals"],
 			["FSM", "every cycle (it is the clock's own row, a reference for 100%)"],
 			["Register reads / writes", "one use of a register-file read port ([code]SR1[/code], [code]SR2[/code]) or the write port ([code]DR[/code] with [code]LD.REG[/code], [code]LD.SP[/code], [code]LD.LR[/code]). [code]adds r0, r0, r0[/code] reads R0 twice. The PC is read by every fetch and PC-relative address, and written by every fetch and branch"],
 			["Flag reads / writes", "an instruction ending in S (or CMP, CMN, TST) writes the flags it sets; a conditional branch reads the flags its condition tests (BNE reads Z; BGT reads Z, N and V)"],
@@ -950,10 +953,10 @@ func _add_topics() -> void:
 		_sub("Nothing happens when I press Step or Run") + \
 		"The program has halted (the status text says [i]halted[/i]) — press " + _k("Reload") + ". Or no program is loaded" + (", or you are in Pico mode — switch to Simulator" if Level.at_least(2) else "") + ".\n" + \
 		(_sub("I pressed Step and ended up in code I did not write") + \
-		"That is the built-in OS, at addresses below [code]3000[/code]. The first three instructions of every run are the OS starting your [code]main[/code], and each [code]bl putchar[/code] goes into the OS for two instructions ([code]svc #2[/code], [code]bx lr[/code]) before coming back. Keep stepping, or use " + _k("Step over") + " on the [code]bl[/code] line. See " + _link("running", "How a program runs") + ".\n" + \
-		_sub("R0 suddenly holds 0x00002FFC or 0x00003001") + \
+		"That is the built-in OS, in the first 256 bytes of flash ([code]10000000[/code]–[code]100000FF[/code]). The first three instructions of every run are the OS starting your [code]main[/code], and each [code]bl putchar[/code] goes into the OS for two instructions ([code]svc #2[/code], [code]bx lr[/code]) before coming back. Keep stepping, or use " + _k("Step over") + " on the [code]bl[/code] line. See " + _link("running", "How a program runs") + ".\n" + \
+		_sub("R0 suddenly holds 0x100000FC or 0x10000101") + \
 		"Those are from the OS's first two instructions, before your program starts. Your own code starts at [code]main[/code].\n" if Level.at_least(2) else \
-		_sub("R0 already holds 0x00003001 and LR 0x00000007 before I press anything") + \
+		_sub("R0 already holds 0x10000101 and LR 0x10000007 before I press anything") + \
 		"picosim's built-in OS has already run its start-up and called your [code]main[/code]: R0 is left over from that, and LR is where main returns to. Your program does not need them. See " + _link("running", "How a program runs") + ".\n") + \
 		_sub("Run is very slow") + \
 		"Move the " + _k("Speed") + " slider to the right. At the starting speed (8 cyc/s) Run does about one instruction a second, so you can watch it. [b]Max[/b] finishes almost at once.\n" + \
@@ -1011,7 +1014,7 @@ func _add_topics() -> void:
 	tr += "\n[font_size=%d][b]\"CPU fault: …\" in the console[/b][/font_size]\n" % roundi(21 * text_scale) + \
 		"Your program did something that would crash a real Pico, and the message says what and where. The most common ones:\n" + \
 		"• [b]Undefined instruction[/b] — not a Cortex-M0+ instruction (for example code written for a Cortex-M4), or the program ran into data.\n" + \
-		"• [b]Bus fault[/b] — the address is not RAM (0x0000–0xFFFF)" + (" or a simulated I/O register" if Level.at_least(2) else "") + ". The two most common causes at first: [code]main[/code] has no [code]pop {…, pc}[/code] at the end, so the CPU runs on through empty memory until it reaches [code]0x00010000[/code]; or [code]main[/code] pops without a matching [code]push {…, lr}[/code] at the start, so the pop reads past the top of RAM. Later on, a pointer that went wrong or a stack that grew too far (too many PUSHes without POPs) do the same.\n"
+		"• [b]Bus fault[/b] — the address is not memory (ROM [code]0x00000000[/code], flash [code]0x10000000[/code] or SRAM [code]0x20000000[/code]–[code]0x20041FFF[/code])" + (" or a simulated I/O register" if Level.at_least(2) else "") + ". The two most common causes at first: [code]main[/code] has no [code]pop {…, pc}[/code] at the end, so the CPU runs on through whatever follows it in flash; or [code]main[/code] pops without a matching [code]push {…, lr}[/code] at the start, so the pop reads past the top of SRAM ([code]0x20042000[/code]). Later on, a pointer that went wrong or a stack that grew too far (too many PUSHes without POPs) do the same.\n"
 	if Level.at_least(2):
 		tr += "• [b]… with bit 0 clear[/b] — BX, BLX or POP {PC} jumped to an even address. Put [code].thumb_func[/code] on the line before a label whose address you load with [code]ldr r0, =label[/code].\n"
 		tr += "• [b]Unaligned access[/b] — LDR/STR need an address that is a multiple of 4, LDRH/STRH a multiple of 2. Use LDRB/STRB for single bytes, and put [code].align 2[/code] before word data.\n"
@@ -1062,12 +1065,12 @@ func _summaries() -> Dictionary:
 		"[code]beq[/code] jumps if the numbers were equal and [code]bne[/code] if they were not; [code]blt[/code], [code]bgt[/code], [code]ble[/code] and [code]bge[/code] compare signed numbers, and [code]blo[/code], [code]bhi[/code], [code]bls[/code] and [code]bhs[/code] unsigned ones. A loop works this way: change a counter, compare it, and branch back while the loop is not finished."
 	d["examples"] = "Three examples for Level 1, opened from " + _k("Examples") + ": [b]Say hello[/b] prints [code]Hi![/code] one letter at a time ([code]movs[/code] and [code]bl putchar[/code]), [b]Add two numbers[/b] adds 3 and 4 and prints 7, and [b]Count with a loop[/b] prints [code]12345[/code] with a loop ([code]cmp[/code] and [code]bne[/code]). Each file starts with a comment that says what to watch.\n\n" + \
 		"Step through each one with " + _link("explain", "Explain this step") + " open, then try the change suggested in its [b]Try it[/b] line or its challenge."
-	d["memmap"] = "Memory is one long row of bytes, and each byte has a number called its [b]address[/b]. A [b]word[/b] is 4 bytes (what one register holds) and a halfword 2. picosim keeps its built-in OS at [code]0x0000[/code]–[code]0x2FFF[/code], your program from [code]0x3000[/code] upward and the stack at the top, just below [code]0x10000[/code]; the Pico's hardware (its pins) is at high addresses such as [code]0xD0000000[/code].\n\n" + \
-		"A word is stored lowest byte first ([b]little-endian[/b]), so [code]0x0000300D[/code] appears in memory as [code]0D 30 00 00[/code]. A word must start at an address that is a multiple of 4, and a halfword at a multiple of 2; otherwise the program stops with a fault, as on a real Pico."
+	d["memmap"] = "Memory is one long row of bytes, and each byte has a number called its [b]address[/b]. A [b]word[/b] is 4 bytes (what one register holds) and a halfword 2. picosim uses the RP2040's memory map: your program's code is in [b]flash[/b] from [code]0x10000100[/code] (after the built-in OS at [code]0x10000000[/code]), its variables are in [b]SRAM[/b] from [code]0x20000000[/code], and the stack is at the top of SRAM, just below [code]0x20042000[/code]; the Pico's hardware (its pins) is at other high addresses such as [code]0xD0000000[/code].\n\n" + \
+		"A word is stored lowest byte first ([b]little-endian[/b]), so [code]0x1000010D[/code] appears in memory as [code]0D 01 00 10[/code]. A word must start at an address that is a multiple of 4, and a halfword at a multiple of 2; otherwise the program stops with a fault, as on a real Pico."
 	d["loadstore"] = "The ALU works only on registers, so a value in memory must be [b]loaded[/b] into a register ([code]ldr[/code]), worked on, and [b]stored[/b] back ([code]str[/code]). The address goes in square brackets: [code]ldr r0, [lb]r1][/code] means \"R0 = the word at the address in R1\". [code]ldrb[/code] / [code]strb[/code] move one byte and [code]ldrh[/code] / [code]strh[/code] a halfword.\n\n" + \
 		"To put an address, or any number bigger than 255, into a register, write [code]ldr r1, =label[/code]: the assembler stores the number just after your code and loads it from there. Data such as [code]numbers: .word 10, 20[/code] goes after a [code].data[/code] line."
 	d["stack"] = "A [b]function[/b] is code you call with [code]bl name[/code] and that comes back with [code]bx lr[/code]: [code]bl[/code] puts the return address in LR before it jumps. A function that calls another function must save LR first, because the second [code]bl[/code] overwrites it. It saves it on the stack with [code]push {…, lr}[/code] and returns with [code]pop {…, pc}[/code].\n\n" + \
-		"The [b]stack[/b] is memory at the top of RAM. SP points at its top, and it grows down: each push moves SP down 4 bytes per register. The rules: arguments and results go in R0–R3, a function may change R0–R3, and it must put R4–R7 back as it found them."
+		"The [b]stack[/b] is memory at the top of SRAM. SP points at its top, and it grows down: each push moves SP down 4 bytes per register. The rules: arguments and results go in R0–R3, a function may change R0–R3, and it must put R4–R7 back as it found them."
 	d["gpio"] = "The [b]GPIO pins[/b] (GP0–GP29) can be [b]outputs[/b], which your program drives high (1) or low (0) to light an LED, or [b]inputs[/b], which it reads to see a button. A program controls them by storing to special addresses ([b]memory-mapped I/O[/b]): write 5 to the pin's IO_BANK0 CTRL register to connect it to your program, write its bit to [code]GPIO_OE_SET[/code] to make it an output, then write its bit to [code]GPIO_OUT_SET[/code], [code]GPIO_OUT_CLR[/code] or [code]GPIO_OUT_XOR[/code] to make it high, low or flip it.\n\n" + \
 		"Each pin is one bit in these registers: GP15 is bit 15, so its [b]mask[/b] is [code]1 << 15[/code] = [code]0x8000[/code]. To read a button, load [code]GPIO_IN[/code] ([code]0xD0000004[/code]) and test the pin's bit with [code]ands[/code]. The [b]Blink an LED[/b] and [b]Buttons and LEDs[/b] examples do both."
 	d["examples2"] = "Five examples for Level 2: [b]Add up a list in memory[/b] ([code]ldr[/code] and [code]str[/code]), [b]Blink an LED[/b] (GPIO outputs), [b]Echo what you type[/b] ([code]getchar[/code]), [b]Call a function[/b] ([code]bl[/code], LR and the stack) and [b]Buttons and LEDs[/b] (GPIO inputs). Keep the Memory tab and the Pico board in view while you step: that is where these programs show what they do."
@@ -1137,9 +1140,9 @@ func _first_steps() -> String:
 		t += "3. Step once more and look at the " + _link("registers", "Registers") + ": the one that just changed turns [color=" + _c("changed") + "]yellow[/color]. After [code]movs r0, #'H'[/code], R0 holds [code]0x00000048[/code], the " + _link("numbers", "ASCII code") + " for the letter H.\n"
 		t += "4. Step again. [code]bl putchar[/code] calls the function that prints the character in R0, and an [b]H[/b] appears in the " + _link("serial", "serial console") + " on the right.\n"
 	else:
-		t += "2. Press " + _k("Step instruction") + " (" + _k("S") + ") three times. These first three instructions belong to picosim's small [b]built-in OS[/b], which starts your program: R0 briefly holds [code]0x00002FFC[/code] and then [code]0x00003001[/code]. Now ▶ is on [code]main[/code], the first line of [i]your[/i] program.\n"
+		t += "2. Press " + _k("Step instruction") + " (" + _k("S") + ") three times. These first three instructions belong to picosim's small [b]built-in OS[/b], which starts your program: R0 briefly holds [code]0x100000FC[/code] and then [code]0x10000101[/code]. Now ▶ is on [code]main[/code], the first line of [i]your[/i] program.\n"
 		t += "3. Step twice more and look at the " + _link("registers", "Registers") + ": the one that just changed turns [color=" + _c("changed") + "]yellow[/color]. After [code]movs r0, #'H'[/code], R0 holds [code]0x00000048[/code], the " + _link("numbers", "ASCII code") + " for the letter H.\n"
-		t += "4. Step three more times. [code]bl putchar[/code] jumps into the OS's [code]putchar[/code] (address [code]0010[/code]), [code]svc #2[/code] prints the [b]H[/b] in the " + _link("serial", "serial console") + " on the right, and [code]bx lr[/code] comes back to the next line of your program. (" + _k("Step over") + " does all three at once.)\n"
+		t += "4. Step three more times. [code]bl putchar[/code] jumps into the OS's [code]putchar[/code] (address [code]10000010[/code]), [code]svc #2[/code] prints the [b]H[/b] in the " + _link("serial", "serial console") + " on the right, and [code]bx lr[/code] comes back to the next line of your program. (" + _k("Step over") + " does all three at once.)\n"
 	t += "5. Press " + _k("Run") + " (" + _k("Space") + ") to let the rest go by itself. When the status text at the top says [b]halted[/b], the program has finished; press " + _k("Reload") + " to watch it again.\n"
 	t += "Each time you step, the " + _link("explain", "Explain this step") + " panel at the top right says what that instruction did and what the next one will do, so you can follow along without guessing.\n"
 	return t
@@ -1208,31 +1211,31 @@ func _running() -> String:
 	if l1:
 		t += "Every program runs the same way: picosim's small [b]built-in OS[/b] starts it, it runs one instruction at a time, it calls functions such as [code]putchar[/code] to print, and it ends by returning to the OS. At Level 1 the OS's own instructions are hidden, so you only step through [i]your[/i] lines. Here is the [b]Say hello[/b] example, exactly as " + _k("Step instruction") + " shows it. Open it from " + _k("Examples") + " and step along.\n"
 		t += _sub("Before you press anything")
-		t += "When the program loads, the OS has already run its three start-up instructions and called your [code]main[/code]. That is why ▶ starts on [code]main[/code] at [code]3000[/code], and why R0 already holds [code]0x00003001[/code] (the address of main, plus 1) and LR holds [code]0x00000007[/code] (where main returns to, in the OS). At Level 2 you will step through those instructions too.\n"
+		t += "When the program loads, the OS has already run its three start-up instructions and called your [code]main[/code]. That is why ▶ starts on [code]main[/code] at [code]10000100[/code], and why R0 already holds [code]0x10000101[/code] (the address of main, plus 1) and LR holds [code]0x10000007[/code] (where main returns to, in the OS). At Level 2 you will step through those instructions too.\n"
 		var rows := [
-			["1", "[code]3000[/code]", _asm("push {r7, lr}"), "Saves R7 and LR on the stack, so SP goes down by 8 to [code]0x0000FFF8[/code]."],
-			["2", "[code]3002[/code]", _asm("movs r0, #'H'"), "R0 = [code]0x00000048[/code], the character H. The Z flag is cleared."],
-			["3", "[code]3004[/code]", _asm("bl putchar"), "Calls putchar, which prints the character in R0: [b]H[/b] appears in the console. LR = [code]0x00003009[/code] (the next line, plus 1): that is how putchar knew where to come back to."],
+			["1", "[code]10000100[/code]", _asm("push {r7, lr}"), "Saves R7 and LR on the stack, so SP goes down by 8 to [code]0x20041FF8[/code]."],
+			["2", "[code]10000102[/code]", _asm("movs r0, #'H'"), "R0 = [code]0x00000048[/code], the character H. The Z flag is cleared."],
+			["3", "[code]10000104[/code]", _asm("bl putchar"), "Calls putchar, which prints the character in R0: [b]H[/b] appears in the console. LR = [code]0x10000109[/code] (the next line, plus 1): that is how putchar knew where to come back to."],
 			["4–9", "", "", "The same two steps print [code]i[/code], [code]![/code] and a new line."],
-			["10", "[code]301A[/code]", _asm("movs r0, #0"), "R0 = 0, which means \"finished without errors\". The result is zero, so the Z flag turns on."],
-			["11", "[code]301C[/code]", _asm("pop {r7, pc}"), "Takes R7 and the saved LR back off the stack, putting the LR value into PC: main returns to the OS, which stops the processor. SP is back to [code]0x00010000[/code] and the status text says [color=%s][b]halted[/b][/color]." % y],
+			["10", "[code]1000011A[/code]", _asm("movs r0, #0"), "R0 = 0, which means \"finished without errors\". The result is zero, so the Z flag turns on."],
+			["11", "[code]1000011C[/code]", _asm("pop {r7, pc}"), "Takes R7 and the saved LR back off the stack, putting the LR value into PC: main returns to the OS, which stops the processor. SP is back to [code]0x20042000[/code] and the status text says [color=%s][b]halted[/b][/color]." % y],
 		]
 		t += _grid(["Press", "Address", "Instruction", "What happens"], rows, 3)
 	else:
 		t += "Every program runs the same way: a small [b]built-in OS[/b] starts it, it runs one instruction at a time, it calls the OS to print, and it ends by returning to the OS. Here is the [b]Say hello[/b] example with every instruction the CPU runs, the OS's included, exactly as " + _k("Step instruction") + " shows it from Level 2. Open it from " + _k("Examples") + " and step along.\n"
 		var rows := [
-			["1", "[code]0000[/code]", _asm("ldr r0, [pc, #8]"), "OS: R0 = [code]0x00002FFC[/code], the address where picosim stored the address of your [code]main[/code]."],
-			["2", "[code]0002[/code]", _asm("ldr r0, [r0]"), "OS: R0 = [code]0x00003001[/code], the address of [code]main[/code] ([code]3000[/code]). The extra 1 means \"Thumb code\"; every Pico code address has it."],
-			["3", "[code]0004[/code]", _asm("blx r0"), "OS: calls [code]main[/code]. LR = [code]0x00000007[/code] (where to come back to), PC = [code]0x00003000[/code]."],
-			["4", "[code]3000[/code]", _asm("push {r7, lr}"), "Your program starts. Saves R7 and LR on the stack, so SP goes down by 8 to [code]0x0000FFF8[/code]."],
-			["5", "[code]3002[/code]", _asm("movs r0, #'H'"), "R0 = [code]0x00000048[/code], the character H. The Z flag is cleared."],
-			["6", "[code]3004[/code]", _asm("bl putchar"), "Calls the OS's putchar: LR = [code]0x00003009[/code] (the next line, plus 1), PC = [code]0x00000010[/code]."],
-			["7", "[code]0010[/code]", _asm("svc #2"), "OS: a [i]supervisor call[/i] asks picosim to print the character in R0. [b]H[/b] appears in the console."],
-			["8", "[code]0012[/code]", _asm("bx lr"), "OS: returns to the address in LR, the line after the [code]bl[/code] ([code]3008[/code])."],
+			["1", "[code]10000000[/code]", _asm("ldr r0, [pc, #8]"), "OS: R0 = [code]0x100000FC[/code], the address where picosim stored the address of your [code]main[/code]."],
+			["2", "[code]10000002[/code]", _asm("ldr r0, [r0]"), "OS: R0 = [code]0x10000101[/code], the address of [code]main[/code] ([code]10000100[/code]). The extra 1 means \"Thumb code\"; every Pico code address has it."],
+			["3", "[code]10000004[/code]", _asm("blx r0"), "OS: calls [code]main[/code]. LR = [code]0x10000007[/code] (where to come back to), PC = [code]0x10000100[/code]."],
+			["4", "[code]10000100[/code]", _asm("push {r7, lr}"), "Your program starts. Saves R7 and LR on the stack, so SP goes down by 8 to [code]0x20041FF8[/code]."],
+			["5", "[code]10000102[/code]", _asm("movs r0, #'H'"), "R0 = [code]0x00000048[/code], the character H. The Z flag is cleared."],
+			["6", "[code]10000104[/code]", _asm("bl putchar"), "Calls the OS's putchar: LR = [code]0x10000109[/code] (the next line, plus 1), PC = [code]0x10000010[/code]."],
+			["7", "[code]10000010[/code]", _asm("svc #2"), "OS: a [i]supervisor call[/i] asks picosim to print the character in R0. [b]H[/b] appears in the console."],
+			["8", "[code]10000012[/code]", _asm("bx lr"), "OS: returns to the address in LR, the line after the [code]bl[/code] ([code]10000108[/code])."],
 			["9–20", "", "", "The same three steps print [code]i[/code], [code]![/code] and a new line."],
-			["21", "[code]301A[/code]", _asm("movs r0, #0"), "R0 = 0, which means \"finished without errors\". The result is zero, so the Z flag turns on."],
-			["22", "[code]301C[/code]", _asm("pop {r7, pc}"), "Takes R7 and the saved LR back off the stack, putting the LR value into PC: this returns to the OS. SP is back to [code]0x00010000[/code]."],
-			["23", "[code]0006[/code]", _asm("bkpt #0"), "OS: [i]breakpoint[/i] instruction. The simulator stops and the status text says [color=%s][b]halted[/b][/color]." % y],
+			["21", "[code]1000011A[/code]", _asm("movs r0, #0"), "R0 = 0, which means \"finished without errors\". The result is zero, so the Z flag turns on."],
+			["22", "[code]1000011C[/code]", _asm("pop {r7, pc}"), "Takes R7 and the saved LR back off the stack, putting the LR value into PC: this returns to the OS. SP is back to [code]0x20042000[/code]."],
+			["23", "[code]10000006[/code]", _asm("bkpt #0"), "OS: [i]breakpoint[/i] instruction. The simulator stops and the status text says [color=%s][b]halted[/b][/color]." % y],
 		]
 		t += _grid(["Step", "Address", "Instruction", "What happens"], rows, 3)
 		t += _note("Step over", "Steps 1–3 and the [code]svc[/code] / [code]bx lr[/code] after every [code]bl putchar[/code] are the OS, not your file. On a [code]bl[/code] line, " + _k("Step over") + " (" + _k("O") + ") runs the whole call and stops on the line after it, so you can skip what you do not want to watch.")
@@ -1248,7 +1251,7 @@ func _running() -> String:
 	t += _sub("Starting again")
 	t += "When the program has halted, Step and Run are greyed out. " + _k("Reload") + " reads the file again and starts it from the beginning, with every register and flag reset. When you save your file, picosim reloads it by itself. The console keeps what was printed before, under a grey [code][lb]loaded …][/code] line that marks the new start; " + _k("Clear") + " empties it.\n"
 	t += _sub("Where the numbers come from")
-	t += "The addresses are always the same: the OS is at [code]0000[/code]–[code]2FFF[/code] and your program starts at [code]3000[/code]. The stack is at the top of memory, just below [code]0x00010000[/code]" + (". See " + _link("programs", "Memory map") + "." if Level.at_least(2) else ", and you will look inside it at Level 2.") + "\n"
+	t += "The addresses are always the same, the real RP2040's: the OS is at the start of flash, [code]10000000[/code]–[code]100000FF[/code], and your program starts at [code]10000100[/code]. Your variables are in SRAM from [code]20000000[/code], and the stack is at the top of SRAM, just below [code]0x20042000[/code]" + (". See " + _link("programs", "Memory map") + "." if Level.at_least(2) else ", and you will look inside it at Level 2.") + "\n"
 	return t
 
 
@@ -1266,7 +1269,7 @@ func _numbers() -> String:
 	t += "Hex numbers start with [code]0x[/code] so you can tell them apart from decimal. Each place is worth 16 times the one to its right (1, 16, 256, 4096, …):\n"
 	t += "• [code]0x48[/code] = 4 × 16 + 8 = [b]72[/b]\n"
 	t += "• [code]0x2A[/code] = 2 × 16 + 10 = [b]42[/b]\n"
-	t += "• [code]0x3000[/code] = 3 × 4096 = [b]12288[/b]\n"
+	t += "• [code]0x100[/code] = 1 × 256 = [b]256[/b]: the program starts 256 bytes into flash, at [code]0x10000100[/code]\n"
 	t += "Leading zeros change nothing: the Registers panel's [code]0x00000048[/code] is just [code]0x48[/code]. And to turn hex into binary, write each digit as its 4 bits: [code]0x48[/code] = [code]0100 1000[/code].\n"
 	t += _note("Shortcut", "Hover any register to see its value in hex, decimal, signed decimal and binary at once, or switch the Registers panel's menu from " + _k("Hex") + " to " + _k("Decimal") + ".")
 	t += _sub("Negative numbers")
@@ -1409,7 +1412,7 @@ func _examples() -> String:
 	t += "\n[font_size=%d][b]1 · Say hello[/b][/font_size]   [color=%s]01_hello.s · %s[/color]\n" % [roundi(21 * text_scale), dim, count.call("01")]
 	t += "Prints [code]Hi![/code] one letter at a time. Shows how [code]movs[/code] puts a character's code in R0 and how [code]bl putchar[/code] prints it.\n"
 	t += "• Before each [code]bl putchar[/code], R0 holds the code: [code]0x48[/code] H, [code]0x69[/code] i, [code]0x21[/code] !, [code]0x0A[/code] new line.\n"
-	t += "• Watch LR change on every [code]bl[/code] ([code]0x00003009[/code], [code]0x0000300F[/code], …): it is always the address of the next line, plus 1.\n"
+	t += "• Watch LR change on every [code]bl[/code] ([code]0x10000109[/code], [code]0x1000010F[/code], …): it is always the address of the next line, plus 1.\n"
 	t += "• " + _link("running", "How a program runs") + " goes through this example line by line.\n"
 	t += "[b]Try it:[/b] make it print your initials. Copy a [code]movs[/code] / [code]bl putchar[/code] pair for each letter, and use [code]#' '[/code] for a space.\n"
 	t += "\n[font_size=%d][b]2 · Add two numbers[/b][/font_size]   [color=%s]02_add.s · %s[/color]\n" % [roundi(21 * text_scale), dim, count.call("02")]
@@ -1421,7 +1424,7 @@ func _examples() -> String:
 	t += "\n[font_size=%d][b]3 · Count with a loop[/b][/font_size]   [color=%s]03_count_loop.s · %s[/color]\n" % [roundi(21 * text_scale), dim, count.call("03")]
 	t += "Prints [b]12345[/b] with a loop: the same five lines run once for each digit.\n"
 	t += "• R4 is the counter. It is kept in R4, not R0–R3, because putchar may change those; that is why [code]main[/code] pushes R4.\n"
-	t += "• In the Disassembly, the row labelled [code]loop[/code] is where [code]bne loop[/code] jumps back to; it shows as [code]bne #0x3004[/code].\n"
+	t += "• In the Disassembly, the row labelled [code]loop[/code] is where [code]bne loop[/code] jumps back to; it shows as [code]bne #0x10000104[/code].\n"
 	t += "• After [code]cmp r4, #6[/code]: while R4 is less than 6, N = 1 and Z = 0, so [code]bne[/code] jumps back. When R4 reaches 6, Z = 1 and the loop ends. The table in " + _link("branches", "Flags and branches") + " shows the values.\n"
 	t += "[b]Try it:[/b] put a breakpoint on the [code]bne[/code] row and press Run several times to see the flags on each pass. Then make it count to 9 (change [code]#6[/code] to [code]#10[/code]).\n"
 	if Level.at_least(2):
@@ -1435,14 +1438,14 @@ func _examples() -> String:
 func _glossary() -> String:
 	var t := _h("Glossary")
 	var rows := [
-		["Address", "A number that says where in memory something is, like a house number. Shown in hex, such as [code]3000[/code]."],
+		["Address", "A number that says where in memory something is, like a house number. Shown in hex, such as [code]10000100[/code]."],
 		["ASCII", "The code that gives each character a number: 'A' is [code]0x41[/code]. See " + _link("numbers", "Hex, binary and ASCII") + "."],
 		["Assembler", "The program that turns your [code].s[/code] file into the bits the CPU runs. picosim runs it when you Open or Reload."],
 		["Assembly language", "Writing a program as the processor's own instructions, one per line, with names instead of bits."],
 		["Bit", "One binary digit, 0 or 1. A register has 32."],
 		["Branch", "An instruction that jumps to another place in the program, always ([code]b[/code]) or only if a condition holds ([code]bne[/code], …)."],
 		["Breakpoint", "A red ● on a Disassembly row" + (" or a Walkthrough step" if Level.at_least(3) else "") + ": Run stops just before that instruction."],
-		["Built-in OS", "picosim's tiny operating system at addresses [code]0000[/code]–[code]2FFF[/code]. It starts your [code]main[/code] and provides [code]putchar[/code] and [code]getchar[/code]."],
+		["Built-in OS", "picosim's tiny operating system, in the first 256 bytes of flash ([code]10000000[/code]–[code]100000FF[/code]). It starts your [code]main[/code] and provides [code]putchar[/code] and [code]getchar[/code]."],
 		["Byte", "8 bits: two hex digits, 0 to 255."],
 		["Clock cycle", "One tick of the CPU's clock. An instruction takes several." + (" See " + _link("cycles", "Cycle by cycle") + "." if Level.at_least(3) else " You will see them at Level 3.")],
 		["Comment", "Text after [code]@[/code] that the assembler ignores; it is for people."],
@@ -1477,7 +1480,7 @@ func _glossary() -> String:
 			["Halfword", "2 bytes, 16 bits. Most Thumb instructions are one halfword."],
 			["Leaf function", "A function that calls no other function, so it need not save LR."],
 			["Literal pool", "Numbers the assembler stores after your code for [code]ldr rX, =value[/code]; listed as [code].word[/code] rows."],
-			["Little-endian", "Storing a word's lowest byte at the lowest address: [code]0x0000300D[/code] is stored as [code]0D 30 00 00[/code]."],
+			["Little-endian", "Storing a word's lowest byte at the lowest address: [code]0x1000010D[/code] is stored as [code]0D 01 00 10[/code]."],
 			["Load / store", "Copy a value from memory into a register ([code]ldr[/code]) or from a register into memory ([code]str[/code])."],
 			["Mask", "A number with a 1 in the bits you care about, such as [code]1 << 15[/code] for GP15."],
 			["Memory-mapped I/O", "Controlling hardware by reading and writing special addresses with ordinary loads and stores."],
@@ -1584,28 +1587,35 @@ func _memmap() -> String:
 	], 3)
 	t += "A register holds exactly one word. Most Thumb instructions are one halfword (2 bytes) long, which is why the PC usually moves on by 2.\n"
 	t += _sub("Little-endian: the low byte comes first")
-	t += "A word takes 4 bytes in a row. The RP2040 stores the [i]lowest[/i] byte at the [i]lowest[/i] address; this is called [b]little-endian[/b]. In the [b]Call a function[/b] example, the word [code]0x0000300D[/code] pushed onto the stack at [code]0xFFF4[/code] sits in memory like this:\n"
-	t += _grid(["Address", "FFF4", "FFF5", "FFF6", "FFF7"], [
-		["Byte", "[code]0D[/code]", "[code]30[/code]", "[code]00[/code]", "[code]00[/code]"],
+	t += "A word takes 4 bytes in a row. The RP2040 stores the [i]lowest[/i] byte at the [i]lowest[/i] address; this is called [b]little-endian[/b]. In the [b]Call a function[/b] example, the word [code]0x1000010D[/code] pushed onto the stack at [code]0x20041FF4[/code] sits in memory like this:\n"
+	t += _grid(["Address", "20041FF4", "20041FF5", "20041FF6", "20041FF7"], [
+		["Byte", "[code]0D[/code]", "[code]01[/code]", "[code]00[/code]", "[code]10[/code]"],
 	])
-	t += "So in the Memory tab's hex dump you read a word's bytes [i]backwards[/i]: [code]0D 30 00 00[/code] is the word [code]0x0000300D[/code]. The Stack view under the dump puts the bytes back together for you.\n"
+	t += "So in the Memory tab's hex dump you read a word's bytes [i]backwards[/i]: [code]0D 01 00 10[/code] is the word [code]0x1000010D[/code]. The Stack view under the dump puts the bytes back together for you.\n"
 	t += _sub("Alignment")
-	t += "A word must start at an address that is a multiple of 4 (in hex, ending in 0, 4, 8 or C), and a halfword at a multiple of 2. The Cortex-M0+ cannot load a word from [code]0x3002[/code]: picosim stops with an [b]Unaligned access[/b] CPU fault there, as a real Pico would. Bytes can be anywhere. Put [code].align 2[/code] before [code].word[/code] data that comes after bytes or strings.\n"
+	t += "A word must start at an address that is a multiple of 4 (in hex, ending in 0, 4, 8 or C), and a halfword at a multiple of 2. The Cortex-M0+ cannot load a word from [code]0x20000002[/code]: picosim stops with an [b]Unaligned access[/b] CPU fault there, as a real Pico would. Bytes can be anywhere. Put [code].align 2[/code] before [code].word[/code] data that comes after bytes or strings.\n"
 	t += _sub("picosim's memory map")
+	t += "picosim uses the RP2040's real memory map. Its memory is three separate blocks at fixed addresses, with gaps between them:\n"
 	t += _grid(["Addresses", "What is there"], [
-		["[code]0x0000[/code] – [code]0x2FFF[/code]", "The built-in OS: [code]_start[/code], [code]putchar[/code], [code]getchar[/code]."],
-		["[code]0x3000[/code] upward", "Your program: first its instructions (and their literal pools), then its [code].data[/code], in the order they are in your file."],
-		["… up to [code]0xFFFF[/code]", "Free RAM. The stack starts at the top and grows [i]down[/i] towards your program."],
-		["[code]0x00010000[/code]", "SP's starting value: just past the end of RAM. The first [code]push[/code] stores below it."],
+		["[code]0x00000000[/code] – [code]0x00003FFF[/code]", "[b]ROM[/b] (16 KB): the Pico's boot ROM, which starts the chip. picosim leaves it empty."],
+		["[code]0x10000000[/code] – [code]0x100000FF[/code]", "[b]Flash[/b]: picosim's built-in OS, [code]_start[/code], [code]putchar[/code], [code]getchar[/code]."],
+		["[code]0x10000100[/code] upward", "[b]Flash[/b] (2 MB in all): your program's instructions, their literal pools, and its constants ([code].text[/code], [code].rodata[/code]), in the order they are in your file. Read-only while the program runs."],
+		["[code]0x20000000[/code] upward", "[b]SRAM[/b] (264 KB): your program's variables, [code].data[/code] then [code].bss[/code]."],
+		["… up to [code]0x20041FFF[/code]", "Free SRAM. The stack starts at the top and grows [i]down[/i] towards your variables."],
+		["[code]0x20042000[/code]", "SP's starting value: just past the end of SRAM. The first [code]push[/code] stores below it."],
 		["[code]0x4000C000[/code]", "RESETS (see " + _link("gpio", "GPIO") + ")."],
 		["[code]0x40014000[/code]", "IO_BANK0: which part of the chip controls each pin."],
 		["[code]0x4001C000[/code]", "PADS_BANK0: each pin's pull-up and pull-down resistors."],
 		["[code]0xD0000000[/code]", "SIO: set, clear and read the pins."],
 		["anything else", "Nothing: reading or writing it stops the program with a [b]bus fault[/b]."],
 	], 1)
-	t += _note("Real chip", "RAM here is 64 KB ([code]0x10000[/code] bytes) and starts at 0. The real RP2040 has 264 KB of RAM at [code]0x20000000[/code] and runs your program from flash at [code]0x10000000[/code]. So never type a fixed RAM address into a program: use labels, and the same file works in both places. The I/O addresses are the real chip's.")
+	t += _sub("Variables go in .data, not next to the code")
+	t += "Flash holds the program, and a running program cannot write flash: a [code]str[/code] to an address in flash (or in ROM) stops the program with a [b]Write to read-only memory[/b] fault, at the store. On a real Pico the store would simply not change the value, which is harder to find. So a number your program changes must not sit among the instructions:\n"
+	t += "[code]        .data           @ what follows goes in SRAM\ntotal:  .word   0       @ a variable: ldr r1, =total gives 0x20000000[/code]\n"
+	t += "Constants that never change (a table, a message for putchar) can stay in [code].text[/code] or go in [code].section .rodata[/code]; both are in flash. Use [code].bss[/code] (with [code].space[/code]) for variables that start at zero. The [b]Add up a list in memory[/b] example does this.\n"
+	t += _note("Real chip", "These are the real RP2040's addresses: a program built for the Pico with its SDK also has its code in flash at [code]0x10000000[/code] and up, its variables in SRAM at [code]0x20000000[/code] and up, and its stack at the top of SRAM. (Exactly where each one starts differs a little, because the SDK puts its own start-up code first.) So use labels rather than typing addresses into a program, and the same file works in both places. The I/O addresses are the real chip's too.")
 	t += _sub("Seeing it")
-	t += "Open the " + _link("memory", "Memory tab") + " next to Disassembly, type a label such as [code]numbers[/code] (or an address such as [code]0x3000[/code]) in [b]Go to[/b] and press " + _k("Enter") + ". Its map shows the table above as a picture, with PC and SP marked; bytes the last step read are outlined in [color=%s]blue[/color] and bytes it wrote in [color=%s]yellow[/color].\n" % [_c("accent"), _c("changed")]
+	t += "Open the " + _link("memory", "Memory tab") + " next to Disassembly, type a label such as [code]numbers[/code] (or an address such as [code]0x20000000[/code]) in [b]Go to[/b] and press " + _k("Enter") + ". Its map shows the table above as a picture, with PC and SP marked; bytes the last step read are outlined in [color=%s]blue[/color] and bytes it wrote in [color=%s]yellow[/color].\n" % [_c("accent"), _c("changed")]
 	return t
 
 
@@ -1627,13 +1637,13 @@ func _loadstore() -> String:
 	t += _note("Brackets", "Square brackets mean [i]the memory at this address[/i]. [code]r1[/code] is the number in R1; [code][lb]r1][/code] is whatever is stored at the address R1 holds. The register in brackets is a [b]pointer[/b]: it points at the data.")
 	t += "As with arithmetic, use R0–R7: [code]ldr r8, [lb]r1][/code] gives [i]cannot honor width suffix[/i]. An offset that is too big, not a multiple of the size, or negative gives [i]invalid offset, value too big[/i].\n"
 	t += _sub("Getting an address: ldr Rd, =label")
-	t += "[code]movs[/code] can only make 0 to 255, but addresses such as [code]0x3024[/code] and I/O addresses such as [code]0xD0000024[/code] are much bigger. [code]ldr r1, =numbers[/code] asks the assembler to store the number in memory just after your code, in a [b]literal pool[/b], and to load it from there:\n"
+	t += "[code]movs[/code] can only make 0 to 255, but addresses such as [code]0x20000000[/code] and I/O addresses such as [code]0xD0000024[/code] are much bigger. [code]ldr r1, =numbers[/code] asks the assembler to store the number in memory just after your code, in a [b]literal pool[/b], and to load it from there:\n"
 	t += "• In the Disassembly it shows as [code]ldr r1, [lb]pc, #0x18][/code]: \"the word 0x18 bytes on from here\".\n"
-	t += "• After your last instruction you will see rows such as [code].word 0x00003024[/code]. Those are the pool: data, not instructions. The CPU never runs them, because the program's last instruction (a [code]pop[/code] or [code]b[/code]) jumps away first.\n"
+	t += "• After your last instruction you will see rows such as [code].word 0x20000000[/code]. Those are the pool: data, not instructions. The CPU never runs them, because the program's last instruction (a [code]pop[/code] or [code]b[/code]) jumps away first.\n"
 	t += "A pool must be within about 1 KB [i]after[/i] the ldr that uses it. In a long program the assembler says [i]invalid offset, value too big[/i] on the ldr line; put [code].ltorg[/code] on a line the CPU never reaches (just after a [code]b[/code] or [code]pop {…, pc}[/code]) and the assembler places a pool there.\n"
 	t += _sub("Putting data in your program")
 	t += _grid(["Directive", "Example", "What it makes"], [
-		[_asm(".data"), _asm(".data"), "Everything after it is data, placed after your code. These lines are not listed in the Disassembly: look at them in the Memory tab."],
+		[_asm(".data"), _asm(".data"), "Everything after it is a variable, placed in SRAM from [code]0x20000000[/code] (your code is in flash, which the program cannot write). These lines are not listed in the Disassembly: look at them in the Memory tab."],
 		[_asm(".word"), _asm("numbers: .word 10, 20, 30, 40"), "Words (4 bytes each). The label is the address of the first one."],
 		[_asm(".hword"), _asm(".hword 500"), "Halfwords (2 bytes)."],
 		[_asm(".byte"), _asm(".byte 1, 2, 3"), "Single bytes."],
@@ -1642,18 +1652,18 @@ func _loadstore() -> String:
 		[_asm(".align 2"), _asm(".align 2"), "Skip ahead to the next multiple of 4, so a .word after bytes or strings is aligned."],
 		[_asm(".equ"), _asm(".equ COUNT, 4"), "A name for a number. It takes no memory: the assembler swaps the name for the number everywhere."],
 	], 2)
-	t += "Data you put after your code [i]without[/i] [code].data[/code] (as the Buttons and LEDs example does with its messages) is listed in the Disassembly as [code].word[/code] and [code].ascii[/code] rows.\n"
+	t += "Data you put after your code [i]without[/i] [code].data[/code] (as the Buttons and LEDs example does with its messages) stays in flash with the code: it is listed in the Disassembly as [code].word[/code] and [code].ascii[/code] rows, and the program can read it but not change it. A [code]str[/code] there stops the program (see " + _link("programs", "Memory map") + ").\n"
 	t += _sub("Example: adding up a list")
 	t += "From the [b]Add up a list in memory[/b] example:\n"
 	t += _codeblock("        ldr     r1, =numbers    @ R1 = the address of the first number\n        movs    r2, #0          @ R2 = running total\n        movs    r3, #4          @ R3 = how many numbers are left\nloop:\n        ldr     r0, [r1]        @ R0 = the number at address R1\n        adds    r2, r2, r0      @ add it to the total\n        adds    r1, #4          @ the next word is 4 bytes further on\n        subs    r3, #1          @ one fewer left (sets Z when it reaches 0)\n        bne     loop\n\n        ldr     r1, =total      @ R1 = the address of \"total\"\n        str     r2, [r1]        @ store the total in memory")
 	t += "What each pass loads and adds up:\n"
 	t += _grid(["Pass", "R1 (pointer)", "R0 = [lb]r1]", "R2 (total)", "R3 (left)"], [
-		["1", "[code]0x3024[/code]", "10 ([code]0x0A[/code])", "10 ([code]0x0A[/code])", "3"],
-		["2", "[code]0x3028[/code]", "20 ([code]0x14[/code])", "30 ([code]0x1E[/code])", "2"],
-		["3", "[code]0x302C[/code]", "30 ([code]0x1E[/code])", "60 ([code]0x3C[/code])", "1"],
-		["4", "[code]0x3030[/code]", "40 ([code]0x28[/code])", "100 ([code]0x64[/code])", "0, so Z = 1 and the loop ends"],
+		["1", "[code]0x20000000[/code]", "10 ([code]0x0A[/code])", "10 ([code]0x0A[/code])", "3"],
+		["2", "[code]0x20000004[/code]", "20 ([code]0x14[/code])", "30 ([code]0x1E[/code])", "2"],
+		["3", "[code]0x20000008[/code]", "30 ([code]0x1E[/code])", "60 ([code]0x3C[/code])", "1"],
+		["4", "[code]0x2000000C[/code]", "40 ([code]0x28[/code])", "100 ([code]0x64[/code])", "0, so Z = 1 and the loop ends"],
 	])
-	t += "R1 is shown at the moment of the load; [code]adds r1, #4[/code] then moves it on by one word. Finally [code]ldr r1, =total[/code] makes R1 = [code]0x3034[/code] and [code]str r2, [lb]r1][/code] writes the bytes [code]64 00 00 00[/code] there.\n"
+	t += "R1 is shown at the moment of the load; [code]adds r1, #4[/code] then moves it on by one word. Finally [code]ldr r1, =total[/code] makes R1 = [code]0x20000010[/code] and [code]str r2, [lb]r1][/code] writes the bytes [code]64 00 00 00[/code] there.\n"
 	t += _sub("Arrays: element number n")
 	t += "Element [i]n[/i] of a word array (counting from 0) is at [i]start + 4 × n[/i]. Multiplying by 4 is a shift left by 2:\n"
 	t += _codeblock("        ldr     r1, =numbers    @ R1 = the address of element 0\n        movs    r3, #2          @ n = 2\n        lsls    r2, r3, #2      @ R2 = n × 4 = 8\n        ldr     r0, [r1, r2]    @ R0 = element 2 = 30")
@@ -1673,26 +1683,26 @@ func _stack() -> String:
 	t += "If a function calls another function — even [code]putchar[/code] — that second [code]bl[/code] overwrites LR, and the first function no longer knows where to return. So a function that calls anything must save LR first, and the place to save it is the [b]stack[/b].\n"
 	t += _note("If you forget", "A function that calls putchar and then ends with [code]bx lr[/code] without saving LR jumps back into itself, to its own [code]bx lr[/code], forever. The program never halts. In picosim you see ▶ stuck on that one row while Run keeps going.", "changed")
 	t += _sub("The stack")
-	t += "The stack is the top part of RAM, used like a pile of plates: the last thing put on is the first taken off. [b]SP[/b] (the stack pointer) holds the address of the item on top. The stack grows [i]down[/i]: SP starts at [code]0x00010000[/code], just past the end of RAM.\n"
+	t += "The stack is the top part of SRAM, used like a pile of plates: the last thing put on is the first taken off. [b]SP[/b] (the stack pointer) holds the address of the item on top. The stack grows [i]down[/i]: SP starts at [code]0x20042000[/code], just past the end of SRAM.\n"
 	t += "• [code]push {r4, lr}[/code] moves SP down by 4 bytes per register (8 here), then stores the registers there, the lowest-numbered register at the lowest address.\n"
 	t += "• [code]pop {r4, pc}[/code] loads them back in the same order and moves SP up again. Popping into PC is a jump: it returns, using the LR value that was pushed.\n"
 	t += _sub("Watch it: the Call a function example")
 	t += "These are the real values from stepping [b]Call a function[/b] with " + _k("Step instruction") + " (the step numbers count from the first OS instruction):\n"
 	t += _grid(["Step", "Instruction", "SP after", "LR after", "What happens"], [
-		["4", _asm("push {r7, lr}"), "[code]0xFFF8[/code]", "[code]0x00000007[/code]", "[code]main[/code] saves R7 and its own return address (into the OS)."],
-		["6", _asm("bl twice"), "[code]0xFFF8[/code]", "[code]0x00003009[/code]", "Call: LR = the address of the next line ([code]3008[/code]) + 1."],
-		["8", _asm("bx lr"), "[code]0xFFF8[/code]", "[code]0x00003009[/code]", "[code]twice[/code] returns. It calls nothing, so it never touched the stack."],
-		["9", _asm("bl print_digit"), "[code]0xFFF8[/code]", "[code]0x0000300D[/code]", "Call the second function."],
-		["10", _asm("push {lr}"), "[code]0xFFF4[/code]", "[code]0x0000300D[/code]", "[code]print_digit[/code] saves its return address, because it is about to call putchar."],
-		["12", _asm("bl putchar"), "[code]0xFFF4[/code]", "[code]0x0000302D[/code]", "LR is overwritten, but the saved copy is safe on the stack."],
-		["15", _asm("pop {pc}"), "[code]0xFFF8[/code]", "[code]0x0000302D[/code]", "PC = the saved [code]0x300D[/code] with bit 0 cleared, [code]0x300C[/code]: back in main."],
+		["4", _asm("push {r7, lr}"), "[code]0x20041FF8[/code]", "[code]0x10000007[/code]", "[code]main[/code] saves R7 and its own return address (into the OS)."],
+		["6", _asm("bl twice"), "[code]0x20041FF8[/code]", "[code]0x10000109[/code]", "Call: LR = the address of the next line ([code]10000108[/code]) + 1."],
+		["8", _asm("bx lr"), "[code]0x20041FF8[/code]", "[code]0x10000109[/code]", "[code]twice[/code] returns. It calls nothing, so it never touched the stack."],
+		["9", _asm("bl print_digit"), "[code]0x20041FF8[/code]", "[code]0x1000010D[/code]", "Call the second function."],
+		["10", _asm("push {lr}"), "[code]0x20041FF4[/code]", "[code]0x1000010D[/code]", "[code]print_digit[/code] saves its return address, because it is about to call putchar."],
+		["12", _asm("bl putchar"), "[code]0x20041FF4[/code]", "[code]0x1000012D[/code]", "LR is overwritten, but the saved copy is safe on the stack."],
+		["15", _asm("pop {pc}"), "[code]0x20041FF8[/code]", "[code]0x1000012D[/code]", "PC = the saved [code]0x1000010D[/code] with bit 0 cleared, [code]0x1000010C[/code]: back in main."],
 	], 4)
 	t += "The stack at step 12 (Memory tab → Stack, or Go to " + _k("SP") + "):\n"
 	t += _grid(["Address", "Holds", "Put there by"], [
-		["[code]0xFFF4[/code]  ← SP", "[code]0x0000300D[/code]", "print_digit: its return address (into main)"],
-		["[code]0xFFF8[/code]", "[code]0x00000000[/code]", "main: R7"],
-		["[code]0xFFFC[/code]", "[code]0x00000007[/code]", "main: its return address (into the OS)"],
-		["[code]0x10000[/code]", "", "the end of RAM: where SP started"],
+		["[code]0x20041FF4[/code]  ← SP", "[code]0x1000010D[/code]", "print_digit: its return address (into main)"],
+		["[code]0x20041FF8[/code]", "[code]0x00000000[/code]", "main: R7"],
+		["[code]0x20041FFC[/code]", "[code]0x10000007[/code]", "main: its return address (into the OS)"],
+		["[code]0x20042000[/code]", "", "the end of SRAM: where SP started"],
 	], 2)
 	t += _sub("The rules every function follows")
 	t += "So that functions written by different people work together, ARM sets rules for the registers (the [b]calling convention[/b]). Simplified:\n"
@@ -1708,7 +1718,7 @@ func _stack() -> String:
 	t += "A function that calls nothing and uses only R0–R3 (a [b]leaf[/b] function, like [code]twice[/code]) needs no push at all: it ends with [code]bx lr[/code].\n"
 	t += _sub("Common mistakes")
 	t += "• [b]Forgetting push {lr}[/b] in a function that calls another: it loops forever on its own [code]bx lr[/code].\n"
-	t += "• [b]Push and pop that do not match[/b]: the wrong value lands in PC. A [code]pop {r7, pc}[/code] with no push before it reads past the top of RAM and stops with a bus fault.\n"
+	t += "• [b]Push and pop that do not match[/b]: the wrong value lands in PC. A [code]pop {r7, pc}[/code] with no push before it reads past the top of SRAM and stops with a bus fault.\n"
 	t += "• [b]Pushing inside a loop[/b] without popping: SP keeps going down until the stack runs over your data and code.\n"
 	return t
 
@@ -1775,9 +1785,9 @@ func _examples2() -> String:
 		return "\n[font_size=%d][b]%s[/b][/font_size]   [color=%s]%s%s[/color]\n" % [roundi(21 * text_scale), n, dim, f, extra]
 	t += head.call("4 · Add up a list in memory", "04_memory.s", " · 32 instructions")
 	t += "Loads four numbers with [code]ldr[/code], adds them up, and stores the total with [code]str[/code].\n"
-	t += "• Open the Memory tab and Go to [code]numbers[/code]. The dump starts at the row [code]3020[/code]; its first 4 bytes are the end of the literal pool (the address of [code]total[/code]), and [code]numbers[/code] starts at [code]3024[/code]: [code]0A 00 00 00  14 00 00 00  1E 00 00 00  28 00 00 00[/code] are 10, 20, 30 and 40 as little-endian words. [code]total[/code] follows at [code]3034[/code], still 0.\n"
-	t += "• Watch R1 step through [code]0x3024[/code], [code]0x3028[/code], [code]0x302C[/code], [code]0x3030[/code] and R2 grow to [code]0x64[/code] (100). " + _link("loadstore", "Loads and stores") + " has the table.\n"
-	t += "• At the [code]str[/code], the bytes at [code]3034[/code] turn yellow: [code]64 00 00 00[/code].\n"
+	t += "• Open the Memory tab and Go to [code]numbers[/code]. Its [code].data[/code] is in SRAM, so [code]numbers[/code] starts the row [code]20000000[/code]: [code]0A 00 00 00  14 00 00 00  1E 00 00 00  28 00 00 00[/code] are 10, 20, 30 and 40 as little-endian words. [code]total[/code] follows at [code]20000010[/code], still 0. (The code that uses them is in flash, at [code]10000100[/code].)\n"
+	t += "• Watch R1 step through [code]0x20000000[/code], [code]0x20000004[/code], [code]0x20000008[/code], [code]0x2000000C[/code] and R2 grow to [code]0x64[/code] (100). " + _link("loadstore", "Loads and stores") + " has the table.\n"
+	t += "• At the [code]str[/code], the bytes at [code]20000010[/code] turn yellow: [code]64 00 00 00[/code].\n"
 	t += "[b]Try it:[/b] add a fifth number ([code].word 10, 20, 30, 40, 50[/code] and [code]movs r3, #5[/code]). The total becomes 150, [code]0x96[/code].\n"
 	t += head.call("5 · Blink an LED", "05_blink_led.s", " · runs until you pause it")
 	t += "Flips GP15 on and off forever. " + _link("gpio", "GPIO: controlling pins") + " explains every line.\n"
@@ -1851,7 +1861,7 @@ func _blocks() -> String:
 		["[b]Multiplexer[/b] (mux)", "Picks one of its inputs and passes it through. Its [b]select[/b] signal says which.", "A trapezoid: inputs on the long side, output from the short side, select on a slanted side.", "PCMUX, ADDR1MUX, ADDR2MUX, SR2MUX"],
 		["[b]Adder[/b]", "Adds two numbers, all the time.", "A trapezoid.", "the +2 PC incrementer, the address adder, the +4 MAR incrementer"],
 		["[b]ALU[/b]", "Arithmetic Logic Unit: adds, subtracts, ANDs, shifts…, picked by the [code]ALUK[/code] signal. It also works out the N Z C V flags of its result.", "A trapezoid labelled ALU. It also shows the values held in its two input latches, A and B.", "the ALU"],
-		["[b]Memory[/b]", "Reads or writes the byte, halfword or word at the address in MAR when [code]MEM.EN[/code] is on; [code]R/W[/code] says which.", "The box labelled MEMORY / I-O.", "RAM and the I/O registers"],
+		["[b]Memory[/b]", "Reads or writes the byte, halfword or word at the address in MAR when [code]MEM.EN[/code] is on; [code]R/W[/code] says which.", "The box labelled MEMORY / I-O.", "memory (ROM, flash, SRAM) and the I/O registers"],
 		["[b]Control unit[/b]", "The FSM. Each cycle, its current state turns on a set of control signals and chooses the next state.", "The FSM box; its control signals are the purple dashed stubs.", "the FSM"],
 	], 1)
 	t += _sub("Two kinds of logic")
@@ -1866,7 +1876,7 @@ func _blocks() -> String:
 ## "Tutorial: one ADDS": ADDS R2, R0, R1 from 02_add.s, cycle by cycle.
 func _tutorial() -> String:
 	var t := _h("Tutorial: one instruction, cycle by cycle")
-	t += "Follow one ADDS through the CPU, with the real values picosim shows. It is the instruction [code]adds r2, r0, r1[/code] at address [code]3006[/code] in the [b]Add two numbers[/b] example, where R0 = 3 and R1 = 4.\n"
+	t += "Follow one ADDS through the CPU, with the real values picosim shows. It is the instruction [code]adds r2, r0, r1[/code] at address [code]10000106[/code] in the [b]Add two numbers[/b] example, where R0 = 3 and R1 = 4.\n"
 	t += _sub("Set it up")
 	t += "1. Open [b]Add two numbers[/b] from " + _k("Examples") + " and click " + _k("Show CPU Diagram") + ".\n"
 	t += "2. In the [b]Walkthrough[/b] beside the diagram, click the narrow first column of the step [code]3006  adds r2, r0, r1[/code] to set a breakpoint (a red ●).\n"
@@ -1874,12 +1884,12 @@ func _tutorial() -> String:
 	t += "4. Press " + _k("Step cycle") + " (" + _k("F11") + ") once for each row of the table, and compare the diagram and the inspector with it.\n"
 	t += _sub("The six cycles")
 	t += _grid(["#", "State", "Control signals", "What happens", "At the clock edge"], [
-		["1", "FETCH_ADDR", _sig("GatePC LD.MAR PCINC=+2 PCMUX=PC+2 LD.PC"), "The PC drives the bus ([code]0x00003006[/code]) so MAR can take it. The +2 incrementer and PCMUX prepare PC + 2.", "MAR ← [code]0x00003006[/code]\nPC → [code]0x00003008[/code]"],
+		["1", "FETCH_ADDR", _sig("GatePC LD.MAR PCINC=+2 PCMUX=PC+2 LD.PC"), "The PC drives the bus ([code]0x10000106[/code]) so MAR can take it. The +2 incrementer and PCMUX prepare PC + 2.", "MAR ← [code]0x10000106[/code]\nPC → [code]0x10000108[/code]"],
 		["2", "FETCH_MEMORY", _sig("MEM.EN R/W=READ LD.MDR"), "Memory reads the halfword at MAR. Nothing is on the bus: memory's output goes straight to MDR.", "MDR ← [code]0x00001842[/code]"],
 		["3", "FETCH_IR", _sig("GateMDR LD.IR"), "MDR drives the bus ([code]0x00001842[/code]) and IR takes it: the instruction is now where the FSM can read it.", "IR ← [code]0x1842[/code]"],
 		["4", "DECODE", _sig("DR=R2 SR1=R0 SR2=R1 ALUK=ADD"), "The FSM reads IR: an ADDS, result to R2, inputs R0 and R1. It sets up register numbers and the ALU operation for the next cycles.", "nothing is stored"],
 		["5", "FETCH_OPERANDS", _sig("SR1=R0 SR2=R1 LD.ALUA LD.ALUB"), "The register file reads R0 and R1 into the ALU's input latches. The bus is not needed: the register file has its own read ports.", "ALU A ← [code]0x00000003[/code]\nALU B ← [code]0x00000004[/code]"],
-		["6", "EXECUTE_COMMIT", _sig("ALUK=ADD GateALU DR=R2 LD.REG LD.CC"), "The ALU adds; GateALU puts the result, [code]0x00000007[/code], on the bus; R2 and the flags load it.", "R2 → [code]0x00000007[/code]\nN Z C V ← 0 0 0 0"],
+		["6", "EXECUTE_COMMIT", _sig("ALUK=ADD GateALU DR=R2 LD.REG LD.CC"), "The ALU adds; GateALU puts the result, [code]0x10000007[/code], on the bus; R2 and the flags load it.", "R2 → [code]0x10000007[/code]\nN Z C V ← 0 0 0 0"],
 	], 3)
 	t += "(ALU B already held 4 from the instruction before, so picosim lists only ALU A as changed in cycle 5.)\n"
 	t += _sub("Decoding 0x1842")
@@ -1891,7 +1901,7 @@ func _tutorial() -> String:
 	t += "Write [code]0x1842[/code] in binary ([code]0001 1000 0100 0010[/code]) and split it at those places to check. Each register field is 3 bits, which is why these instructions can only name R0–R7.\n"
 	t += _sub("What to notice")
 	t += "• The first three cycles are the same for every instruction: that is the fetch.\n"
-	t += "• The PC already points at the [i]next[/i] instruction ([code]0x3008[/code]) after the first cycle.\n"
+	t += "• The PC already points at the [i]next[/i] instruction ([code]0x10000108[/code]) after the first cycle.\n"
 	t += "• The bus carries at most one value per cycle, and in cycles 2, 4 and 5 it carries nothing.\n"
 	t += "• R2 changes only at the very last clock edge. Until then the Registers panel still shows the old value.\n"
 	t += _sub("Check yourself")
@@ -1913,46 +1923,46 @@ func _kinds() -> String:
 	var t := _h("Loads, stores, branches and calls")
 	t += "Every instruction starts with the same 3-cycle fetch (see the " + _link("tutorial", "tutorial") + "). What follows depends on the kind of instruction. These are the cycles after the fetch, with the values picosim really shows. Set a breakpoint on the instruction, Run to it, and press " + _k("Step cycle") + " to follow along.\n"
 	t += _sub("Load: ldr r0, [lb]r1]  —  7 cycles")
-	t += "From [b]Add up a list in memory[/b], address [code]3008[/code], first pass (R1 = [code]0x3024[/code]):\n"
+	t += "From [b]Add up a list in memory[/b], address [code]10000108[/code], first pass (R1 = [code]0x20000000[/code], the address of [code]numbers[/code], in SRAM):\n"
 	t += _grid(["State", "What happens", "At the clock edge"], [
 		["DECODE", "A word load into R0; the address will be R1 + 0. " + _sig("DR=R0 ADDR1MUX=SR1 ADDR2MUX=ZEXT(IR[lb]10:6])x4 SIZE=word"), "nothing"],
-		["EVALUATE_ADDRESS", "The address adder adds R1 and the offset (0) and drives the sum onto the bus through GateADDR. " + _sig("GateADDR LD.MAR"), "MAR ← [code]0x00003024[/code]"],
+		["EVALUATE_ADDRESS", "The address adder adds R1 and the offset (0) and drives the sum onto the bus through GateADDR. " + _sig("GateADDR LD.MAR"), "MAR ← [code]0x20000000[/code]"],
 		["FETCH_OPERANDS", "Memory reads the word at MAR. " + _sig("MEM.EN R/W=READ LD.MDR"), "MDR ← [code]0x0000000A[/code]"],
 		["STORE_RESULT", "MDR drives the bus through LOAD EXT (which would fill in the top bits for ldrb or ldrh) and R0 loads it. " + _sig("GateMDR DR=R0 LD.REG"), "R0 → [code]0x0000000A[/code]"],
 	], 1)
 	t += _sub("Store: str r2, [lb]r1]  —  7 cycles")
-	t += "Same example, address [code]3014[/code] (R1 = [code]0x3034[/code], R2 = [code]0x64[/code]):\n"
+	t += "Same example, address [code]10000114[/code] (R1 = [code]0x20000010[/code], the address of [code]total[/code], R2 = [code]0x64[/code]):\n"
 	t += _grid(["State", "What happens", "At the clock edge"], [
-		["EVALUATE_ADDRESS", "As for the load: MAR gets the address.", "MAR ← [code]0x00003034[/code]"],
+		["EVALUATE_ADDRESS", "As for the load: MAR gets the address.", "MAR ← [code]0x20000010[/code]"],
 		["FETCH_OPERANDS", "The data to store must get into MDR. R2 goes through the ALU unchanged ([code]ALUK=PASS[/code]) and onto the bus. " + _sig("SR1=R2 ALUK=PASS GateALU LD.MDR"), "MDR ← [code]0x00000064[/code]"],
-		["STORE_RESULT", "Memory writes MDR at the address in MAR. " + _sig("MEM.EN R/W=WRITE"), "memory [code]3034[/code]–[code]3037[/code] ← [code]64 00 00 00[/code]"],
+		["STORE_RESULT", "Memory writes MDR at the address in MAR. " + _sig("MEM.EN R/W=WRITE"), "memory [code]20000010[/code]–[code]20000013[/code] ← [code]64 00 00 00[/code]"],
 	], 1)
 	t += _sub("Branch: bne loop  —  5 cycles")
-	t += "Same example, address [code]3010[/code], when Z = 0 (taken):\n"
+	t += "Same example, address [code]10000110[/code], when Z = 0 (taken):\n"
 	t += _grid(["State", "What happens", "At the clock edge"], [
 		["DECODE", "A conditional branch: condition NE; the target will be PC + offset. " + _sig("COND=NE ADDR1MUX=PC ADDR2MUX=SEXT(offset)x2"), "nothing"],
-		["EXECUTE_PC", "COND EVAL checks the flags: Z = 0, so [code]BranchTaken=1[/code]. The address adder works out the target, [code]0x00003014 + (−12) = 0x00003008[/code], and PCMUX passes it to the PC. " + _sig("BranchTaken=1 PCMUX=ADDER LD.PC"), "PC → [code]0x00003008[/code]"],
+		["EXECUTE_PC", "COND EVAL checks the flags: Z = 0, so [code]BranchTaken=1[/code]. The address adder works out the target, [code]0x10000114 + (−12) = 0x10000108[/code], and PCMUX passes it to the PC. " + _sig("BranchTaken=1 PCMUX=ADDER LD.PC"), "PC → [code]0x10000108[/code]"],
 	], 1)
-	t += "When the branch is [i]not[/i] taken (on the last pass), BranchTaken = 0 and LD.PC stays off, so the PC keeps [code]0x3012[/code], the next instruction, which the fetch already put there. Either way it takes 5 cycles.\n"
-	t += _note("PC + 4", "Why [code]0x3014[/code] and not [code]0x3010[/code]? On ARM, an instruction that uses the PC as a value always sees its own address + 4. The assembler knows this and works out the offset (−12) to match.")
+	t += "When the branch is [i]not[/i] taken (on the last pass), BranchTaken = 0 and LD.PC stays off, so the PC keeps [code]0x10000112[/code], the next instruction, which the fetch already put there. Either way it takes 5 cycles.\n"
+	t += _note("PC + 4", "Why [code]0x10000114[/code] and not [code]0x10000110[/code]? On ARM, an instruction that uses the PC as a value always sees its own address + 4. The assembler knows this and works out the offset (−12) to match.")
 	t += _sub("Call: bl twice  —  9 cycles")
-	t += "From [b]Call a function[/b], address [code]3004[/code]. BL is 32 bits long, so it is fetched in two halves:\n"
+	t += "From [b]Call a function[/b], address [code]10000104[/code]. BL is 32 bits long, so it is fetched in two halves:\n"
 	t += _grid(["State", "What happens", "At the clock edge"], [
 		["FETCH_IR", "IR's top bits ([code]0xF000[/code]) say this is a 32-bit instruction, so…", "IR ← [code]0xF000[/code]"],
-		["FETCH2_ADDR, FETCH2_MEMORY, FETCH2_IR", "…the fetch runs again for the second halfword, into IR2.", "IR2 ← [code]0xF80C[/code], PC → [code]0x00003008[/code]"],
+		["FETCH2_ADDR, FETCH2_MEMORY, FETCH2_IR", "…the fetch runs again for the second halfword, into IR2.", "IR2 ← [code]0xF80C[/code], PC → [code]0x10000108[/code]"],
 		["DECODE", "BL: the offset (24) comes from bits of both IR and IR2. " + _sig("DR=LR ADDR1MUX=PC ADDR2MUX=SEXT(offset)x2"), "nothing"],
-		["LINK", "The PC (already the address of the next instruction) goes onto the bus with bit 0 set by SET THUMB, into LR. " + _sig("GatePC SET THUMB BIT LD.LR"), "LR → [code]0x00003009[/code]"],
-		["EXECUTE_PC", "PC ← [code]0x00003008 + 24[/code]. " + _sig("PCMUX=ADDER LD.PC"), "PC → [code]0x00003020[/code] ([code]twice[/code])"],
+		["LINK", "The PC (already the address of the next instruction) goes onto the bus with bit 0 set by SET THUMB, into LR. " + _sig("GatePC SET THUMB BIT LD.LR"), "LR → [code]0x10000109[/code]"],
+		["EXECUTE_PC", "PC ← [code]0x10000108 + 24[/code]. " + _sig("PCMUX=ADDER LD.PC"), "PC → [code]0x10000120[/code] ([code]twice[/code])"],
 	], 1)
 	t += _sub("Push and pop: 6 + 2 cycles per register")
-	t += "[code]push {lr}[/code] in print_digit ([code]3024[/code], SP = [code]0xFFF8[/code]), 8 cycles:\n"
+	t += "[code]push {lr}[/code] in print_digit ([code]10000124[/code], SP = [code]0x20041FF8[/code]), 8 cycles:\n"
 	t += _grid(["State", "What happens", "At the clock edge"], [
-		["EVALUATE_ADDRESS", "The address adder works out SP − 4 × (number of registers). " + _sig("ADDR1MUX=SP ADDR2MUX=-4n GateADDR LD.MAR"), "MAR ← [code]0x0000FFF4[/code]"],
-		["FETCH_OPERANDS", "LR passes through the ALU into MDR. " + _sig("SR1=LR ALUK=PASS GateALU LD.MDR"), "MDR ← [code]0x0000300D[/code]"],
-		["STORE_RESULT", "Memory writes it; MAR steps on by 4 for the next register. " + _sig("MEM.EN R/W=WRITE MAR+4"), "memory [code]FFF4[/code] ← [code]0x0000300D[/code]"],
-		["WRITEBACK", "SP is lowered by the same amount. " + _sig("ADDR1MUX=SP ADDR2MUX=-4n GateADDR LD.SP"), "SP → [code]0x0000FFF4[/code]"],
+		["EVALUATE_ADDRESS", "The address adder works out SP − 4 × (number of registers). " + _sig("ADDR1MUX=SP ADDR2MUX=-4n GateADDR LD.MAR"), "MAR ← [code]0x20041FF4[/code]"],
+		["FETCH_OPERANDS", "LR passes through the ALU into MDR. " + _sig("SR1=LR ALUK=PASS GateALU LD.MDR"), "MDR ← [code]0x1000010D[/code]"],
+		["STORE_RESULT", "Memory writes it; MAR steps on by 4 for the next register. " + _sig("MEM.EN R/W=WRITE MAR+4"), "memory [code]20041FF4[/code] ← [code]0x1000010D[/code]"],
+		["WRITEBACK", "SP is lowered by the same amount. " + _sig("ADDR1MUX=SP ADDR2MUX=-4n GateADDR LD.SP"), "SP → [code]0x20041FF4[/code]"],
 	], 1)
-	t += "[code]pop {pc}[/code] at [code]302C[/code] mirrors it: MAR ← SP ([code]0xFFF4[/code]); memory → MDR ([code]0x0000300D[/code]); then, because the register is the PC, [b]EXECUTE_PC[/b] loads PC ← MDR with bit 0 cleared by CLR THUMB ([code]0x0000300C[/code]); WRITEBACK raises SP to [code]0xFFF8[/code]. With 2 registers ([code]push {r7, lr}[/code]) the FETCH_OPERANDS / STORE_RESULT pair runs twice: 10 cycles.\n"
+	t += "[code]pop {pc}[/code] at [code]1000012C[/code] mirrors it: MAR ← SP ([code]0x20041FF4[/code]); memory → MDR ([code]0x1000010D[/code]); then, because the register is the PC, [b]EXECUTE_PC[/b] loads PC ← MDR with bit 0 cleared by CLR THUMB ([code]0x1000010C[/code]); WRITEBACK raises SP to [code]0x20041FF8[/code]. With 2 registers ([code]push {r7, lr}[/code]) the FETCH_OPERANDS / STORE_RESULT pair runs twice: 10 cycles.\n"
 	t += _sub("All the counts")
 	t += "Operate (ADDS, MOVS, CMP …) 6 · load and store 7 · B and B<cond> 5 · BX 6 · BL 9 · PUSH and POP 6 + 2 per register · SVC and BKPT 5. " + _link("states", "FSM states") + " lists every sequence, and the full table is in [code]docs/cycles.md[/code].\n"
 	return t
@@ -1977,7 +1987,7 @@ func _signals() -> String:
 		[_sig("SIZE=…"), "The access size: word, halfword or byte.", _sig("SIZE=word")],
 		[_sig("LOAD EXT=…"), "How LOAD EXT widens a loaded byte or halfword to 32 bits: with zeros (Z…) or copies of its sign bit (S…).", _sig("LOAD EXT=Zword")],
 		[_sig("STORE ALIGN"), "Keeps only the byte or halfword a STRB or STRH writes.", ""],
-		[_sig("IOSEL=IO"), "The access goes to an I/O register (address 0x10000 and up) instead of RAM.", ""],
+		[_sig("IOSEL=IO"), "The access goes to an I/O register (an address outside ROM, flash and SRAM) instead of memory.", ""],
 		[_sig("COND=… BranchTaken=…"), "The branch condition from DECODE, and COND EVAL's answer (1 = jump).", _sig("COND=NE BranchTaken=1")],
 		[_sig("SET THUMB BIT") + " / " + _sig("CLR THUMB BIT"), "Set bit 0 of a return address going into LR; clear it on an address going into the PC.", ""],
 		[_sig("MAR+4"), "The +4 incrementer moves MAR on to the next word (PUSH, POP, LDM, STM).", ""],
@@ -2139,7 +2149,7 @@ func _add_states() -> void:
 	t += _sub("Other words you may see")
 	t += "• [b]HALTED[/b] — shown as Next state after BKPT (or a CPU fault): the CPU is stopped. " + _k("Reload") + " starts again.\n"
 	t += "• [b](next)[/b] — the inspector's row for the cycle that has not run yet; between instructions it is always FETCH_ADDR.\n"
-	t += "• [b]IOSEL=IO[/b] — a memory access to an address of 0x10000 or above goes to the Pico's I/O registers instead of RAM.\n"
+	t += "• [b]IOSEL=IO[/b] — a memory access to an address outside ROM, flash and SRAM goes to the Pico's I/O registers instead of memory.\n"
 	for st in info.ORDER:
 		t += "\n[hr color=%s height=1]\n" % _c("edge")
 		t += info.entry_bbcode(st, roundi(20 * text_scale)) + "\n"

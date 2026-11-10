@@ -3,13 +3,14 @@ Lockstep: run a program one instruction at a time in picosim and on the
 RP2040 at once, and compare after every instruction.
 
 After each instruction both machines are compared on
-  * R0-R15 (a value that is an address may differ by image.OFFSET, see
+  * R0-R15 (a value that is a code address differs by image.CODE_OFF, see
     image.py; it is shown as picosim's address),
   * the N, Z, C and V flags,
   * every byte the instruction wrote to memory (read back from the chip),
   * whether the instruction faulted (a HardFault on the chip).
-When the program ends: all of the program's memory (0x3000-0xFFFF, data,
-stack and code), what it printed, and the GPIO registers it may have set.
+When the program ends: all of the program's memory (its code, its data in
+SRAM and the top 16 KiB of SRAM, where the stack is), what it printed, and
+the GPIO registers it may have set.
 
 Calls into the built-in OS (putchar, getchar, bench_start, bench_stop) are
 one "call" step: picosim runs its OS; on the chip the test runner does the
@@ -25,7 +26,8 @@ the bytes written) unless the run stops at the first difference.
 import os
 import struct
 
-from ..cpu import SimulatorError, MEM_SIZE
+from ..cpu import SimulatorError
+from ..memmap import span, fmt
 from ..loader import load_program, LoadError
 from .. import settings as prog_settings
 from . import image as img
@@ -33,7 +35,7 @@ from . import oscalls
 from .rsp import RSPError
 from .target import TargetError
 
-USER = img.USER_BASE
+
 RG_RAM, RG_SIO, RG_APB, RG_AHB = range(4)
 FLAG_NAMES = 'NZCV'
 
@@ -84,7 +86,7 @@ class SimSide:
 
     def step_insn(self):
         """Run one instruction.  Returns (writes, io_writes, record, fault):
-        writes [(addr, width, value)] to RAM, io_writes likewise to
+        writes [(addr, width, value)] to memory, io_writes likewise to
         peripherals, the core's record of it (timing.py's format), and the
         fault message if it faulted."""
         c = self.core
@@ -120,7 +122,7 @@ def start_chip(target, sim, hwimg, bench=False):
     regs = sim.regs()
     hw = list(regs)
     for i in (13, 14, 15):
-        hw[i] = img.to_hw(regs[i]) if regs[i] <= MEM_SIZE else regs[i]
+        hw[i] = img.to_hw(regs[i])
     if regs[0] == sim.prog.main_addr | 1:
         hw[0] = img.to_hw(regs[0])
     target.set_regs(hw, (sim.flags() << 28) | 0x01000000)
@@ -256,7 +258,7 @@ class Lockstep:
         diffs = self._compare(sim_regs, sim_flags, hw_regs, hw_xpsr)
         for (a, w, v), (_, _, hv) in zip(writes, hw_writes):
             if hv is None or not (img.same(v, hv) if w == 4 else v == hv):
-                diffs.append(f"[0x{a:04X}]")
+                diffs.append(f"[{fmt(a)}]")
         row['diffs'] = diffs
         io_read = rec is not None and any(rec['reads'][k] for k in (RG_SIO, RG_APB, RG_AHB))
         if not diffs:
@@ -273,7 +275,7 @@ class Lockstep:
 
     def _read_back(self, writes):
         """The chip's bytes at each address picosim wrote (one read for them all)."""
-        ram = [(a, w) for a, w, _ in writes if a + w <= MEM_SIZE]
+        ram = [(a, w) for a, w, _ in writes if span(a, w)]
         if not ram:
             return [(a, w, None) for a, w, _ in writes]
         lo, hi = min(a for a, _ in ram), max(a + w for a, w in ram)
@@ -283,7 +285,7 @@ class Lockstep:
             data = None
         out = []
         for a, w, _ in writes:
-            if data is None or a + w > MEM_SIZE:
+            if data is None or not span(a, w):
                 out.append((a, w, None))
             else:
                 out.append((a, w, int.from_bytes(data[a - lo:a - lo + w], 'little')))
@@ -353,27 +355,31 @@ class Lockstep:
         sim, t = self.sim, self.target
         summary = {'name': self.name, 'source': self.source, 'kind': 'trace', 'end': end,
                    'steps': n, 'counts': dict(self.counts), 'image': self.hwimg.digest}
-        # all of the program's memory
-        top = MEM_SIZE
-        hw = t.rsp.read_mem(img.to_hw(USER), top - USER)
-        mine = sim.core.get_mem_slice(USER, top - USER)
-        diffs, mapped = [], 0
+        # all of the program's memory: its code, its data, the stack's part of SRAM
+        diffs, mapped, compared = [], 0, 0
         # a HardFault stacks 8 words (36 bytes with alignment) below SP on the
         # chip; picosim stops without stacking, so that part is left out
         skip = (self.fault_sp - 36, self.fault_sp) if self.fault_sp is not None else (0, 0)
-        for off in range(0, top - USER, 4):
-            if skip[0] <= USER + off < skip[1]:
+        for lo, hi in self.hwimg.compare:
+            hi = lo + (hi - lo) // 4 * 4
+            if hi <= lo:
                 continue
-            a, b = mine[off:off + 4], hw[off:off + 4]
-            if a == b:
-                continue
-            s, h = struct.unpack('<I', a)[0], struct.unpack('<I', b)[0]
-            if img.same(s, h):
-                mapped += 1
-                continue
-            diffs.append({'addr': USER + off, 'sim': s, 'hw': h})
-        summary['memory'] = {'start': USER, 'end': top,
-                             'compared': top - USER - (skip[1] - skip[0]),
+            hw = t.rsp.read_mem(img.to_hw(lo), hi - lo)
+            mine = sim.core.get_mem_slice(lo, hi - lo)
+            for off in range(0, hi - lo, 4):
+                if skip[0] <= lo + off < skip[1]:
+                    continue
+                compared += 4
+                a, b = mine[off:off + 4], hw[off:off + 4]
+                if a == b:
+                    continue
+                s, h = struct.unpack('<I', a)[0], struct.unpack('<I', b)[0]
+                if img.same(s, h):
+                    mapped += 1
+                    continue
+                diffs.append({'addr': lo + off, 'sim': s, 'hw': h})
+        summary['memory'] = {'regions': [list(r) for r in self.hwimg.compare],
+                             'compared': compared,
                              'different_words': len(diffs), 'first': diffs[:40],
                              'address_words': mapped,
                              'skipped': list(skip) if skip[1] else None}

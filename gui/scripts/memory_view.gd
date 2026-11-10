@@ -1,9 +1,11 @@
 extends VBoxContainer
 ## The Memory tab: memory as a place students can see and explore.
 ##
-##   Map      — the whole address space as a strip: the built-in OS, your code,
-##              your data, free RAM, the stack (growing down from the top) and
-##              the I/O registers, with PC and SP marked.  Click a part to go there.
+##   Map      — the address space as a strip, in the RP2040's three memories:
+##              the boot ROM; flash, with the built-in OS and your code; SRAM,
+##              with your data, free SRAM and the stack (growing down from the
+##              top); then the I/O registers, with PC and SP marked.  Click a
+##              part to go there.
 ##   Bytes    — 256 bytes, 16 to a row, each coloured by what it is (an
 ##              instruction, a literal or string, data, the stack, free).
 ##              Labels sit above the bytes they name, and registers that hold
@@ -11,7 +13,7 @@ extends VBoxContainer
 ##              the last step read are outlined in blue, the ones it wrote are
 ##              yellow.  Show as Bytes, Words (4 bytes put together, lowest
 ##              first) or Characters.
-##   Stack    — the words from SP up to the top of RAM as boxes, newest at the
+##   Stack    — the words from SP up to the top of SRAM as boxes, newest at the
 ##              bottom, each saying what put it there (which register a PUSH
 ##              saved, or a return address), grouped by function.  Words the
 ##              last step popped are shown faded just below SP.
@@ -23,31 +25,32 @@ extends VBoxContainer
 
 const HelpButton := preload("res://scripts/help_button.gd")
 
-const RAM_TOP := 0x10000
-const OS_TOP := 0x3000
 const ROW := 16
 const MODES := ["Bytes", "Words", "Characters"]
 const SETTINGS := "user://settings.cfg"
 
 ## what a byte is: [name, palette colour, tint alpha, words for the inspector]
-enum { K_FREE, K_OS_CODE, K_OS, K_INSN, K_LIT, K_DATA, K_BSS, K_STACK, K_POINTER }
+enum { K_FREE, K_OS_CODE, K_OS, K_INSN, K_LIT, K_DATA, K_BSS, K_STACK, K_POINTER, K_ERASED, K_ROM }
 const KINDS := {
-	K_FREE: ["free RAM", "", 0.0, "free RAM: nothing of the program is stored here"],
-	K_OS_CODE: ["OS code", "cyan", 0.10, "an instruction of picosim's built-in OS"],
-	K_OS: ["OS", "", 0.0, "the built-in OS's part of memory (unused here)"],
+	K_FREE: ["free SRAM", "", 0.0, "free SRAM: nothing of the program is stored here"],
+	K_OS_CODE: ["OS code", "cyan", 0.10, "an instruction of picosim's built-in OS (in flash)"],
+	K_OS: ["OS", "", 0.0, "the built-in OS's part of flash (unused here)"],
 	K_INSN: ["instruction", "cyan", 0.20, "part of an instruction of your program"],
 	K_LIT: ["literal / string", "purple", 0.22, "data stored with your code: a literal-pool number or a string"],
 	K_DATA: ["data", "green", 0.20, "your program's data (after .data)"],
 	K_BSS: ["zeroed data", "green", 0.12, "your program's zero-filled data (.bss)"],
-	K_STACK: ["stack", "sel", 0.20, "the stack: between SP and the top of RAM"],
+	K_STACK: ["stack", "sel", 0.20, "the stack: between SP and the top of SRAM"],
 	K_POINTER: ["main's address", "yellow", 0.16, "where the OS keeps the address of your main"],
+	K_ERASED: ["erased flash", "", 0.0, "flash past the end of your program: erased, so every byte reads 0xFF"],
+	K_ROM: ["boot ROM", "", 0.0, "the Pico's boot ROM (picosim leaves it empty; a store here would stop the program)"],
 }
 
 var font: Font
 var mono: Font
 var st: Dictionary = {}
 var prog: Dictionary = {}
-var kinds := PackedByteArray()      # 64 KB of K_* codes (the stack is added when drawn)
+var flash_kinds := PackedByteArray()   # K_* codes from FLASH_BASE: the OS, then the program's code
+var sram_kinds := PackedByteArray()    # K_* codes from SRAM_BASE: the program's data (the stack is added when drawn)
 var label_list: Array = []          # [[addr, name]], sorted, without OS-internal names
 var labels_at := {}                 # addr → [names]
 var rows_by_addr := {}              # listing row address → row
@@ -57,7 +60,7 @@ var follow := true
 var hover := -1
 var selected := -1
 var text_scale := 1.0
-var view_addr := 0x3000             # the 256-byte window the server sends
+var view_addr := Backend.OS_END     # the 256-byte window the server sends
 var data := PackedByteArray()
 var _key = null                     # what the drawings were last built from
 
@@ -101,7 +104,7 @@ func _ready() -> void:
 	goto_edit.placeholder_text = "address or label"
 	goto_edit.custom_minimum_size.x = 130
 	goto_edit.add_theme_font_override("font", mono)
-	goto_edit.tooltip_text = "Type an address (like 0x3000) or a label from your program and press Enter"
+	goto_edit.tooltip_text = "Type an address (like 0x20000000) or a label from your program and press Enter"
 	goto_edit.text_submitted.connect(_on_goto)
 	top.add_child(goto_edit)
 	for spec in [["PC", "pc", "The instruction that runs next"], ["SP", "sp", "The top of the stack"],
@@ -148,7 +151,7 @@ func _ready() -> void:
 	map = Part.new()
 	map.view = self
 	map.which = "map"
-	map.custom_minimum_size = Vector2(112, 160)
+	map.custom_minimum_size = Vector2(124, 160)
 	map.tooltip_text = " "
 	body.add_child(map)
 	grid = Part.new()
@@ -268,26 +271,27 @@ func _redraw_all() -> void:
 
 func set_program(p: Dictionary) -> void:
 	prog = p
-	kinds = PackedByteArray()
-	kinds.resize(RAM_TOP)                   # all K_FREE (0)
 	var reg: Dictionary = p.get("regions", {})
+	var secs: Dictionary = reg.get("sections", {})
+	flash_kinds = PackedByteArray()
+	flash_kinds.resize(maxi(int(reg.get("program_end", Backend.OS_END)), Backend.OS_END) - Backend.FLASH_BASE)
+	flash_kinds.fill(K_OS)
+	for a in range(Backend.OS_END - Backend.FLASH_BASE, flash_kinds.size()):
+		flash_kinds[a] = K_FREE
 	for r in reg.get("runs", []):
 		var k := K_INSN if str(r[2]) == "insn" else K_LIT
-		if int(r[0]) < OS_TOP:
+		if Backend.in_os(int(r[0])):
 			k = K_OS_CODE if k == K_INSN else K_LIT
-		for a in range(int(r[0]), mini(int(r[1]), RAM_TOP)):
-			kinds[a] = k
-	var osend := int(reg.get("os_code_end", 0))
-	for a in range(osend, OS_TOP):
-		if kinds[a] == K_FREE:
-			kinds[a] = K_OS
-	for a in range(0x2FFC, OS_TOP):
-		kinds[a] = K_POINTER
-	var secs: Dictionary = reg.get("sections", {})
+		for a in range(maxi(int(r[0]), Backend.FLASH_BASE), mini(int(r[1]), Backend.FLASH_BASE + flash_kinds.size())):
+			flash_kinds[a - Backend.FLASH_BASE] = k
+	for a in range(Backend.MAIN_PTR, Backend.OS_END):
+		flash_kinds[a - Backend.FLASH_BASE] = K_POINTER
+	sram_kinds = PackedByteArray()
+	sram_kinds.resize(clampi(int(reg.get("data_end", Backend.SRAM_BASE)), Backend.SRAM_BASE, Backend.SRAM_END) - Backend.SRAM_BASE)
 	for name in ["data", "bss"]:
 		if secs.has(name):
-			for a in range(int(secs[name][0]), mini(int(secs[name][1]), RAM_TOP)):
-				kinds[a] = K_DATA if name == "data" else K_BSS
+			for a in range(maxi(int(secs[name][0]), Backend.SRAM_BASE), mini(int(secs[name][1]), Backend.SRAM_BASE + sram_kinds.size())):
+				sram_kinds[a - Backend.SRAM_BASE] = K_DATA if name == "data" else K_BSS
 	label_list.clear()
 	labels_at.clear()
 	var labs: Dictionary = p.get("labels", {})
@@ -296,7 +300,7 @@ func set_program(p: Dictionary) -> void:
 		if n.begins_with(".") or n == "_end" or n.begins_with("$"):
 			continue
 		var a := int(labs[name])
-		if a < 0 or a >= RAM_TOP:
+		if not Backend.is_memory(a):
 			continue
 		label_list.append([a, n])
 		labels_at[a] = labels_at.get(a, []) + [n]
@@ -331,7 +335,7 @@ func update_state(s: Dictionary) -> void:
 	if key == _key:
 		return     # nothing the tab shows has changed
 	_key = key
-	view_addr = int(hv.get("addr", 0x3000))
+	view_addr = int(hv.get("addr", Backend.OS_END))
 	data = PackedByteArray(str(hv.get("data", "")).hex_decode())
 	if follow and not s.get("running", false):
 		_follow_access()
@@ -344,7 +348,7 @@ func update_state(s: Dictionary) -> void:
 func _follow_access() -> void:
 	for acc in st.get("mem_access", []):
 		var a := int(acc["addr"])
-		if a >= RAM_TOP or int(acc["insn"]) == a:
+		if not Backend.is_memory(a) or int(acc["insn"]) == a:
 			continue
 		var first := view_addr
 		var last := view_addr + _rows_fit() * ROW
@@ -354,7 +358,14 @@ func _follow_access() -> void:
 
 
 func _view(addr: int) -> void:
-	addr = clampi(addr, 0, RAM_TOP - 256) & ~0xF
+	var m := Backend.memory_of(addr)
+	if m.is_empty():                        # a lead-in before a target at a memory's start
+		m = Backend.memory_of(addr + 0x80)
+	if m.is_empty():                        # scrolled off a memory's end: stay at its edge
+		m = Backend.memory_of(view_addr)
+		if m.is_empty():
+			return
+	addr = clampi(addr, m[0], m[1] - 256) & ~0xF
 	if addr != view_addr:
 		Backend.send("view_mem", {"addr": addr, "len": 256})
 
@@ -368,7 +379,7 @@ func _on_goto(text: String) -> void:
 		inspector.text = "[color=%s]There is no label [b]%s[/b] in this program (labels are case-sensitive), and it is not a number.[/color]" % [Palette.hex("error"), _esc(t)]
 		return
 	v = int(v)
-	if v >= RAM_TOP:
+	if not Backend.is_memory(v):
 		inspector.text = _io_text(v)
 		return
 	selected = v
@@ -383,8 +394,8 @@ func _goto_special(which: String) -> void:
 	match which:
 		"pc": a = int(st["insn_addr"])
 		"sp": a = int(st["regs"][13])
-		"main": a = int(prog.get("main", 0x3000))
-	selected = mini(a, RAM_TOP - 1)
+		"main": a = int(prog.get("main", Backend.OS_END))
+	selected = a if Backend.is_memory(a) else -1
 	_view((a & ~0xF) - 0x40 if which == "sp" else (a & ~0xF) - 0x20)
 	_show_inspector()
 
@@ -423,12 +434,18 @@ func _write() -> void:
 # ── what is where ───────────────────────────────────────────────────────────
 
 func _kind(a: int) -> int:
-	if a < 0 or a >= RAM_TOP:
-		return K_FREE
-	var sp := int(st.get("regs", [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, RAM_TOP])[13])
-	if a >= sp and kinds.size() > a and kinds[a] == K_FREE:
-		return K_STACK
-	return kinds[a] if kinds.size() > a else K_FREE
+	if a >= Backend.FLASH_BASE and a < Backend.FLASH_END:
+		var i := a - Backend.FLASH_BASE
+		return flash_kinds[i] if i < flash_kinds.size() else K_ERASED
+	if a >= Backend.SRAM_BASE and a < Backend.SRAM_END:
+		var i := a - Backend.SRAM_BASE
+		if i < sram_kinds.size() and sram_kinds[i] != K_FREE:
+			return sram_kinds[i]
+		var sp := int(st.get("regs", [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, Backend.SRAM_END])[13])
+		return K_STACK if a >= sp else K_FREE
+	if a >= Backend.ROM_BASE and a < Backend.ROM_END:
+		return K_ROM
+	return K_FREE
 
 
 func _tint(k: int) -> Color:
@@ -446,7 +463,7 @@ func _byte(a: int) -> int:
 		return data[i]
 	# outside the window: the stack's bytes come with every state too
 	var sk: Dictionary = st.get("stack", {})
-	var j := a - int(sk.get("addr", RAM_TOP))
+	var j := a - int(sk.get("addr", Backend.SRAM_END))
 	var raw := str(sk.get("data", ""))
 	if j >= 0 and j * 2 + 2 <= raw.length():
 		return raw.substr(j * 2, 2).hex_to_int()
@@ -473,16 +490,17 @@ func _line_of(a: int) -> String:
 	var code := str(row.get("source", "")).get_slice("@", 0).get_slice("/*", 0).strip_edges()
 	if code == "":
 		code = " ".join(str(row.get("shown", row["text"])).split(" ", false))
-	return code + (("   (line %d)" % line) if line > 0 and int(row["addr"]) >= OS_TOP else "")
+	return code + (("   (line %d)" % line) if line > 0 and not Backend.in_os(int(row["addr"])) else "")
 
 
-## address → [register names] for R0–R12 and SP that hold an address in RAM.
+## address → [register names] for R0–R12 and SP that hold an address of the
+## program's (its code and constants in flash, or SRAM).
 func _pointers() -> Dictionary:
 	var out := {}
 	var regs: Array = st.get("regs", [])
 	for i in mini(regs.size(), 14):
 		var v := int(regs[i])
-		if v >= 0x3000 and v < RAM_TOP:
+		if (v >= Backend.OS_END and v < Backend.FLASH_END) or (v >= Backend.SRAM_BASE and v < Backend.SRAM_END):
 			var name: String = ["R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10", "R11", "R12", "SP"][i]
 			out[v] = out.get(v, []) + [name]
 	return out
@@ -495,7 +513,7 @@ func _accessed() -> Dictionary:
 		return out
 	for acc in st.get("mem_access", []):
 		for b in range(int(acc["addr"]), int(acc["addr"]) + int(acc["size"])):
-			if b < RAM_TOP:
+			if Backend.is_memory(b):
 				out[b] = str(acc["kind"])
 	return out
 
@@ -532,7 +550,7 @@ func _note_h() -> float:
 
 
 func _addr_w() -> float:
-	return 52.0 * text_scale
+	return 74.0 * text_scale        # 8 hex digits
 
 
 func _rows_fit() -> int:
@@ -612,7 +630,7 @@ func _draw_grid(c: Control) -> void:
 				c.draw_string(font, Vector2(tx, y + nh - 5 * text_scale), it[1], HORIZONTAL_ALIGNMENT_LEFT, -1, fs2, col_c)
 				c.draw_line(Vector2(tx, y + nh - 2), Vector2(tx, y + nh + 3), col_c, 2.0)
 			y += nh
-		c.draw_string(mono, Vector2(4, y + rh - 7 * text_scale), "%04X" % row_addr, HORIZONTAL_ALIGNMENT_LEFT, -1, fs2, dim)
+		c.draw_string(mono, Vector2(4, y + rh - 7 * text_scale), Backend.addr(row_addr), HORIZONTAL_ALIGNMENT_LEFT, -1, fs2, dim)
 		var col := 0
 		while col < ROW:
 			var a := row_addr + col
@@ -641,7 +659,7 @@ func _draw_grid(c: Control) -> void:
 				c.draw_rect(cell, Palette.c("sel"), false, 1.5)
 			if selected >= a and selected < a + span:
 				c.draw_rect(cell.grow(1), Palette.c("sel"), false, 2.5)
-			var col_t := Palette.c("changed") if hot else (txt if k != K_FREE and k != K_OS else dim)
+			var col_t := Palette.c("changed") if hot else (txt if not k in [K_FREE, K_OS, K_ERASED, K_ROM] else dim)
 			var s := ""
 			match mode:
 				0:
@@ -746,7 +764,7 @@ func _input_grid(c: Control, e) -> void:
 				selected = -1 if a == selected else a
 				if selected >= 0:
 					var v := _byte(a)
-					edit_field.placeholder_text = "new bytes at %04X" % a
+					edit_field.placeholder_text = "new bytes at " + Backend.addr(a)
 					edit_field.text = ("%02X" % v) if v >= 0 and mode != 1 else (("%02X %02X %02X %02X" % [_byte(a), _byte(a + 1), _byte(a + 2), _byte(a + 3)]) if v >= 0 else "")
 				grid.queue_redraw()
 				_show_inspector()
@@ -767,23 +785,24 @@ func _tip_grid(_c: Control, _at: Vector2) -> String:
 
 # ── the map ─────────────────────────────────────────────────────────────────
 
-## The parts of the address space, top to bottom:
+## The parts of the address space, top to bottom (low addresses first):
 ## [name, start, end, palette key, what it is, view address on click]
 func _map_parts() -> Array:
 	var reg: Dictionary = prog.get("regions", {})
 	var secs: Dictionary = reg.get("sections", {})
-	var sp := int(st.get("regs", [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, RAM_TOP])[13])
-	var text_end := int(secs.get("text", [OS_TOP, OS_TOP])[1])
-	var prog_end := int(reg.get("program_end", text_end))
+	var sp := int(st.get("regs", [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, Backend.SRAM_END])[13])
+	var text_end := int(secs.get("text", [Backend.OS_END, Backend.OS_END])[1])
+	var data_end := int(reg.get("data_end", Backend.SRAM_BASE))
 	var parts := []
-	parts.append(["built-in OS", 0, OS_TOP, "cyan", "picosim's OS: _start, putchar, getchar", 0])
-	parts.append(["your code", OS_TOP, text_end, "cyan", "your instructions, then their literal pools and strings", OS_TOP])
-	if prog_end > text_end:
-		parts.append(["your data", text_end, prog_end, "green", ".data and .bss: your program's variables", text_end])
-	var free_top := mini(sp, RAM_TOP)
-	if free_top > prog_end:
-		parts.append(["free RAM", prog_end, free_top, "", "unused: the stack can grow down into it", prog_end])
-	parts.append(["stack", free_top, RAM_TOP, "sel", "from SP up to the top of RAM; it grows down", free_top])
+	parts.append(["boot ROM", Backend.ROM_BASE, Backend.ROM_END, "", "the Pico's boot ROM, which starts the chip (empty in picosim)", Backend.ROM_BASE])
+	parts.append(["built-in OS", Backend.FLASH_BASE, Backend.OS_END, "cyan", "flash: picosim's OS, _start, putchar, getchar", Backend.FLASH_BASE])
+	parts.append(["your code", Backend.OS_END, text_end, "cyan", "flash: your instructions, then their literal pools and strings", Backend.OS_END])
+	if data_end > Backend.SRAM_BASE:
+		parts.append(["your data", Backend.SRAM_BASE, data_end, "green", "SRAM: .data and .bss, your program's variables", Backend.SRAM_BASE])
+	var free_top := clampi(sp, data_end, Backend.SRAM_END)
+	if free_top > data_end:
+		parts.append(["free SRAM", data_end, free_top, "", "unused: the stack can grow down into it", data_end])
+	parts.append(["stack", free_top, Backend.SRAM_END, "sel", "SRAM from SP up to its top; it grows down", free_top])
 	return parts
 
 
@@ -794,15 +813,15 @@ func _map_rects(c: Control) -> Array:
 	var top := 4.0
 	var avail := c.size.y - io_h - 10 - top
 	var fixed := 0.0
-	var minh := 40 * s
+	var minh := minf(40 * s, avail / maxf(1.0, parts.size()))     # all parts fit, however short the panel
 	for p in parts:
-		if p[0] != "free RAM":
+		if p[0] != "free SRAM":
 			fixed += minh
 	var free_h := maxf(minh, avail - fixed)
 	var out := []
 	var y := top
 	for p in parts:
-		var h := free_h if p[0] == "free RAM" else minh
+		var h := free_h if p[0] == "free SRAM" else minh
 		out.append([p, Rect2(4, y, c.size.x - 8, h - 3)])
 		y += h
 	return out
@@ -834,7 +853,7 @@ func _draw_map(c: Control) -> void:
 		var seen: bool = lo < int(p[2]) and hi > int(p[1])
 		c.draw_rect(r, Palette.c("accent") if seen else Palette.c("edge"), false, 2.0 if seen else 1.0)
 		c.draw_string(font, r.position + Vector2(6, 16 * s), p[0], HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 10, fs, txt)
-		var rng := "%04X–%04X" % [int(p[1]), int(p[2]) - 1] if int(p[2]) > int(p[1]) else "empty"
+		var rng := Backend.addr(int(p[1])) if int(p[2]) > int(p[1]) else "empty"
 		c.draw_string(mono, r.position + Vector2(6, 31 * s), rng, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 10, fs2, dim)
 		# markers: PC in its part, SP at the stack's bottom, the last access
 		if pc >= int(p[1]) and pc < int(p[2]):
@@ -843,20 +862,20 @@ func _draw_map(c: Control) -> void:
 			_pill(c, Vector2(r.end.x - 4, r.position.y + 4), "SP", Palette.c("sel"))
 		for a in acc:
 			var ad := int(a["addr"])
-			if ad >= int(p[1]) and ad < int(p[2]) and ad < RAM_TOP:
+			if ad >= int(p[1]) and ad < int(p[2]):
 				_pill(c, Vector2(r.end.x - 4, r.end.y - 18 * s), "W" if str(a["kind"]) == "write" else "R",
 					Palette.c("changed") if str(a["kind"]) == "write" else Palette.c("accent"))
 				break
-	# the I/O registers, which are not RAM
+	# the I/O registers, which are not memory
 	var io := Rect2(4, c.size.y - 64 * s - 6, c.size.x - 8, 64 * s)
 	c.draw_rect(io, Palette.c("box"))
 	var ioc := Palette.c("purple")
 	c.draw_rect(io, ioc, false, 1.0)
 	c.draw_string(font, io.position + Vector2(6, 16 * s), "I/O registers", HORIZONTAL_ALIGNMENT_LEFT, io.size.x - 10, fs, txt)
-	c.draw_string(font, io.position + Vector2(6, 33 * s), "not RAM: they", HORIZONTAL_ALIGNMENT_LEFT, io.size.x - 10, fs2, dim)
+	c.draw_string(font, io.position + Vector2(6, 33 * s), "not memory: they", HORIZONTAL_ALIGNMENT_LEFT, io.size.x - 10, fs2, dim)
 	c.draw_string(font, io.position + Vector2(6, 49 * s), "set the pins", HORIZONTAL_ALIGNMENT_LEFT, io.size.x - 10, fs2, dim)
 	for a in acc:
-		if int(a["addr"]) >= RAM_TOP:
+		if not Backend.is_memory(int(a["addr"])):
 			_pill(c, Vector2(io.end.x - 4, io.end.y - 20 * s), "W" if str(a["kind"]) == "write" else "R",
 				Palette.c("changed") if str(a["kind"]) == "write" else Palette.c("accent"))
 			break
@@ -893,11 +912,11 @@ func _tip_map(c: Control, at: Vector2) -> String:
 	for r in _map_rects(c):
 		if r[1].has_point(at):
 			return "%s: %s.\nClick to show it." % [r[0][0], r[0][4]]
-	return "The I/O registers are at addresses above RAM. Loads and stores there do not\nchange memory: they read and set the Pico's pins (see the board and the GPIO page)."
+	return "The I/O registers are at addresses outside ROM, flash and SRAM. Loads and stores there do not\nchange memory: they read and set the Pico's pins (see the board and the GPIO page)."
 
 
 func _io_text(a: int) -> String:
-	return "[b]0x%08X[/b] is not RAM: addresses from [code]0x40000000[/code] up are the Pico's [b]I/O registers[/b]. A load or store there reads or sets hardware, such as the pins (SIO at [code]0xD0000000[/code], IO_BANK0 at [code]0x40014000[/code]). Watch the Pico board to see what a store there does." % a
+	return "[b]0x%08X[/b] is not memory (ROM [code]0x00000000[/code], flash [code]0x10000000[/code] or SRAM [code]0x20000000[/code]): addresses from [code]0x40000000[/code] up are the Pico's [b]I/O registers[/b]. A load or store there reads or sets hardware, such as the pins (SIO at [code]0xD0000000[/code], IO_BANK0 at [code]0x40014000[/code]). Watch the Pico board to see what a store there does." % a
 
 
 # ── the stack picture ───────────────────────────────────────────────────────
@@ -906,7 +925,7 @@ func _io_text(a: int) -> String:
 ## the oldest, plus the words the last step popped (just below SP).
 func _stack_words() -> Array:
 	var sk: Dictionary = st.get("stack", {})
-	var base := int(sk.get("addr", RAM_TOP))
+	var base := int(sk.get("addr", Backend.SRAM_END))
 	var raw := PackedByteArray(str(sk.get("data", "")).hex_decode())
 	var notes: Dictionary = sk.get("notes", {})
 	var out := []
@@ -932,10 +951,10 @@ func _popped() -> Array:
 	var out := []
 	if st.get("running", false):
 		return out
-	var sp := int(st.get("regs", [])[13]) if st.has("regs") else RAM_TOP
+	var sp := int(st.get("regs", [])[13]) if st.has("regs") else Backend.SRAM_END
 	for acc in st.get("mem_access", []):
 		var a := int(acc["addr"])
-		if str(acc["kind"]) == "read" and a < sp and a >= sp - 64 and a >= 0x3000 and int(acc["size"]) == 4:
+		if str(acc["kind"]) == "read" and a < sp and a >= sp - 64 and a >= Backend.SRAM_BASE and int(acc["size"]) == 4:
 			var d := PackedByteArray(str(acc.get("data", "")).hex_decode())
 			if d.size() == 4:
 				var into := _popped_into(acc, a)
@@ -962,18 +981,18 @@ func _popped_into(acc: Dictionary, a: int) -> String:
 
 ## What a value on the stack probably is, when picosim did not see it pushed.
 func _guess(v: int) -> String:
-	if v & 1 and v < RAM_TOP:
+	if v & 1 and v >= Backend.FLASH_BASE and v < Backend.FLASH_END:
 		var t := v & ~1
-		if t < OS_TOP and t > 0:
+		if Backend.in_os(t):
 			return "a return address into the built-in OS"
 		var before: Dictionary = rows_by_addr.get(t - 4, {})
 		var back: Dictionary = rows_by_addr.get(t, {})
 		var line := int(back.get("line", 0))
 		if str(before.get("text", "")).begins_with("bl"):
-			return "a return address: back to %04X%s, the line after a bl" % [t, (" (line %d)" % line) if line > 0 else ""]
+			return "a return address: back to %s%s, the line after a bl" % [Backend.addr(t), (" (line %d)" % line) if line > 0 else ""]
 		before = rows_by_addr.get(t - 2, {})
 		if str(before.get("text", "")).begins_with("blx"):
-			return "a return address: back to %04X, after a blx" % t
+			return "a return address: back to %s, after a blx" % Backend.addr(t)
 	return ""
 
 
@@ -988,13 +1007,13 @@ func _draw_stack(c: Control) -> void:
 	var txt := Palette.c("text")
 	var sp := int(st["regs"][13])
 	c.draw_string(font, Vector2(6, 17 * s), "The stack", HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(14), txt)
-	c.draw_string(font, Vector2(6, 33 * s), "grows down from 0x10000 ↓", HORIZONTAL_ALIGNMENT_LEFT, c.size.x - 10, fs2, dim)
+	c.draw_string(font, Vector2(6, 33 * s), "grows down from 0x20042000 ↓", HORIZONTAL_ALIGNMENT_LEFT, c.size.x - 10, fs2, dim)
 	var words := _stack_words()
 	var y := 42 * s
-	if sp >= RAM_TOP or words.is_empty():
-		var msg := "Empty: SP = 0x%08X, just past the top of RAM. The first push stores just below it." % sp
-		if sp < 0x3000 or sp > RAM_TOP:
-			msg = "SP = 0x%08X is outside RAM: a push now would fault." % sp
+	if sp >= Backend.SRAM_END or words.is_empty():
+		var msg := "Empty: SP = 0x%08X, just past the top of SRAM. The first push stores just below it." % sp
+		if sp <= Backend.SRAM_BASE or sp > Backend.SRAM_END:
+			msg = "SP = 0x%08X is outside SRAM: a push now would fault." % sp
 		_wrap(c, Rect2(8, y + 4, c.size.x - 16, 80 * s), msg, fs2, dim)
 		y += 60 * s
 	var box_h := 40 * s
@@ -1007,7 +1026,7 @@ func _draw_stack(c: Control) -> void:
 		hidden = shown.size() - keep
 		shown = shown.slice(0, keep)
 	if hidden > 0:
-		c.draw_string(font, Vector2(8, y + 14 * s), "▲ %d more word%s above, up to 0x10000" % [hidden, "s" if hidden != 1 else ""],
+		c.draw_string(font, Vector2(8, y + 14 * s), "▲ %d more word%s above, up to 0x20042000" % [hidden, "s" if hidden != 1 else ""],
 			HORIZONTAL_ALIGNMENT_LEFT, c.size.x - 12, fs2, dim)
 		y += 20 * s
 	var acc := _accessed()
@@ -1051,8 +1070,8 @@ func _stack_box(c: Control, r: Rect2, w: Array, hot: bool, how: String, at_sp: b
 	else:
 		c.draw_rect(r, edge, false, 2.0 if hot or how != "" else 1.0)
 	var col := Palette.c("dim") if ghost else Palette.c("text")
-	c.draw_string(mono, r.position + Vector2(6, 16 * s), "%04X" % int(w[0]), HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(12), Palette.c("dim"))
-	c.draw_string(mono, r.position + Vector2(52 * s, 16 * s), "0x%08X" % int(w[1]), HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(14),
+	c.draw_string(mono, r.position + Vector2(6, 16 * s), Backend.addr(int(w[0])), HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(12), Palette.c("dim"))
+	c.draw_string(mono, r.position + Vector2(74 * s, 16 * s), "0x%08X" % int(w[1]), HORIZONTAL_ALIGNMENT_LEFT, -1, _fs(14),
 		Palette.c("changed") if hot else col)
 	if at_sp:
 		_pill(c, Vector2(r.end.x - 3, r.position.y + 2), "◀ SP", Palette.c("sel"))
@@ -1088,7 +1107,7 @@ func _tip_stack(c: Control, at: Vector2) -> String:
 
 # ── the two text lines ──────────────────────────────────────────────────────
 
-## "Last step: ldr r0, [r1] read the word at 0x3024 (numbers) …"
+## "Last step: ldr r0, [r1] read the word at 20000000 (numbers) …"
 func _show_banner() -> void:
 	if banner == null:
 		return
@@ -1134,22 +1153,22 @@ func _sentence(insn: int, list: Array) -> String:
 	var kind := str(first["kind"])
 	var verb := ("[color=%s][b]read[/b][/color]" % acc) if kind == "read" else ("[color=%s][b]wrote[/b][/color]" % hot)
 	var a := int(first["addr"])
-	if a >= RAM_TOP:
+	if not Backend.is_memory(a):
 		var name := _io_name(a)
 		var val = first.get("value")
 		var to := (" [code]0x%08X[/code] to" % int(val)) if kind == "write" and val != null else (" from" if kind == "read" else " to")
-		return "%s %s%s the I/O register [b]%s[/b] at [code]0x%08X[/code]. That is not RAM: it %s the Pico's pins (look at the board)." % [
+		return "%s %s%s the I/O register [b]%s[/b] at [code]0x%08X[/code]. That is not memory: it %s the Pico's pins (look at the board)." % [
 			who, verb, to, name, a, "sets" if kind == "write" else "reads"]
 	if list.size() > 1:
 		var lo := int(list[0]["addr"])
 		var hi := int(list[-1]["addr"]) + int(list[-1]["size"]) - 1
 		var place := "the stack" if _kind(lo) == K_STACK or lo >= int(st["regs"][13]) - 64 else "memory"
-		return "%s %s %d words %s %s, at [code]%04X[/code]–[code]%04X[/code] (see the stack on the right)." % [
-			who, verb, list.size(), "onto" if kind == "write" else "from", place, lo, hi]
+		return "%s %s %d words %s %s, at [code]%s[/code]–[code]%s[/code] (see the stack on the right)." % [
+			who, verb, list.size(), "onto" if kind == "write" else "from", place, Backend.addr(lo), Backend.addr(hi)]
 	var size := int(first["size"])
 	var what: String = {1: "a byte", 2: "a halfword", 4: "a word"}.get(size, "%d bytes" % size)
 	var lab: Array = _label_of(a)
-	var where := "[b]%04X[/b]" % a
+	var where := "[b]%s[/b]" % Backend.addr(a)
 	if str(lab[0]) != "":
 		where += " (%s%s)" % [lab[0], (" + %d" % int(lab[1])) if int(lab[1]) else ""]
 	elif _kind(a) == K_LIT:
@@ -1178,7 +1197,7 @@ func _sentence(insn: int, list: Array) -> String:
 		else:
 			t += " = %d" % val
 		if reg == "PC":
-			t += ", loaded into [b]PC[/b]: the program jumps back to [code]%04X[/code], where the function was called from" % (val & ~1)
+			t += ", loaded into [b]PC[/b]: the program jumps back to [code]%s[/code], where the function was called from" % Backend.addr(val & ~1)
 		elif reg != "":
 			t += (", now in [b]%s[/b]" if kind == "read" else ", the value of [b]%s[/b]") % reg
 	return t + "."
@@ -1210,7 +1229,7 @@ func _show_inspector() -> void:
 		return
 	var v := _byte(a)
 	var k := _kind(a)
-	var t := "[b]%04X[/b]" % a
+	var t := "[b]%s[/b]" % Backend.addr(a)
 	var lab: Array = _label_of(a)
 	if str(lab[0]) != "":
 		t += " · label [b]%s[/b]%s" % [lab[0], (" + %d" % int(lab[1])) if int(lab[1]) else ""]
@@ -1227,19 +1246,19 @@ func _show_inspector() -> void:
 		for b in range(start, start + (4 if raw.length() > 5 else 2)):
 			bytes += "%02X " % maxi(0, _byte(b))
 		var shown := "0x" + raw if raw.length() == 4 else "0x" + raw.replace(" ", " and 0x") + " (two halfwords)"
-		t += "Byte [code]0x%02X[/code] = %d. The instruction at %04X is the number [code]%s[/code], stored lowest byte first as [code]%s[/code]; the CPU fetches it from here." % [
-			v, v, start, shown, bytes.strip_edges()]
+		t += "Byte [code]0x%02X[/code] = %d. The instruction at %s is the number [code]%s[/code], stored lowest byte first as [code]%s[/code]; the CPU fetches it from flash here." % [
+			v, v, Backend.addr(start), shown, bytes.strip_edges()]
 	elif v >= 0:
 		if mode == 1:
 			var w := _word(a)
-			t += "Word at %04X = [code]0x%08X[/code] = %d. In memory its bytes are [code]%02X %02X %02X %02X[/code]: the lowest byte comes first (little-endian)." % [
-				a, w, w, _byte(a), _byte(a + 1), _byte(a + 2), _byte(a + 3)]
+			t += "Word at %s = [code]0x%08X[/code] = %d. In memory its bytes are [code]%02X %02X %02X %02X[/code]: the lowest byte comes first (little-endian)." % [
+				Backend.addr(a), w, w, _byte(a), _byte(a + 1), _byte(a + 2), _byte(a + 3)]
 		else:
 			t += "Byte [code]0x%02X[/code] = %d%s" % [v, v, (", the character '%s'" % char(v)) if v >= 32 and v < 127 else (", a new line" if v == 10 else "")]
 			var wa := a & ~3
 			var w := _word(wa)
 			if w >= 0:
-				t += " · the word at %04X (4 bytes, lowest first) is [code]0x%08X[/code] = %d" % [wa, w, w]
+				t += " · the word at %s (4 bytes, lowest first) is [code]0x%08X[/code] = %d" % [Backend.addr(wa), w, w]
 	if k == K_STACK:
 		var sk: Dictionary = st.get("stack", {})
 		var n = sk.get("notes", {}).get(str(a & ~3))
@@ -1247,7 +1266,7 @@ func _show_inspector() -> void:
 		if note == "":
 			note = _guess(_word(a & ~3))
 		if note != "":
-			t += "\nOn the stack: the word at %04X is %s." % [a & ~3, note[0].to_lower() + note.substr(1) if note.begins_with("a ") else note]
+			t += "\nOn the stack: the word at %s is %s." % [Backend.addr(a & ~3), note[0].to_lower() + note.substr(1) if note.begins_with("a ") else note]
 	var ptr: Dictionary = _pointers()
 	if ptr.has(a):
 		t += "\n[color=%s]%s hold%s this address: %s a [b]pointer[/b] to it, so [code]ldr rX, [lb]%s][/code] reads here.[/color]" % [

@@ -5,14 +5,16 @@
 /*
  * os.s — Minimal simulator operating system.
  *
- * Memory layout:
- *   0x0000-0x2FFB  OS code/data (this file)
- *   0x2FFC-0x2FFF  "main pointer" — the simulator writes the Thumb address
- *                  of the user's main() here before starting execution.
- *   0x3000-0xFFFF  User code
+ * Memory layout (the RP2040's, see memmap.py):
+ *   0x10000000-0x100000FB  OS code (this file), at the start of flash
+ *   0x100000FC-0x100000FF  "main pointer" — the simulator writes the Thumb
+ *                          address of the user's main() here before starting.
+ *   0x10000100-            User code and constants, in flash
+ *   0x20000000-0x20041FFF  User variables (.data, .bss) and the stack, in SRAM;
+ *                          SP starts at 0x20042000
  *
  * Execution flow:
- *   _start  →  reads main pointer from 0x2FFC  →  BLX to user main()
+ *   _start  →  reads main pointer from 0x100000FC  →  BLX to user main()
  *           →  when main() returns, executes BKPT #0 to halt the simulator.
  *
  * I/O stubs (Pico SDK compatible):
@@ -26,7 +28,7 @@
  * the user can still inspect registers and memory.
  */
 
-.equ MAIN_PTR, 0x2FFC   /* address where simulator stores main's Thumb addr */
+.equ MAIN_PTR, 0x100000FC   /* where the simulator stores main's Thumb addr (memmap.MAIN_PTR) */
 
 /* ── Boot entry point ──────────────────────────────────────────────────────── */
 

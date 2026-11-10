@@ -14,7 +14,7 @@ Cycle timing of three machines that run the same ARMv6-M program.
 All three execute the program identically (the C++ core), so only timing
 differs.  Timing is computed from the core's execution profile: for every
 completed instruction, its encoding, whether it branched, whether a B<cond>
-was taken, and where its data accesses went (RAM, the SIO's single-cycle
+was taken, and where its data accesses went (memory, the SIO's single-cycle
 IOPORT, APB peripherals, other AHB space).
 
 Measured on a real RP2040 rather than taken from Table 81 (Testing,
@@ -33,9 +33,9 @@ Not modelled, and reported instead of guessed:
 
 from functools import lru_cache
 
-from ._picosim_core import CPUCore
+from .memmap import scratch_core
 
-REGIONS = ('RAM', 'SIO', 'APB', 'AHB')
+REGIONS = ('memory', 'SIO', 'APB', 'AHB')     # memory: ROM, flash or SRAM
 RG_SIO, RG_APB = 1, 2
 MACHINES = ('multicycle', 'm0plus', 'pipe3')
 MACHINE_NAMES = {'multicycle': 'Multi-cycle (teaching datapath)',
@@ -178,15 +178,7 @@ def multicycle_profile(hw1, hw2=0):
     ALU computes, 'mul_exec': EXECUTE_COMMIT cycles of a MULS} or None.
     Every count here is a function of the encoding alone.
     """
-    c = CPUCore()
-    c.strict = False          # the states depend on the encoding alone, not on these values
-    c.write16(0x100, hw1)
-    c.write16(0x102, hw2)
-    for r in range(8):
-        c.set_reg(r, 0x400)
-    c.set_reg(14, 0x201)
-    c.sp = 0x800
-    c.pc = 0x100
+    c = scratch_core(hw1, hw2)     # in SRAM; only the states matter
     phases, bus, mem, alu, mul = {}, 0, 0, 0, 0
     n = 0
     try:

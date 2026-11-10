@@ -1,33 +1,39 @@
-/* Linker script for user code — loaded at 0x3000 in the flat 16-bit address space.
-   Addresses 0x0000-0x2FFF are reserved for the operating system (os.s / os.ld). */
+/* Linker script for the program, on the RP2040's memory map (memmap.py):
+   code and constants in flash from 0x10000100, variables in SRAM from
+   0x20000000.  picosim's OS takes flash's first 256 bytes, 0x10000000-
+   0x100000FF (os.s / os.ld); the stack starts at the top of SRAM,
+   0x20042000, and grows down.
+
+   picosim loads .data straight into SRAM.  On a real Pico the SDK's start-up
+   code copies it there from flash; either way the program sees the same
+   addresses. */
 ENTRY(main)
 
 MEMORY
 {
-    USER (rwx) : ORIGIN = 0x3000, LENGTH = 0xD000
+    FLASH (rx)  : ORIGIN = 0x10000100, LENGTH = 2M - 0x100
+    SRAM  (rwx) : ORIGIN = 0x20000000, LENGTH = 264K
 }
 
 SECTIONS
 {
-    . = 0x3000;
-
     .text :
     {
         *(.text.startup)
         *(.text*)
         *(.rodata*)
-    } > USER
+    } > FLASH
 
     .data :
     {
         *(.data*)
-    } > USER
+    } > SRAM
 
-    .bss :
+    .bss (NOLOAD) :
     {
         *(.bss*)
         *(COMMON)
-    } > USER
+    } > SRAM
 
     . = ALIGN(4);
     _end = .;

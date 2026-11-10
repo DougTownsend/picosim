@@ -45,21 +45,31 @@ the Pico W). It is a wired port, not wireless.
 
 ### The same addresses, moved
 
-picosim runs programs in a flat 64 KiB space: the built-in OS at `0x0000`
-and the program at `0x3000`. The RP2040 cannot run code there (its ROM is
-there), so Testing links the same source for SRAM instead:
+picosim uses the RP2040's memory map: its built-in OS at `0x10000000`, the
+program's code in flash from `0x10000100`, its variables in SRAM from
+`0x20000000` and the stack at the top of SRAM. Testing never writes the
+chip's flash, so it puts a copy of picosim's flash in the chip's SRAM and
+links the same source for it there:
 
-| | built-in OS | program | top of stack |
-| --- | --- | --- | --- |
-| picosim | `0x0000` (`os.s`) | `0x3000` | `0x10000` |
-| RP2040 | `0x20000000` (`picosim/hwtest/os_hw.s`) | `0x20003000` | `0x20010000` |
+| | built-in OS | program code | variables | top of stack |
+| --- | --- | --- | --- | --- |
+| picosim | `0x10000000` (`os.s`) | `0x10000100` | `0x20000000` | `0x20042000` |
+| RP2040 | `0x20020000` (`picosim/hwtest/os_hw.s`) | `0x20020100` | `0x20000000` | `0x20042000` |
 
-Every address on the chip is picosim's address + `0x20000000`. A register or
-memory word holding an address differs by exactly that, and the comparison
-allows for it. Everything else must be equal bit for bit. Before every run,
+A code address on the chip is picosim's address + `0x10020000`; data and
+stack addresses are the same on both. A register or memory word holding a
+code address differs by exactly that, and the comparison allows for it.
+Everything else must be equal bit for bit. Before every run,
 `picosim/hwtest/image.py` checks that the two builds really are laid out
-this way: the same labels at the same offsets, and the same bytes except
-address literals.
+this way: the same labels at the same places, and the same bytes except
+code-address literals. A program whose code is over 48 KiB, or whose
+variables reach `0x2001E000`, is refused: Testing keeps the SRAM from there
+to `0x2001FFFF` for itself (the SysTick table, os_hw.s's chip-only routines,
+the few instructions it runs to reach the SIO).
+
+On the chip the code runs from SRAM, and in picosim from flash; both are
+timed with no wait states (picosim assumes the XIP cache hits), so the
+cycle counts compare directly.
 
 ### The built-in OS on the chip
 
@@ -69,9 +79,10 @@ address literals.
   test runner does the I/O (it reads R0, or puts the next input character in
   R0) and returns to the caller, just as picosim's SVC does. No OS code runs
   on the chip, so it cannot disturb the comparison.
-- `bench_start` / `bench_stop` read the SysTick counter into a table in the
-  OS's part of SRAM, leaving every register, flag and byte of the program
-  unchanged. (In picosim they are a plain `bx lr`.)
+- `bench_start` / `bench_stop` read the SysTick counter into a table in
+  SRAM the program does not use (`0x2001E000`), leaving every register,
+  flag and byte of the program unchanged. (In picosim they are a plain
+  `bx lr`.)
 
 In the Testing window, click a step marked **call**, or a Timing region, to
 see what that call did, how picosim and the chip each did it, why it is done
@@ -94,10 +105,12 @@ Before each test the chip is put in the state picosim starts in:
    and GPIO_OE at the end, is done by three instructions run on the core.
 4. SysTick is set to count processor clock cycles, enabled only for
    benchmarks.
-5. The 64 KiB image is written to `0x20000000` and **read back** to check
-   it.
-6. The registers are set to picosim's registers at `main`, with addresses
-   moved.
+5. The image is written and **read back** to check it: the copy of the
+   flash (OS and program) at `0x20020000`, the program's variables from
+   `0x20000000` (`.data` as loaded, the rest cleared, as in picosim), the
+   top 16 KiB of SRAM where the stack is (cleared) and the SysTick table.
+6. The registers are set to picosim's registers at `main`, with code
+   addresses moved.
 
 ### Comparing a step
 
@@ -187,7 +200,7 @@ do not depend on the clock speed.
   2. Hold BOOTSEL while plugging the probe Pico in.
   3. Copy the file to the `RPI-RP2` drive.
 - The **target** Pico needs nothing on it. Testing loads every test into its
-  RAM. A program already in its flash is not changed, but it does not run
+  SRAM. A program already in its flash is not changed, but it does not run
   while Testing has the core stopped.
 
 ### Wiring

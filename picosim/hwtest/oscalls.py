@@ -39,13 +39,13 @@ def trace_call(name, k, line, src, addr, ret, os_insns, r0_in, r0_out):
     ran = ", ".join(os_insns) if os_insns else "nothing"
     back = (f"The chip: its {name} at 0x{img.to_hw(addr):08X} is a BKPT, so the core stops before "
             f"running anything there. The test runner")
-    when = f"Call {k} to {name} in this run, from {_site(line, src)}. It returns to {ret:04X}."
+    when = f"Call {k} to {name} in this run, from {_site(line, src)}. It returns to {ret:08X}."
     if name == 'putchar':
         c = r0_in & 0xFF
         return {'name': name,
                 'what': f"Prints {_char(c)}, the character in R0 (0x{c:02X}). Everything a test "
                         "prints is also compared when it ends.",
-                'how': f"picosim: bl putchar jumps into the OS at {addr:04X} and runs {ran}. "
+                'how': f"picosim: bl putchar jumps into the OS at {addr:08X} and runs {ran}. "
                        "svc #2 asks picosim to print the character in R0, and bx lr returns. "
                        f"{back} reads R0 over the debug port, adds the character to the chip's "
                        "output, and sets PC to LR, as if putchar had returned.",
@@ -56,7 +56,7 @@ def trace_call(name, k, line, src, addr, ret, os_insns, r0_in, r0_out):
                if r0_out == 0xFFFFFFFF else f"R0 = 0x{r0_out:02X}, {_char(r0_out)}")
         return {'name': name,
                 'what': f"Reads the next character of the test's input into R0: {got}.",
-                'how': f"picosim: bl getchar jumps into the OS at {addr:04X} and runs {ran}. "
+                'how': f"picosim: bl getchar jumps into the OS at {addr:08X} and runs {ran}. "
                        "svc #3 puts the next character of the test's input (its @ Input line, or "
                        f"the Input box) in R0, and bx lr returns. {back} writes the same character "
                        "into R0 over the debug port and sets PC to LR.",
@@ -67,7 +67,7 @@ def trace_call(name, k, line, src, addr, ret, os_insns, r0_in, r0_out):
     return {'name': name,
             'what': f"Marks the {which} of a region to time. A step-by-step test times nothing, so "
                     "here it does nothing on either machine.",
-            'how': f"picosim: {name} at {addr:04X} is just bx lr ({ran}). The chip: the test runner "
+            'how': f"picosim: {name} at {addr:08X} is just bx lr ({ran}). The chip: the test runner "
                    "sets PC to LR without running os_hw.s's routine, so its SysTick read is "
                    "skipped and no register, flag or byte changes.",
             'why': "Stepping one instruction at a time through the debugger takes thousands of "
@@ -86,14 +86,14 @@ def bench_region(row, n_regions):
     stop_site = row.get('stop_site')
     over = row.get('over')
     sim = row.get('sim')
-    slot = img.to_hw(img.BENCH_TABLE + 8 * k)
+    slot = img.BENCH_TABLE + 8 * k
     how = ("picosim: bench_start and bench_stop are just bx lr. picosim adds up the Table 81 "
            "cycles of each instruction from the return from bench_start to the bl bench_stop")
     how += f": {sim} cycles. " if sim is not None else ". "
     if st:
         how += (f"The chip: bench_start reads the SysTick counter, which counts down by one every "
                 f"processor clock cycle, and keeps the value ({st[0]}) at "
-                f"0x{img.to_hw(img.BENCH_TABLE + 4):08X}. bench_stop reads it again ({st[1]}) "
+                f"0x{img.BENCH_TABLE + 4:08X}. bench_stop reads it again ({st[1]}) "
                 f"and writes the pair to region {k}'s slot in the table, at 0x{slot:08X}. When the "
                 f"program has ended, the test runner reads the table over the debug port: "
                 f"{st[0]} − {st[1]} = {row.get('raw')} cycles")
@@ -147,7 +147,7 @@ def bench_stretch(row, n_regions):
         how += (f"The chip runs a timed copy of os_hw.s. {start[0].upper() + start[1:]} reads the "
                 f"SysTick counter, which counts down by one every processor clock cycle ({st[0]}); "
                 f"{stop} reads it again ({st[1]}) and writes the pair to slot {k} of the table at "
-                f"0x{img.to_hw(img.BENCH_TABLE + 8 * k):08X}. When the program has ended, the test "
+                f"0x{img.BENCH_TABLE + 8 * k:08X}. When the program has ended, the test "
                 f"runner reads the table over the debug port: {st[0]} − {st[1]} = {row.get('raw')} "
                 "cycles")
         if over is not None and row.get('hw') is not None:

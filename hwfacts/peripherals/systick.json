@@ -1,0 +1,349 @@
+{
+ "schema": 1,
+ "kind": "peripherals-systick",
+ "provenance": {
+  "chip": {
+   "chip_id": "0x20002927",
+   "cpuid": "0x410CC601",
+   "rom_version": 3
+  },
+  "date": "2026-11-10 14:18:32",
+  "openocd": "Open On-Chip Debugger 0.12.0",
+  "swd_khz": 5000,
+  "picosim": {
+   "commit": "73db057219678bcfda9b500c1df6b957820ccf51",
+   "dirty": true
+  },
+  "agent": "ddc1370363c94c44fa27ca70211ce320015137ad",
+  "campaign": "G",
+  "run_id": "20261110-141831",
+  "runs": 1,
+  "agreed": null,
+  "target": "openocd",
+  "chip_label": "chip1"
+ },
+ "facts": [
+  {
+   "id": "systick.countflag",
+   "value": true,
+   "source": "measured",
+   "detail": {
+    "csr_after_wrap": "0x00010005",
+    "csr_read_again": "0x00000005",
+    "cvr": 10,
+    "predicted": "COUNTFLAG set after a wrap, cleared by that read",
+    "agrees": true
+   }
+  },
+  {
+   "id": "systick.rvr0",
+   "value": true,
+   "source": "measured",
+   "detail": {
+    "cvr_with_rvr0": 0,
+    "csr_with_rvr0": "0x00000005",
+    "cvr_after_rvr8": 2,
+    "csr_later": "0x00010005",
+    "predicted": "RVR = 0: the counter stays at 0 and never sets COUNTFLAG",
+    "agrees": true
+   }
+  },
+  {
+   "id": "systick.wrap_1",
+   "value": true,
+   "source": "measured",
+   "detail": {
+    "rvr": 1,
+    "values": [
+     0,
+     0,
+     0,
+     0
+    ],
+    "spacing_mod_period": [
+     0
+    ],
+    "predicted": "values 0..RVR, period RVR + 1 (a constant spacing)",
+    "agrees": true
+   }
+  },
+  {
+   "id": "systick.wrap_2",
+   "value": true,
+   "source": "measured",
+   "detail": {
+    "rvr": 2,
+    "values": [
+     2,
+     0,
+     1,
+     2
+    ],
+    "spacing_mod_period": [
+     2
+    ],
+    "predicted": "values 0..RVR, period RVR + 1 (a constant spacing)",
+    "agrees": true
+   }
+  },
+  {
+   "id": "systick.wrap_3",
+   "value": true,
+   "source": "measured",
+   "detail": {
+    "rvr": 3,
+    "values": [
+     0,
+     2,
+     0,
+     2
+    ],
+    "spacing_mod_period": [
+     2
+    ],
+    "predicted": "values 0..RVR, period RVR + 1 (a constant spacing)",
+    "agrees": true
+   }
+  },
+  {
+   "id": "systick.wrap_5",
+   "value": true,
+   "source": "measured",
+   "detail": {
+    "rvr": 5,
+    "values": [
+     2,
+     0,
+     4,
+     2
+    ],
+    "spacing_mod_period": [
+     2
+    ],
+    "predicted": "values 0..RVR, period RVR + 1 (a constant spacing)",
+    "agrees": true
+   }
+  },
+  {
+   "id": "systick.wrap_8",
+   "value": true,
+   "source": "measured",
+   "detail": {
+    "rvr": 8,
+    "values": [
+     5,
+     3,
+     1,
+     8
+    ],
+    "spacing_mod_period": [
+     2
+    ],
+    "predicted": "values 0..RVR, period RVR + 1 (a constant spacing)",
+    "agrees": true
+   }
+  },
+  {
+   "id": "systick.cvr_write",
+   "value": true,
+   "source": "measured",
+   "detail": {
+    "csr_after_cvr_write": "0x00000005",
+    "cvr": 8,
+    "predicted": "a CVR write clears COUNTFLAG (and the count)",
+    "agrees": true
+   }
+  },
+  {
+   "id": "systick.calib",
+   "value": false,
+   "source": "measured",
+   "detail": {
+    "calib": "0x0000270F",
+    "predicted": "0x00000000",
+    "from": "SVD reset value",
+    "agrees": false
+   }
+  },
+  {
+   "id": "systick.csr_bits",
+   "value": true,
+   "source": "measured",
+   "detail": {
+    "csr_after_writing_6": "0x00000006",
+    "csr_after_writing_0": "0x00000000",
+    "predicted": "TICKINT and CLKSOURCE read back (6)",
+    "agrees": true
+   }
+  },
+  {
+   "id": "systick.rvr_mask",
+   "value": true,
+   "source": "measured",
+   "detail": {
+    "rvr_after_all_ones": "0x00FFFFFF",
+    "cvr_after_write": "0x00000000",
+    "predicted": "RVR keeps bits 23:0 (0x00FFFFFF); any CVR write reads back 0",
+    "agrees": true
+   }
+  },
+  {
+   "id": "systick.external_clock",
+   "value": true,
+   "source": "measured",
+   "detail": {
+    "cvr_first": 16777214,
+    "cvr_second": 16777212,
+    "csr": "0x00000001",
+    "counted": true,
+    "note": "CLKSOURCE = 0 (the external reference) right after reset halt",
+    "agrees": true
+   }
+  },
+  {
+   "id": "systick.debugger_read_clears_countflag",
+   "value": false,
+   "source": "measured",
+   "detail": {
+    "end": "done",
+    "first": "0x00010005",
+    "second": "0x00010005",
+    "countflag_first": 1,
+    "countflag_second": 1,
+    "debugger_read_clears": false
+   }
+  },
+  {
+   "id": "picosim.systick",
+   "value": "modelled in the stand-in (hwtest/standin.py), not in picosim's core",
+   "source": "not modelled"
+  }
+ ],
+ "systick": {
+  "countflag": {
+   "csr_after_wrap": "0x00010005",
+   "csr_read_again": "0x00000005",
+   "cvr": 10,
+   "predicted": "COUNTFLAG set after a wrap, cleared by that read",
+   "agrees": true
+  },
+  "rvr0": {
+   "cvr_with_rvr0": 0,
+   "csr_with_rvr0": "0x00000005",
+   "cvr_after_rvr8": 2,
+   "csr_later": "0x00010005",
+   "predicted": "RVR = 0: the counter stays at 0 and never sets COUNTFLAG",
+   "agrees": true
+  },
+  "wrap 1": {
+   "rvr": 1,
+   "values": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "spacing_mod_period": [
+    0
+   ],
+   "predicted": "values 0..RVR, period RVR + 1 (a constant spacing)",
+   "agrees": true
+  },
+  "wrap 2": {
+   "rvr": 2,
+   "values": [
+    2,
+    0,
+    1,
+    2
+   ],
+   "spacing_mod_period": [
+    2
+   ],
+   "predicted": "values 0..RVR, period RVR + 1 (a constant spacing)",
+   "agrees": true
+  },
+  "wrap 3": {
+   "rvr": 3,
+   "values": [
+    0,
+    2,
+    0,
+    2
+   ],
+   "spacing_mod_period": [
+    2
+   ],
+   "predicted": "values 0..RVR, period RVR + 1 (a constant spacing)",
+   "agrees": true
+  },
+  "wrap 5": {
+   "rvr": 5,
+   "values": [
+    2,
+    0,
+    4,
+    2
+   ],
+   "spacing_mod_period": [
+    2
+   ],
+   "predicted": "values 0..RVR, period RVR + 1 (a constant spacing)",
+   "agrees": true
+  },
+  "wrap 8": {
+   "rvr": 8,
+   "values": [
+    5,
+    3,
+    1,
+    8
+   ],
+   "spacing_mod_period": [
+    2
+   ],
+   "predicted": "values 0..RVR, period RVR + 1 (a constant spacing)",
+   "agrees": true
+  },
+  "cvr write": {
+   "csr_after_cvr_write": "0x00000005",
+   "cvr": 8,
+   "predicted": "a CVR write clears COUNTFLAG (and the count)",
+   "agrees": true
+  },
+  "calib": {
+   "calib": "0x0000270F",
+   "predicted": "0x00000000",
+   "from": "SVD reset value",
+   "agrees": false
+  },
+  "csr bits": {
+   "csr_after_writing_6": "0x00000006",
+   "csr_after_writing_0": "0x00000000",
+   "predicted": "TICKINT and CLKSOURCE read back (6)",
+   "agrees": true
+  },
+  "rvr mask": {
+   "rvr_after_all_ones": "0x00FFFFFF",
+   "cvr_after_write": "0x00000000",
+   "predicted": "RVR keeps bits 23:0 (0x00FFFFFF); any CVR write reads back 0",
+   "agrees": true
+  },
+  "external clock": {
+   "cvr_first": 16777214,
+   "cvr_second": 16777212,
+   "csr": "0x00000001",
+   "counted": true,
+   "note": "CLKSOURCE = 0 (the external reference) right after reset halt",
+   "agrees": true
+  }
+ },
+ "debugger_countflag": {
+  "end": "done",
+  "first": "0x00010005",
+  "second": "0x00010005",
+  "countflag_first": 1,
+  "countflag_second": 1,
+  "debugger_read_clears": false
+ }
+}

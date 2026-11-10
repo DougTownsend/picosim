@@ -1405,7 +1405,8 @@ def run(ctx):
     diffs = sio_diffs + gpio_diffs + len(st_bad)
     ctx.log(f"peripherals: {diffs} differences from the models (SIO {sio_diffs}, GPIO {gpio_diffs}, "
             f"SysTick {len(st_bad)})")
-    ctx.status(NAME, 'done', facts=paths, differences=diffs, flashed='not yet: campaign F runs flashed_part()')
+    ctx.status(NAME, 'done', facts=paths, differences=diffs, compared_with='datasheet',   # its models: picosim has none
+               flashed='not yet: campaign F runs flashed_part()')
     return paths
 
 

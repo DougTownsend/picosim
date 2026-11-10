@@ -12,6 +12,7 @@ import re
 
 from .loader import load_program, LoadError
 from .cpu import SimulatorError, svc_write_data
+from .memmap import is_memory
 
 REG_NAMES = ['R0', 'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8', 'R9', 'R10',
              'R11', 'R12', 'SP', 'LR', 'PC']
@@ -184,7 +185,7 @@ class Walkthrough:
                            "the program itself keeps going when you run it.")
                 break
             pc = c.pc
-            if pc < 0x10000 and c.read16(pc) == 0xDF03 and not self.keys:
+            if is_memory(pc) and c.read16(pc) == 0xDF03 and not self.keys:
                 stopped = ("Next the program calls getchar (SVC #3), which waits for you to type a key in the "
                            "serial console. The walkthrough stops here because what happens next depends on "
                            "that key; run the program to continue.")
@@ -234,7 +235,7 @@ class Walkthrough:
                            "the program itself keeps going when you run it.")
                 break
             pc = c.pc
-            if pc < 0x10000 and c.read16(pc) == 0xDF03 and not self.keys:
+            if is_memory(pc) and c.read16(pc) == 0xDF03 and not self.keys:
                 stopped = ("Next the program calls getchar (SVC #3), which waits for you to type a key in the "
                            "serial console. The walkthrough stops here because what happens next depends on "
                            "that key; run the program to continue.")
@@ -285,7 +286,7 @@ class Walkthrough:
         def place(a):
             if a is None:
                 return 'memory'
-            return f"the I/O register at {h32(a)} (Pico hardware)" if a >= 0x10000 else f"memory address {h32(a)}"
+            return f"the I/O register at {h32(a)} (Pico hardware)" if not is_memory(a) else f"memory address {h32(a)}"
 
         s = ''
         cond = None
@@ -486,7 +487,7 @@ class Walkthrough:
         # memory
         if _has(info, 'MEM.EN'):
             mar = dp0['MAR']
-            kind = "an I/O register (Pico hardware)" if mar >= 0x10000 else "memory"
+            kind = "an I/O register (Pico hardware)" if not is_memory(mar) else "memory"
             if _has(info, 'R/W=READ'):
                 out.append(f"MEM.EN and R/W = READ make {kind} read at MAR = {h32(mar)}; the data arrives on its "
                            "way into MDR.")

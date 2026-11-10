@@ -284,9 +284,9 @@ const INFO := {
 	},
 	"mem": {
 		"title": "MEMORY / I-O",
-		"kind": "Memory (64 KB RAM + memory-mapped I/O)",
+		"kind": "Memory (ROM, flash, SRAM) + memory-mapped I/O",
 		"what": "Stores the program and its data, and connects to the Pico's GPIO peripherals.",
-		"how": "RAM covers 0x0000–0xFFFF: the OS at 0x0000, your code from 0x3000, the stack growing down from the top. (This is picosim's simplified map: on a real RP2040, flash starts at 0x10000000 and SRAM at 0x20000000.) Addresses 0x10000 and up are I/O registers (SIO at 0xD0000000, IO_BANK0 at 0x40014000, PADS_BANK0 at 0x4001C000); writing them changes the pins on the Pico board. An access takes a cycle of its own: with MEM.EN asserted, a read (R/W=READ, LD.MDR) puts M[MAR] into MDR at the clock edge, and a write (R/W=WRITE) stores MDR at M[MAR] at the clock edge.",
+		"how": "The RP2040's memory map: flash from 0x10000000 holds the built-in OS and then your code (from 0x10000100), which the program can read but not write; SRAM at 0x20000000–0x20041FFF holds your variables and, at its top, the stack, growing down from 0x20042000; the boot ROM at 0x00000000 is empty here. Addresses outside these are I/O registers (SIO at 0xD0000000, IO_BANK0 at 0x40014000, PADS_BANK0 at 0x4001C000); writing them changes the pins on the Pico board. An access takes a cycle of its own: with MEM.EN asserted, a read (R/W=READ, LD.MDR) puts M[MAR] into MDR at the clock edge, and a write (R/W=WRITE) stores MDR at M[MAR] at the clock edge.",
 		"links": [
 			["in", "mar", "MEM.EN", "address"],
 			["out", "mdr", "R/W=READ", "read data"],

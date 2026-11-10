@@ -32,14 +32,19 @@ class ImageTest(unittest.TestCase):
         src = os.path.join(EX, '04_memory.s')
         sim = SimSide(src)
         hw = img.build(src, sim.prog)
-        self.assertEqual(len(hw.image), 0x10000)
-        self.assertEqual(hw.halt_addr, 0x6)          # _start's BKPT, where main returns
+        chunks = dict(hw.chunks)
+        self.assertEqual(sorted(chunks), [0x20000000, img.BENCH_TABLE, img.HW_EXTRA, 0x20020000,
+                                          0x20042000 - img.STACK_KEEP])
+        self.assertEqual(hw.halt_addr, 0x10000006)   # _start's BKPT, where main returns
         self.assertEqual(set(hw.calls), {'putchar', 'getchar', 'bench_start', 'bench_stop'})
         for name, addr in hw.symbols.items():
             self.assertEqual(sim.prog.label_map.get(name, addr), addr)
-        # the main pointer the hardware OS reads
-        self.assertEqual(int.from_bytes(hw.image[0x2FFC:0x3000], 'little'),
-                         img.to_hw(sim.prog.main_addr) | 1)
+        # the main pointer the hardware OS reads, in the chip's copy of the flash
+        code = chunks[0x20020000]
+        self.assertEqual(int.from_bytes(code[0xFC:0x100], 'little'), img.to_hw(sim.prog.main_addr) | 1)
+        # the program's data at the same SRAM addresses as in picosim
+        self.assertEqual(chunks[0x20000000][:0x14], sim.prog.image[0x20000000:0x20000014])
+        self.assertEqual(hw.compare[1], (0x20000000, 0x20001000))
 
     def test_timed_os_keeps_the_program_and_the_offsets(self):
         src = os.path.join(EX, '06_echo.s')
@@ -48,8 +53,10 @@ class ImageTest(unittest.TestCase):
         self.assertIsNone(plain.timed)
         self.assertEqual(set(timed.timed), {'go', 'putchar', 'getchar', 'end'})
         self.assertEqual(plain.calls, timed.calls)
-        self.assertEqual(plain.image[img.USER_BASE:], timed.image[img.USER_BASE:])
-        self.assertNotEqual(plain.image[:img.USER_BASE], timed.image[:img.USER_BASE])
+        p, t = dict(plain.chunks), dict(timed.chunks)
+        self.assertEqual(p[0x20020000][0x100:], t[0x20020000][0x100:])   # the program is the same
+        self.assertNotEqual(p[0x20020000][:0x100], t[0x20020000][:0x100])   # the OS is not
+        self.assertNotEqual(p[img.HW_EXTRA], t[img.HW_EXTRA])
 
     def test_programs_with_regions_are_told_apart(self):
         self.assertTrue(uses_bench(os.path.join(ROOT, 'hwtests', 'b01_alu_timing.s')))
@@ -62,13 +69,16 @@ class ImageTest(unittest.TestCase):
             os.remove(f.name)
 
     def test_mapping(self):
-        self.assertTrue(img.same(0x3104, 0x20003104))
-        self.assertTrue(img.same(0x10000, 0x20010000))   # the stack's top
+        self.assertTrue(img.same(0x10000104, 0x20020104))    # code moves
+        self.assertTrue(img.same(0x20042000, 0x20042000))    # data and the stack do not
         self.assertTrue(img.same(5, 5))
         self.assertFalse(img.same(5, 6))
-        self.assertFalse(img.same(0x20000, 0x20020000))  # outside the 64 KiB
-        self.assertEqual(img.to_sim(0x2000FFF8), 0xFFF8)
+        self.assertFalse(img.same(0x1000C000, 0x2002C000))   # outside the copied 48 KiB
+        self.assertEqual(img.to_sim(0x20020104), 0x10000104)
+        self.assertEqual(img.to_sim(0x20041FF8), 0x20041FF8)
         self.assertEqual(img.to_sim(0xD0000000), 0xD0000000)
+        self.assertEqual(img.to_hw(0x10000100), 0x20020100)
+        self.assertEqual(img.to_hw(0x20000010), 0x20000010)
 
     def test_suite_headers(self):
         tests = suite.tests()
@@ -209,7 +219,7 @@ class StandInTest(unittest.TestCase):
             if (hw1 & 0xF800) == 0x6000:          # STR Rt, [Rn, #imm]
                 rn, imm = (hw1 >> 3) & 7, ((hw1 >> 6) & 0x1F) * 4
                 a = chip.read_reg(rn) + imm
-                if img.to_hw(0x3000) <= a < img.to_hw(0x10000):     # the program's memory only
+                if 0x20000000 <= a < 0x20042000:                   # the program's data only
                     chip.write_mem(a, bytes([chip.read_mem(a, 1)[0] ^ 1]))
         self._sabotage(corrupt)
         L = Lockstep(self.t, src)
@@ -326,7 +336,7 @@ class StandInTest(unittest.TestCase):
         self.assertIn('Call 2 to getchar', gets[1]['when'])
         put = next(c for c in calls if c['name'] == 'putchar')
         self.assertIn('svc #2, bx lr', put['how'])
-        self.assertIn('0x20000010', put['how'])               # putchar's address on the chip
+        self.assertIn('0x20020010', put['how'])               # putchar's address on the chip
 
     def test_bench_regions_explain_the_systick_reads(self):
         s = Bench(self.t, os.path.join(ROOT, 'hwtests', 'b01_alu_timing.s')).run()
@@ -334,7 +344,7 @@ class StandInTest(unittest.TestCase):
         start, stop = r['systick']
         self.assertEqual(start - stop - r['over'], r['hw'])
         self.assertIn(f"{start} − {stop} = {r['raw']}", r['os']['how'])
-        self.assertIn('0x20002010', r['os']['how'])           # region 2's slot in BENCH_TABLE
+        self.assertIn(f"0x{img.BENCH_TABLE + 0x10:08X}", r['os']['how'])   # region 2's slot in BENCH_TABLE
         self.assertIn(f"bench_stop on line {r['stop_line']}", r['os']['when'])
 
 

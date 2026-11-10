@@ -286,7 +286,7 @@ func _build_tree() -> void:
 		if lab != "":
 			passes[lab] = passes.get(lab, 0) + 1
 			var h := tree.create_item(root)
-			var what := "function" if called.has(int(s["addr"])) else ("built-in OS" if int(s["addr"]) < 0x3000 else "label")
+			var what := "function" if called.has(int(s["addr"])) else ("built-in OS" if Backend.in_os(int(s["addr"])) else "label")
 			h.set_text(2, lab + ("  · pass %d" % passes[lab] if passes[lab] > 1 else "   " + what))
 			h.set_tooltip_text(2, "%s: %s%s" % [lab, "a function in your program" if what == "function" else (
 				"part of the built-in OS" if what == "built-in OS" else "a label in your program"),
@@ -296,7 +296,7 @@ func _build_tree() -> void:
 				h.set_selectable(c, false)
 		var it := tree.create_item(root)
 		it.set_text(1, str(i + 1))
-		it.set_text(2, "%04X  %s" % [int(s["addr"]), _tidy(str(s["text"]))])
+		it.set_text(2, "%08X  %s" % [int(s["addr"]), _tidy(str(s.get("shown", s["text"])))])
 		it.set_text(3, str(s["cycles"].size()))
 		it.set_tooltip_text(0, "Toggle a breakpoint: Run stops just before this instruction")
 		it.set_tooltip_text(2, str(s["summary"]))
@@ -304,7 +304,7 @@ func _build_tree() -> void:
 		it.set_custom_color(0, Palette.c("bp"))
 		it.set_custom_color(1, Palette.c("dim"))
 		it.set_custom_color(3, Palette.c("dim"))
-		if int(s["addr"]) < 0x3000:
+		if Backend.in_os(int(s["addr"])):
 			it.set_custom_color(2, Palette.c("muted"))
 		_items.append(it)
 	_bps_key = null
@@ -392,7 +392,7 @@ func _show_detail() -> void:
 	else:
 		t += "[color=%s]Step %d of %d[/color]   %s\n" % [dim, _sel + 1, steps.size(),
 			_link("here", "▶ back to where you are") if _cur >= 0 and _cur < steps.size() else ""]
-	t += "[b][code]%s[/code][/b]\n" % _esc(_tidy(str(s["text"])))
+	t += "[b][code]%s[/code][/b]\n" % _esc(_tidy(str(s.get("shown", s["text"]))))
 	t += _esc(str(s["summary"])) + "\n"
 	if _pipe() and s.has("row"):
 		t += "[color=%s]Datasheet Table 81: %s%s[/color]\n" % [dim, _esc(str(s["row"])),

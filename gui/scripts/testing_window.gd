@@ -773,7 +773,7 @@ func _append_rows() -> void:
 		var it := table.create_item(root)
 		it.set_meta("i", i)
 		it.set_text(0, str(int(row["n"])))
-		it.set_text(1, "%04X" % int(row["addr"]))
+		it.set_text(1, "%08X" % int(row["addr"]))
 		it.set_text(2, str(row["text"]))
 		it.set_tooltip_text(2, ("line %d: %s" % [int(row["line"]), row["src"]]) if int(row.get("line", 0)) > 0 else "the built-in OS")
 		it.set_text(3, _brief(row, prev, "sim"))
@@ -810,9 +810,9 @@ func _brief(row: Dictionary, prev: Dictionary, side: String) -> String:
 		parts.append(_flags(int(s["flags"])))
 	for w in s.get("writes", []):
 		if w[2] == null:
-			parts.append("[%04X]←?" % int(w[0]))
+			parts.append("[%08X]←?" % int(w[0]))
 		else:
-			parts.append("[%04X]←%s" % [int(w[0]), _hexw(int(w[2]), int(w[1]))])
+			parts.append("[%08X]←%s" % [int(w[0]), _hexw(int(w[2]), int(w[1]))])
 	if s.get("printed", "") != "":
 		parts.append("prints %s" % _show_char(str(s["printed"])))
 	if row.has("fault") and row["fault"].get(side) != null:
@@ -869,7 +869,7 @@ func _show_head() -> void:
 		t += "%d steps: [color=%s]%d identical[/color], %d OS calls, [color=%s]%d I/O differences[/color], [color=%s]%d differences[/color].   " % [
 			int(s.get("steps", 0)), Palette.hex("green"), int(c.get("same", 0)), int(c.get("call", 0)),
 			Palette.hex("yellow"), int(c.get("io", 0)), Palette.hex("error" if int(c.get("diff", 0)) else "muted"), int(c.get("diff", 0))]
-		t += "Memory 0x%04X–0x%04X: %s.   " % [int(m.get("start", 0)), int(m.get("end", 0)) - 1,
+		t += "Memory (code, data, stack): %s.   " % [
 			"identical" if int(m.get("different_words", 0)) == 0 else "[color=%s]%d words differ[/color]" % [Palette.hex("error"), int(m.get("different_words", 0))]]
 		var o: Dictionary = s.get("output", {})
 		if str(o.get("sim", "")) != "" or str(o.get("hw", "")) != "":
@@ -899,7 +899,7 @@ func _on_row_selected() -> void:
 
 func _show_step(row: Dictionary) -> void:
 	var diffs: Array = row.get("diffs", [])
-	var t := "[b]Step %d[/b]   [code]%04X  %s[/code]" % [int(row["n"]), int(row["addr"]), _esc(str(row["text"]))]
+	var t := "[b]Step %d[/b]   [code]%08X  %s[/code]" % [int(row["n"]), int(row["addr"]), _esc(str(row["text"]))]
 	if int(row.get("line", 0)) > 0:
 		t += "   [color=%s]line %d: %s[/color]" % [Palette.hex("dim"), int(row["line"]), _esc(str(row["src"]))]
 	t += "\n"
@@ -947,8 +947,8 @@ func _show_step(row: Dictionary) -> void:
 		for i in writes.size():
 			var w: Array = writes[i]
 			var hv = hws[i][2] if i < hws.size() else null
-			var bad: bool = ("[%04X]" % int(w[0])) in diffs
-			t += "[code]  %04X: %s / [color=%s]%s[/color][/code]\n" % [int(w[0]), _hexw(int(w[2]), int(w[1])),
+			var bad: bool = ("[0x%08X]" % int(w[0])) in diffs
+			t += "[code]  %08X: %s / [color=%s]%s[/color][/code]\n" % [int(w[0]), _hexw(int(w[2]), int(w[1])),
 				Palette.hex("error" if bad else "text"), "?" if hv == null else _hexw(int(hv), int(w[1]))]
 	if not sim.get("io", []).is_empty():
 		t += "\n[b]Peripheral writes[/b] (picosim): "
@@ -1054,6 +1054,8 @@ func _camp_state(name: String) -> Array:
 				return ["✓ done", "green"]
 			if int(d) == 0:
 				return ["✓ done · same", "green"]
+			if str(r.get("compared_with", "")) == "datasheet":
+				return ["done · %d vs datasheet" % int(d), "yellow"]   # picosim does not model these
 			return ["done · %d differ" % int(d), "error"]
 		"partial":
 			if r.has("done") and r.has("total"):
@@ -1093,7 +1095,8 @@ func _render_campaign(name: String) -> void:
 	var st := _camp_state(name)
 	var t := "[b]%s   %s[/b]   [color=%s][b]%s[/b][/color]" % [LETTERS[name], _esc(str(r.get("title", name))), Palette.hex(st[1]), st[0]]
 	if r.get("state", "") == "done" and r.get("differences") != null and int(r["differences"]) > 0:
-		t += "[color=%s] from picosim[/color]" % Palette.hex(st[1])
+		t += "[color=%s] from %s[/color]" % [Palette.hex(st[1]),
+			"the datasheet" if str(r.get("compared_with", "")) == "datasheet" else "picosim"]
 	if str(r.get("step", "")) != "" and r.get("state", "") == "partial":
 		t += "[color=%s]  (stopped in %s)[/color]" % [Palette.hex("dim"), _esc(str(r["step"]))]
 	if str(r.get("updated", "")) != "":
@@ -1168,7 +1171,7 @@ func _camp_detail_default(name: String) -> void:
 	var t := ""
 	var diffs: Array = r.get("diffs", [])
 	if not diffs.is_empty():
-		var count := {"picosim": 0, "expected": 0, "pending": 0}
+		var count := {"picosim": 0, "datasheet": 0, "expected": 0, "pending": 0}
 		var openable := false
 		for d in diffs:
 			count[str(d.get("kind", "pending"))] = int(count.get(str(d.get("kind", "pending")), 0)) + 1
@@ -1176,6 +1179,8 @@ func _camp_detail_default(name: String) -> void:
 		var parts := []
 		if count["picosim"] > 0:
 			parts.append("%d difference%s from picosim" % [count["picosim"], "" if count["picosim"] == 1 else "s"])
+		if count["datasheet"] > 0:
+			parts.append("%d difference%s from the datasheet (picosim does not model these)" % [count["datasheet"], "" if count["datasheet"] == 1 else "s"])
 		if count["expected"] > 0:
 			parts.append("%d fact%s not as the datasheet or SDK predicts" % [count["expected"], "" if count["expected"] == 1 else "s"])
 		if count["pending"] > 0:
@@ -1214,8 +1219,8 @@ func _show_difference(i: int) -> void:
 	_camp_row = i
 	var k := str(d.get("kind", ""))
 	var t := "[b]%d   %s[/b]   [color=%s]%s[/color]" % [i + 1, _esc(str(d.get("what", ""))),
-		Palette.hex({"picosim": "error", "expected": "yellow"}.get(k, "dim")),
-		{"picosim": "differs from picosim", "expected": "not what was expected", "pending": "pending: picosim cannot model this yet"}.get(k, k)]
+		Palette.hex({"picosim": "error", "datasheet": "yellow", "expected": "yellow"}.get(k, "dim")),
+		{"picosim": "differs from picosim", "datasheet": "differs from the datasheet", "expected": "not what was expected", "pending": "pending: picosim cannot model this yet"}.get(k, k)]
 	var bits := []
 	for f in ["class", "where"]:
 		if str(d.get(f, "")) != "":
@@ -1347,6 +1352,10 @@ func _open_flash_dialog() -> void:
 	var connected: bool = str(status.get("connected", "")) != ""
 	var busy: bool = status.get("busy", false)
 	var t := _flash_summary() + "\n\n"
+	t += "[b]Which Pico is which[/b]\n"
+	t += "• The [b]PROBE[/b] Pico runs the debug probe firmware. Its USB cable goes to this computer and three wires go from it to the other Pico. [color=%s]Never press its BOOTSEL button[/color], and keep it plugged in the whole time.\n" % Palette.hex("error")
+	t += "• The [b]TARGET[/b] Pico is the one being tested: its three debug pins (SWCLK, GND, SWDIO) are wired to the probe, and it has its own USB cable to this computer. Only this one is ever put in BOOTSEL mode.\n"
+	t += "• Don't press anything in advance: a message pops up at each moment you're needed.\n\n"
 	t += "Campaign F is the only campaign that changes the board for good: it writes the target Pico's flash. So the original contents are saved first, twice and by two different routes, and put back at the end, bit for bit. [b]It cannot start until both backups have been made and match.[/b]\n"
 	var parts := [["backup", "Before anything is written: the backup"], ["run", "Then the campaign"],
 		["restore", "At the end (or, if a session ends early, before anything else): the restore"]]
@@ -1436,7 +1445,7 @@ func _on_discover(msg: Dictionary) -> void:
 				_camp_note_default(name)
 		"discover_ask":
 			ask_dialog.dialog_text = str(msg.get("message", ""))
-			ask_dialog.popup_centered(Vector2i(560, 220))
+			ask_dialog.popup_centered(Vector2i(640, 340))
 		"discover_done":
 			camp_running = ""
 			ask_dialog.hide()

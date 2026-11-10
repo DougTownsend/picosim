@@ -49,7 +49,7 @@ memory; the prompt stays open after the program halts.
 | `d [addr] [n]` | Disassemble n instructions (default 10) from addr (default: the PC) |
 | `b <addr>` / `db <addr>` | Set / delete a breakpoint at a hex address or label |
 | `lb` | List breakpoints |
-| `reg <rN> <value>` | Set a register, e.g. `reg r0 42` or `reg pc 0x3000` |
+| `reg <rN> <value>` | Set a register, e.g. `reg r0 42` or `reg pc 0x10000100` |
 | `gpio <pin> 0\|1\|z` | Drive an input pin high, low or floating |
 | `q` | Quit |
 | `h` | Show help |
@@ -64,8 +64,26 @@ explanation wherever a real Pico would crash with a HardFault:
 - `bx`, `blx` or `pop {pc}` to an address with bit 0 clear (put `.thumb_func`
   before a label whose address you load with `ldr r0, =label`);
 - an instruction the M0+ does not have (e.g. code assembled for a Cortex-M4);
-- an address that is neither RAM (0x0000–0xFFFF) nor a simulated I/O register
-  (SIO, IO_BANK0, PADS_BANK0, RESETS).
+- an address that is neither memory (ROM, flash or SRAM, below) nor a simulated
+  I/O register (SIO, IO_BANK0, PADS_BANK0, RESETS);
+- a store into flash or ROM (on a Pico the store would simply be lost): put
+  variables after `.data` or `.bss`, which go in SRAM.
+
+### Memory map
+
+picosim uses the RP2040's own addresses (`picosim/memmap.py`):
+
+| Addresses | What is there |
+| --- | --- |
+| `0x00000000`–`0x00003FFF` | ROM: the Pico's boot ROM (empty in picosim) |
+| `0x10000000`–`0x100000FF` | flash: picosim's built-in OS (`_start`, `putchar`, `getchar`) |
+| `0x10000100` upward | flash: the program's code and constants (`.text`, `.rodata`), read-only |
+| `0x20000000`–`0x20041FFF` | SRAM: the program's variables (`.data`, `.bss`) from the bottom, the stack from the top (SP starts at `0x20042000`) |
+| anything else | the simulated I/O registers, or a bus fault |
+
+The OS sits in flash, where a Pico's start-up code and `putchar` also are,
+so a `bl putchar` reaches it directly. Code runs from flash with no wait
+states, as from the Pico's XIP cache.
 
 As on the RP2040, a GPIO pin follows the SIO output registers only after its
 IO_BANK0 CTRL register selects function 5 (SIO).

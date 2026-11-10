@@ -6,7 +6,7 @@ step_cycle(), so the table always matches the simulator.  `picosim
 --cycle-table` prints it as Markdown (docs/cycles.md is generated this way).
 """
 
-from ._picosim_core import CPUCore
+from .memmap import scratch_core
 
 # (instruction, hw1, hw2, textbook count or None if the sequence is new here)
 EXAMPLES = [
@@ -47,15 +47,7 @@ EXAMPLES = [
 
 def trace(hw1, hw2=0):
     """Clock one instruction on a scratch core; return the list of state names."""
-    c = CPUCore()
-    c.strict = False          # e.g. BLX R3 to an even address: only the states matter here
-    c.write16(0x100, hw1)
-    c.write16(0x102, hw2)
-    for r in range(8):
-        c.set_reg(r, 0x400)
-    c.set_reg(14, 0x201)
-    c.sp = 0x800
-    c.pc = 0x100
+    c = scratch_core(hw1, hw2)     # in SRAM; only the states matter
     states = []
     while True:
         info = c.step_cycle()

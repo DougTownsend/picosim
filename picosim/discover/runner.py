@@ -393,7 +393,10 @@ class Run:
         return how
 
     def _vars(self):
-        return F.unpack_words(F.VARS, self.t.rsp.read_mem(self.lay['VARS'], 4 * len(F.VARS)))
+        v = F.unpack_words(F.VARS, self.t.rsp.read_mem(self.lay['VARS'], 4 * len(F.VARS)))
+        if getattr(self.t, 'check_link', None):
+            self.t.check_link()      # a dead debug port reads as zeros; stop (the run resumes later)
+        return v
 
     def _results(self, first, upto):
         n = upto - first
@@ -419,6 +422,9 @@ class Run:
             if not self.ready:
                 self.prepare()
             t0 = time.monotonic()
+            saw_lockup = getattr(self.t, 'saw_lockup', None)
+            if saw_lockup:
+                saw_lockup()                        # forget any lockup reported before this launch
             how = self._launch(b.with_start(start))
             if how == 'timeout' and self.stop_flag and self.stop_flag.is_set():
                 # stopped by request mid-batch: nothing of it is kept, and a
@@ -452,10 +458,15 @@ class Run:
             if v['state'] == F.STATE_AGENT_FAULT:
                 raise RunError(f"the agent itself faulted at 0x{v['fault_pc']:08X} (LR 0x{v['fault_lr']:08X}); "
                                "this is a bug in agent.s, not a fact about the chip")
-            if case is None or v['state'] != F.STATE_RUNNING:
+            # OpenOCD halts a locked-up core itself, and the agent may not yet
+            # have marked the case running: the case at `index` locked it up
+            locked = case is not None and how == 'halted' and saw_lockup is not None and saw_lockup()
+            if case is None or (v['state'] != F.STATE_RUNNING and not locked):
                 raise RunError(f"the agent stopped between cases (state {F.STATE_NAMES.get(v['state'], v['state'])}, "
                                f"case {index} of {len(cases)}, {how})")
-            if how == 'timeout':
+            if locked:
+                mark = MARK_LOCKUP
+            elif how == 'timeout':
                 st = self.t.dhcsr()
                 mark = MARK_LOCKUP if st['lockup'] else MARK_HANG
             else:

@@ -1,0 +1,13 @@
+{
+ "name": "timing-D1-S3-word",
+ "cases": 242,
+ "fraction": 1.0,
+ "layout": "lo",
+ "scratch_words": 64,
+ "flags": 3,
+ "campaign": "timing-D1",
+ "run_id": "20261110-143420",
+ "sha256": "ed3e756afe73f819ac0f3772bc440846daa012e4911f3d454fc9d93c8886c7e3",
+ "timing": true,
+ "full_changes": {}
+}

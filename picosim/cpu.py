@@ -16,11 +16,11 @@ import sys
 import struct
 
 from ._picosim_core import CPUCore as _CPUCore
+from .memmap import (STACK_TOP, SRAM_BASE, SRAM_END, FLASH_BASE, FLASH_END, ROM_END, fmt,
+                     span)
 
-# ── Constants ──────────────────────────────────────────────────────────────────
-
-MEM_SIZE  = 0x10000   # 64 KiB (16-bit address space)
-STACK_TOP = 0x10000   # initial SP
+SIMULATED_IO = ("SIO GPIO registers (0xD0000000), IO_BANK0 (0x40014000), "
+                "PADS_BANK0 (0x4001C000) and RESETS (0x4000C000)")
 
 
 class SimulatorError(Exception):
@@ -31,33 +31,40 @@ def unmapped_message(addr, write, insn_addr, access='data'):
     """Why an access to `addr` failed, in words a student can act on.
     access: 'fetch' (running code there), 'data' (a load or store) or 'debug'."""
     if access == 'fetch':
-        where = f"The program jumped to 0x{addr:08X} and tried to run code there, where picosim has nothing."
+        where = f"The program jumped to {fmt(addr)} and tried to run code there, where picosim has nothing."
     elif access == 'data':
         what = "writes to" if write else "reads from"
-        where = f"The instruction at 0x{insn_addr:X} {what} 0x{addr:08X}, where picosim has nothing."
+        where = f"The instruction at {fmt(insn_addr)} {what} {fmt(addr)}, where picosim has nothing."
     else:
-        return (f"Nothing is at address 0x{addr:08X} in picosim: RAM is 0x0000-0xFFFF and the "
-                "simulated I/O registers are SIO (0xD0000000), IO_BANK0 (0x40014000), "
-                "PADS_BANK0 (0x4001C000) and RESETS (0x4000C000).")
-    if 0x20000000 <= addr < 0x20042000:
-        hint = (" That is the Pico's SRAM; in picosim RAM is at 0x0000-0xFFFF, so use labels "
-                "(ldr r0, =my_data) rather than fixed RAM addresses.")
-    elif 0x10000000 <= addr < 0x11000000:
-        hint = " That is the Pico's flash (XIP), which picosim does not simulate."
+        return (f"Nothing is at address {fmt(addr)} in picosim. Its memory is ROM "
+                f"(0x00000000-0x00003FFF), flash (0x10000000-{fmt(FLASH_END - 1)}) and SRAM "
+                f"(0x20000000-{fmt(SRAM_END - 1)}); the simulated I/O registers are {SIMULATED_IO}.")
+    if SRAM_BASE - 0x100 <= addr < SRAM_BASE and access == 'data' and write:
+        hint = (" That is just below SRAM, where the stack would go next: the stack has run out "
+                "(too many nested calls or pushes without pops?).")
+    elif 0x21000000 <= addr < 0x21040000:
+        hint = (" That is the Pico's non-striped view of the same SRAM, which picosim does not "
+                "simulate; use the striped addresses at 0x20000000.")
+    elif 0x11000000 <= addr < 0x14000000 or 0x15000000 <= addr < 0x15004000:
+        hint = (" That is another view of the Pico's flash (the XIP cache's aliases), which picosim "
+                "does not simulate; the program's flash is at 0x10000000.")
+    elif ROM_END <= addr < FLASH_BASE or FLASH_END <= addr < 0x11000000:
+        hint = (" That is past the end of the ROM or the flash. Is the address in the register what "
+                "you meant?")
     elif 0x40000000 <= addr < 0x60000000 or 0xD0000000 <= addr < 0xE0000000:
-        hint = (" picosim simulates only these Pico peripherals: SIO GPIO registers "
-                "(0xD0000000), IO_BANK0 (0x40014000), PADS_BANK0 (0x4001C000) and "
-                "RESETS (0x4000C000).")
+        hint = f" picosim simulates only these Pico peripherals: {SIMULATED_IO}."
     else:
-        hint = " RAM is at 0x0000-0xFFFF; is the address in the register what you meant?"
+        hint = (" Memory is ROM at 0x00000000, flash at 0x10000000 and SRAM at 0x20000000; "
+                "is the address in the register what you meant?")
     return "Bus fault: " + where + hint + " On the Pico this would be a HardFault."
 
 
 def svc_write_data(core):
-    """The bytes SVC #0 (write) prints: R2 bytes from address R1, in RAM."""
+    """The bytes SVC #0 (write) prints: R2 bytes from address R1, in memory."""
     buf, n = core.get_reg(1), core.get_reg(2)
-    if buf >= 0x10000 or buf + n > 0x10000:
-        raise SimulatorError(f"SVC #0 (write): {n} bytes at 0x{buf:X} run past the end of RAM (0xFFFF)")
+    if n and span(buf, n) is None:
+        raise SimulatorError(f"SVC #0 (write): {n} bytes at {fmt(buf)} are not all inside one of "
+                             f"ROM, flash or SRAM")
     return core.get_mem_slice(buf, n)
 
 
@@ -77,8 +84,8 @@ class CPU:
         self._core.set_reg(14, 0xFFFFFFFF)   # LR sentinel
         self._core.pc = entry
 
-        # Load flat RAM content into the C++ core's memory array
-        self._core.load_memory(bytes(memory._ram.data), 0)
+        # Copy the program's ROM, flash and SRAM into the C++ core
+        memory.image.load_into(self._core)
 
         # Wire callbacks: peripheral I/O and SVC
         self._core.peripheral_read  = self._periph_read
@@ -86,8 +93,8 @@ class CPU:
         self._core.svc_handler      = self._svc_dispatch
 
     # ── peripheral callbacks ──────────────────────────────────────────────────
-    # The C++ core calls these for every address at or above 0x10000.  An
-    # address no simulated peripheral claims is a bus fault, as on the Pico
+    # The C++ core calls these for every address outside ROM, flash and
+    # SRAM.  An address no simulated peripheral claims is a bus fault, as on the Pico
     # (where it is a HardFault) — never a silent read of 0.
 
     def _block(self, addr, write):
@@ -161,7 +168,7 @@ class CPU:
         """Register a MemoryBlock peripheral with the memory system."""
         self.memory.add_block(block)
 
-    # ── memory access — C++ core is authoritative for flat RAM ────────────────
+    # ── memory access — the C++ core holds ROM, flash and SRAM ───────────────
 
     def mem_read8 (self, addr): return self._core.read8 (addr)
     def mem_read16(self, addr): return self._core.read16(addr)
@@ -185,7 +192,7 @@ class CPU:
             sym = self.sym_map.get(insn_addr, "")
             sym_str = f" <{sym}>" if sym else ""
             asm = self.asm_map.get(insn_addr, "???")
-            print(f"  0x{insn_addr:04X}{sym_str}: {asm}")
+            print(f"  {fmt(insn_addr)}{sym_str}: {asm}")
         try:
             self._core.step()
         except RuntimeError as e:

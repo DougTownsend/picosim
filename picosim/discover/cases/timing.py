@@ -1215,6 +1215,20 @@ def _hexed(v):
     return v
 
 
+RESTARTED = 'abandoned and restarted when interrupted part-way'
+INTERRUPT_OUTCOMES = ('before', 'not started', 'abandoned (part done)', 'completed')
+
+
+def interrupted_verdict(by_k):
+    """RESTARTED if every k's outcome fits an instruction that is abandoned
+    and run again from the start (not started, abandoned part done,
+    completed before the interrupt, or the interrupt came later); otherwise
+    the outcomes that do not fit."""
+    odd = {k: v for k, v in by_k.items()
+           if not (isinstance(v, str) and (v in INTERRUPT_OUTCOMES or v.startswith('later')))}
+    return RESTARTED if not odd else {'does not fit': odd}
+
+
 def exception_facts(recs, entries):
     """exceptions.json's facts and tables from the D4 records."""
     from .. import facts as FX
@@ -1227,6 +1241,11 @@ def exception_facts(recs, entries):
     TRM = 'Arm Cortex-M0+ TRM'
     ARM = 'ARMv6-M ARM'
     interrupted = {}
+    # The TRM's 15 cycles run from the interrupt signal at the core to the
+    # handler's first instruction; D4 starts at the end of the trigger store
+    # (SVC: its start), a later point, so the two are different intervals and
+    # are not compared (the chip read 12, SVC 13: 2026-11-10).
+    TRM_LATENCY = 'the TRM gives 15 cycles from the interrupt signal; this interval starts later (the end of the trigger)'
 
     def add(fid, results, key, prediction=None, unit=None, **extra):
         """One fact from every run's reading of `key`: measured if all agree."""
@@ -1255,7 +1274,7 @@ def exception_facts(recs, entries):
         slug = _slug(sc['name'])
         t = sc['type']
         if t == 'latency':
-            add(f"exceptions.entry.{slug}", res, 'entry', {'value': 15, 'from': TRM}, unit='cycles',
+            add(f"exceptions.entry.{slug}", res, 'entry', None, unit='cycles', trm=TRM_LATENCY,
                 note="pending (end of the trigger; for SVC its start) to the handler's first instruction"
                      + ("; SysTick: from the count reaching 0 to the handler's first SysTick read"
                         if sc['trigger'].startswith('SysTick') else ''))
@@ -1270,18 +1289,30 @@ def exception_facts(recs, entries):
         elif t == 'tail':
             add(f"exceptions.tail_chain.{slug}", res, 'tail_chain', None, unit='cycles',
                 note="from BX LR in the first handler to the second handler's first instruction, the BX included")
-            add(f"exceptions.entry.{slug}", res, 'entry', {'value': 15, 'from': TRM}, unit='cycles')
+            add(f"exceptions.entry.{slug}", res, 'entry', None, unit='cycles', trm=TRM_LATENCY)
             add(f"exceptions.exit.{slug}", res, 'exit', None, unit='cycles')
         elif t == 'frame':
             exp = _hexed(_expected_frame(sc, e))
+            # A pend set by a store takes effect a few instructions later
+            # (ARMv6-M ARM: only a DSB/ISB guarantees it at once), so the
+            # stacked PC may be any NOP of the slide after the trigger: it is
+            # compared as such, and how far in is its own fact.
+            slide = e['labels'].get('slide')
+            pcs = [(x.get('stacked') or {}).get('pc') for x in res]
+            if slide is not None and sc['trigger'] != 'SysTick' and pcs and len(set(pcs)) == 1 and \
+                    isinstance(pcs[0], int) and slide <= pcs[0] < slide + 2 * SLIDE and pcs[0] % 2 == 0:
+                exp['stacked'] = dict(exp['stacked'], pc=_hexed(pcs[0]))
+                add(f"exceptions.frame.{slug}.nops_before_taken", [{'n': (p - slide) // 2} for p in pcs], 'n',
+                    None, unit='instructions', note='NOPs after the trigger that ran before the exception was taken')
             for key in ('ipsr', 'exc_return', 'frame', 'stacked'):
                 add(f"exceptions.frame.{slug}.{key}", res, key, {'value': exp[key], 'from': ARM})
         elif t == 'priority':
             add(f"exceptions.priority.{slug}", res, 'taken', {'value': sc['expect'], 'from': ARM},
                 note='the exception taken first (IPSR)')
         elif t == 'primask':
-            add("exceptions.primask.taken_after_cpsie", res, 'after_cpsie', {'value': 0, 'from': ARM},
-                unit='instructions', note='instructions after CPSIE i before the pended PendSV is taken')
+            add("exceptions.primask.taken_after_cpsie", res, 'after_cpsie', None, unit='instructions',
+                note='instructions after CPSIE i before the pended PendSV is taken (the ARMv6-M ARM only '
+                     'guarantees a CPS that lowers the priority is seen after an ISB, so 0 is not required)')
         elif t == 'svc-masked':
             add("exceptions.svc_with_primask.taken", res, 'taken', {'value': 3, 'from': ARM},
                 note='SVC at a priority that cannot take SVCall escalates to HardFault')
@@ -1292,11 +1323,19 @@ def exception_facts(recs, entries):
         elif t == 'disabled-irq':
             add("exceptions.disabled_irq.taken", res, 'taken', {'value': 3, 'from': ARM},
                 note='3: the case ended in the sled (HardFault): the pended IRQ was not taken')
-            add("exceptions.disabled_irq.ispr", res, 'ispr', {'value': _hexed(1 << 26), 'from': ARM})
+            # only IRQ26's bit is under test: the boot ROM leaves others pending (XIP, SIO FIFOs)
+            add("exceptions.disabled_irq.ispr_irq26",
+                [{'b': (x['ispr'] >> 26) & 1 if isinstance(x.get('ispr'), int) else x.get('ispr')} for x in res],
+                'b', {'value': 1, 'from': ARM}, note='ISPR bit 26 after pending the disabled IRQ26')
+            add("exceptions.disabled_irq.ispr", res, 'ispr', None,
+                note='the whole ISPR: its other bits are interrupts the boot ROM left pending')
         elif t == 'nested':
             for key, exp in (('irq_exc_return', 0xFFFFFFF1), ('irq_ipsr', 42), ('stacked_ipsr', PENDSV),
-                             ('pendsv_exc_return', F.EXC_RETURN_PSP), ('preempted_after', 0)):
+                             ('pendsv_exc_return', F.EXC_RETURN_PSP)):
                 add(f"exceptions.nested.{key}", res, key, {'value': _hexed(exp), 'from': ARM})
+            add("exceptions.nested.preempted_after", res, 'preempted_after', None, unit='instructions',
+                note='handler instructions run after the store that pends the IRQ (a pend takes effect a few '
+                     'instructions later; only a DSB/ISB guarantees it at once)')
         elif t == 'wfi-masked':
             add("exceptions.wfi.wake_masked", res, 'wake', None, unit='cycles',
                 note="from the SysTick count reaching 0 to the first SysTick read after WFI (PRIMASK set)")
@@ -1307,10 +1346,11 @@ def exception_facts(recs, entries):
     for form, by_k in interrupted.items():
         fs.append(FX.fact(f"exceptions.interrupted.{_slug(form)}", by_k,
                           source='varies' if any(isinstance(v, dict) for v in by_k.values()) else 'measured',
-                          prediction={'value': 'abandoned and restarted when interrupted part-way',
-                                      'from': TRM},
                           note='SysTick fired k cycles into the instruction (Table 81 model of the cycles '
                                'since the SysTick clear); k <= 0 fires before it'))
+        fs.append(FX.fact(f"exceptions.interrupted.{_slug(form)}.verdict", interrupted_verdict(by_k),
+                          source='derived', prediction={'value': RESTARTED, 'from': TRM},
+                          note='what every k shows together'))
     return fs, table, diffs
 
 
@@ -1346,7 +1386,8 @@ def run(ctx):
     from .. import facts as FX
     stages = _stages(ctx)
     state0 = None
-    timing_facts, tables, diffs = [], {}, 0
+    timing_facts, tables, diffs = [], {}, 0      # diffs: against picosim's timing.py
+    arm_diffs = 0
     d1_rows = None
     for s in ('D1', 'D2', 'D3'):
         if s not in stages:
@@ -1427,7 +1468,7 @@ def run(ctx):
         if recs:
             state0 = state0 or state
             fs, table, n = exception_facts(recs, entries)
-            diffs += n
+            arm_diffs += n               # against the Arm TRM: picosim has no exceptions yet
             prov = ctx.provenance(state, campaign='D', runs_per_case=RUNS)
             from ...hwtest import standin
             extra = {'standin_guesses': {'entry': standin.ENTRY_CYCLES, 'exit': standin.EXIT_CYCLES}} \
@@ -1437,5 +1478,6 @@ def run(ctx):
     whole = set(stages) >= set(STAGES) and not ctx.limit
     part = f"only {','.join(stages)}" + (f", {ctx.limit} cases each" if ctx.limit else '')
     ctx.status(NAME, 'done' if whole else 'partial', step=None if whole else part,
-               facts=paths.get('timing') or paths.get('exceptions'), files=paths, differences=diffs)
+               facts=paths.get('timing') or paths.get('exceptions'), files=paths, differences=diffs + arm_diffs,
+               picosim_differences=diffs, compared_with='picosim' if diffs else 'datasheet')
     return paths

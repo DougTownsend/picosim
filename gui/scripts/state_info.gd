@@ -111,7 +111,7 @@ const STATES := {
 		"signals": "depends on the instruction (below)",
 		"uses": [
 			["ADDS, SUBS, MOVS, CMP, ANDS, LSLS, MULS, MOV, ADD SP … (operate)", "ALU_A ← SR1 and ALU_B ← SR2, or the immediate through SR2MUX (SR2MUX=IMM): LD.ALUA LD.ALUB. MOV, MVN, NEG, SXTB … use only B"],
-			["LDR … (loads), and POP / LDM once per register", "MDR ← M[MAR] in the access size: MEM.EN R/W=READ LD.MDR (and IOSEL=IO for an I/O register at 0x10000 and up)"],
+			["LDR … (loads), and POP / LDM once per register", "MDR ← M[MAR] in the access size: MEM.EN R/W=READ LD.MDR (and IOSEL=IO for an I/O register: an address outside ROM, flash and SRAM)"],
 			["STR … (stores), and PUSH / STM once per register", "MDR ← the register being stored, passed through the ALU: SR1=… ALUK=PASS GateALU LD.MDR (STORE ALIGN keeps only the byte or halfword for STRB / STRH)"],
 			["BX, BLX", "ALU_A ← the register holding the target address: SR1=… LD.ALUA"],
 		],

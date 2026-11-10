@@ -1,0 +1,6553 @@
+{
+ "schema": 1,
+ "kind": "exceptions",
+ "provenance": {
+  "chip": {
+   "chip_id": "0x20002927",
+   "cpuid": "0x410CC601",
+   "rom_version": 3
+  },
+  "date": "2026-11-10 14:37:15",
+  "openocd": "Open On-Chip Debugger 0.12.0",
+  "swd_khz": 5000,
+  "picosim": {
+   "commit": "73db057219678bcfda9b500c1df6b957820ccf51",
+   "dirty": true
+  },
+  "agent": "b6c7a134ff4178bbcd4a20b58373555ce3cde451",
+  "campaign": "D",
+  "run_id": "20261110-143614",
+  "runs": 1,
+  "agreed": null,
+  "target": "openocd",
+  "runs_per_case": 5,
+  "chip_label": "chip1",
+  "rescored": {
+   "at": "2026-11-10 14:45:08",
+   "why": "same D4 run, comparisons fixed (exception_facts)"
+  }
+ },
+ "facts": [
+  {
+   "id": "exceptions.entry.latency_svc",
+   "value": 13,
+   "source": "measured",
+   "unit": "cycles",
+   "trm": "the TRM gives 15 cycles from the interrupt signal; this interval starts later (the end of the trigger)",
+   "note": "pending (end of the trigger; for SVC its start) to the handler's first instruction"
+  },
+  {
+   "id": "exceptions.exit.latency_svc",
+   "value": 13,
+   "source": "measured",
+   "unit": "cycles",
+   "note": "from the start of BX LR (EXC_RETURN) to the next Thread instruction, the BX included"
+  },
+  {
+   "id": "exceptions.exc_return.latency_svc",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.ipsr.latency_svc",
+   "value": 11,
+   "source": "measured",
+   "prediction": {
+    "value": 11,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.nops_before_taken.latency_svc",
+   "value": 0,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.entry.latency_pendsv",
+   "value": 12,
+   "source": "measured",
+   "unit": "cycles",
+   "trm": "the TRM gives 15 cycles from the interrupt signal; this interval starts later (the end of the trigger)",
+   "note": "pending (end of the trigger; for SVC its start) to the handler's first instruction"
+  },
+  {
+   "id": "exceptions.exit.latency_pendsv",
+   "value": 13,
+   "source": "measured",
+   "unit": "cycles",
+   "note": "from the start of BX LR (EXC_RETURN) to the next Thread instruction, the BX included"
+  },
+  {
+   "id": "exceptions.exc_return.latency_pendsv",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.ipsr.latency_pendsv",
+   "value": 14,
+   "source": "measured",
+   "prediction": {
+    "value": 14,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.nops_before_taken.latency_pendsv",
+   "value": 2,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.entry.latency_irq26",
+   "value": 12,
+   "source": "measured",
+   "unit": "cycles",
+   "trm": "the TRM gives 15 cycles from the interrupt signal; this interval starts later (the end of the trigger)",
+   "note": "pending (end of the trigger; for SVC its start) to the handler's first instruction"
+  },
+  {
+   "id": "exceptions.exit.latency_irq26",
+   "value": 13,
+   "source": "measured",
+   "unit": "cycles",
+   "note": "from the start of BX LR (EXC_RETURN) to the next Thread instruction, the BX included"
+  },
+  {
+   "id": "exceptions.exc_return.latency_irq26",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.ipsr.latency_irq26",
+   "value": 42,
+   "source": "measured",
+   "prediction": {
+    "value": 42,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.nops_before_taken.latency_irq26",
+   "value": 2,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.entry.latency_irq27",
+   "value": 12,
+   "source": "measured",
+   "unit": "cycles",
+   "trm": "the TRM gives 15 cycles from the interrupt signal; this interval starts later (the end of the trigger)",
+   "note": "pending (end of the trigger; for SVC its start) to the handler's first instruction"
+  },
+  {
+   "id": "exceptions.exit.latency_irq27",
+   "value": 13,
+   "source": "measured",
+   "unit": "cycles",
+   "note": "from the start of BX LR (EXC_RETURN) to the next Thread instruction, the BX included"
+  },
+  {
+   "id": "exceptions.exc_return.latency_irq27",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.ipsr.latency_irq27",
+   "value": 43,
+   "source": "measured",
+   "prediction": {
+    "value": 43,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.nops_before_taken.latency_irq27",
+   "value": 2,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.entry.latency_irq28",
+   "value": 12,
+   "source": "measured",
+   "unit": "cycles",
+   "trm": "the TRM gives 15 cycles from the interrupt signal; this interval starts later (the end of the trigger)",
+   "note": "pending (end of the trigger; for SVC its start) to the handler's first instruction"
+  },
+  {
+   "id": "exceptions.exit.latency_irq28",
+   "value": 13,
+   "source": "measured",
+   "unit": "cycles",
+   "note": "from the start of BX LR (EXC_RETURN) to the next Thread instruction, the BX included"
+  },
+  {
+   "id": "exceptions.exc_return.latency_irq28",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.ipsr.latency_irq28",
+   "value": 44,
+   "source": "measured",
+   "prediction": {
+    "value": 44,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.nops_before_taken.latency_irq28",
+   "value": 2,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.entry.latency_irq29",
+   "value": 12,
+   "source": "measured",
+   "unit": "cycles",
+   "trm": "the TRM gives 15 cycles from the interrupt signal; this interval starts later (the end of the trigger)",
+   "note": "pending (end of the trigger; for SVC its start) to the handler's first instruction"
+  },
+  {
+   "id": "exceptions.exit.latency_irq29",
+   "value": 13,
+   "source": "measured",
+   "unit": "cycles",
+   "note": "from the start of BX LR (EXC_RETURN) to the next Thread instruction, the BX included"
+  },
+  {
+   "id": "exceptions.exc_return.latency_irq29",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.ipsr.latency_irq29",
+   "value": 45,
+   "source": "measured",
+   "prediction": {
+    "value": 45,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.nops_before_taken.latency_irq29",
+   "value": 2,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.entry.latency_irq30",
+   "value": 12,
+   "source": "measured",
+   "unit": "cycles",
+   "trm": "the TRM gives 15 cycles from the interrupt signal; this interval starts later (the end of the trigger)",
+   "note": "pending (end of the trigger; for SVC its start) to the handler's first instruction"
+  },
+  {
+   "id": "exceptions.exit.latency_irq30",
+   "value": 13,
+   "source": "measured",
+   "unit": "cycles",
+   "note": "from the start of BX LR (EXC_RETURN) to the next Thread instruction, the BX included"
+  },
+  {
+   "id": "exceptions.exc_return.latency_irq30",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.ipsr.latency_irq30",
+   "value": 46,
+   "source": "measured",
+   "prediction": {
+    "value": 46,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.nops_before_taken.latency_irq30",
+   "value": 2,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.entry.latency_irq31",
+   "value": 12,
+   "source": "measured",
+   "unit": "cycles",
+   "trm": "the TRM gives 15 cycles from the interrupt signal; this interval starts later (the end of the trigger)",
+   "note": "pending (end of the trigger; for SVC its start) to the handler's first instruction"
+  },
+  {
+   "id": "exceptions.exit.latency_irq31",
+   "value": 13,
+   "source": "measured",
+   "unit": "cycles",
+   "note": "from the start of BX LR (EXC_RETURN) to the next Thread instruction, the BX included"
+  },
+  {
+   "id": "exceptions.exc_return.latency_irq31",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.ipsr.latency_irq31",
+   "value": 47,
+   "source": "measured",
+   "prediction": {
+    "value": 47,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.nops_before_taken.latency_irq31",
+   "value": 2,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.entry.latency_systick",
+   "value": 15,
+   "source": "measured",
+   "unit": "cycles",
+   "trm": "the TRM gives 15 cycles from the interrupt signal; this interval starts later (the end of the trigger)",
+   "note": "pending (end of the trigger; for SVC its start) to the handler's first instruction; SysTick: from the count reaching 0 to the handler's first SysTick read"
+  },
+  {
+   "id": "exceptions.exit.latency_systick",
+   "value": 13,
+   "source": "measured",
+   "unit": "cycles",
+   "note": "from the start of BX LR (EXC_RETURN) to the next Thread instruction, the BX included"
+  },
+  {
+   "id": "exceptions.exc_return.latency_systick",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.ipsr.latency_systick",
+   "value": 15,
+   "source": "measured",
+   "prediction": {
+    "value": 15,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.nops_before_taken.latency_systick",
+   "value": 123,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.entry.latency_systick_wfi",
+   "value": 15,
+   "source": "measured",
+   "unit": "cycles",
+   "trm": "the TRM gives 15 cycles from the interrupt signal; this interval starts later (the end of the trigger)",
+   "note": "pending (end of the trigger; for SVC its start) to the handler's first instruction; SysTick: from the count reaching 0 to the handler's first SysTick read"
+  },
+  {
+   "id": "exceptions.exit.latency_systick_wfi",
+   "value": 13,
+   "source": "measured",
+   "unit": "cycles",
+   "note": "from the start of BX LR (EXC_RETURN) to the next Thread instruction, the BX included"
+  },
+  {
+   "id": "exceptions.exc_return.latency_systick_wfi",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.ipsr.latency_systick_wfi",
+   "value": 15,
+   "source": "measured",
+   "prediction": {
+    "value": 15,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.nops_before_taken.latency_systick_wfi",
+   "value": 0,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.entry.latency_pendsv_from_psp_misaligned",
+   "value": 12,
+   "source": "measured",
+   "unit": "cycles",
+   "trm": "the TRM gives 15 cycles from the interrupt signal; this interval starts later (the end of the trigger)",
+   "note": "pending (end of the trigger; for SVC its start) to the handler's first instruction"
+  },
+  {
+   "id": "exceptions.exit.latency_pendsv_from_psp_misaligned",
+   "value": 13,
+   "source": "measured",
+   "unit": "cycles",
+   "note": "from the start of BX LR (EXC_RETURN) to the next Thread instruction, the BX included"
+  },
+  {
+   "id": "exceptions.exc_return.latency_pendsv_from_psp_misaligned",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.ipsr.latency_pendsv_from_psp_misaligned",
+   "value": 14,
+   "source": "measured",
+   "prediction": {
+    "value": 14,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.nops_before_taken.latency_pendsv_from_psp_misaligned",
+   "value": 2,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.entry.latency_pendsv_from_msp",
+   "value": 12,
+   "source": "measured",
+   "unit": "cycles",
+   "trm": "the TRM gives 15 cycles from the interrupt signal; this interval starts later (the end of the trigger)",
+   "note": "pending (end of the trigger; for SVC its start) to the handler's first instruction"
+  },
+  {
+   "id": "exceptions.exit.latency_pendsv_from_msp",
+   "value": 13,
+   "source": "measured",
+   "unit": "cycles",
+   "note": "from the start of BX LR (EXC_RETURN) to the next Thread instruction, the BX included"
+  },
+  {
+   "id": "exceptions.exc_return.latency_pendsv_from_msp",
+   "value": "0xFFFFFFF9",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFF9",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.ipsr.latency_pendsv_from_msp",
+   "value": 14,
+   "source": "measured",
+   "prediction": {
+    "value": 14,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.nops_before_taken.latency_pendsv_from_msp",
+   "value": 2,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.entry.latency_pendsv_from_msp_misaligned",
+   "value": 12,
+   "source": "measured",
+   "unit": "cycles",
+   "trm": "the TRM gives 15 cycles from the interrupt signal; this interval starts later (the end of the trigger)",
+   "note": "pending (end of the trigger; for SVC its start) to the handler's first instruction"
+  },
+  {
+   "id": "exceptions.exit.latency_pendsv_from_msp_misaligned",
+   "value": 13,
+   "source": "measured",
+   "unit": "cycles",
+   "note": "from the start of BX LR (EXC_RETURN) to the next Thread instruction, the BX included"
+  },
+  {
+   "id": "exceptions.exc_return.latency_pendsv_from_msp_misaligned",
+   "value": "0xFFFFFFF9",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFF9",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.ipsr.latency_pendsv_from_msp_misaligned",
+   "value": 14,
+   "source": "measured",
+   "prediction": {
+    "value": 14,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.nops_before_taken.latency_pendsv_from_msp_misaligned",
+   "value": 2,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.entry.latency_svc_from_msp",
+   "value": 13,
+   "source": "measured",
+   "unit": "cycles",
+   "trm": "the TRM gives 15 cycles from the interrupt signal; this interval starts later (the end of the trigger)",
+   "note": "pending (end of the trigger; for SVC its start) to the handler's first instruction"
+  },
+  {
+   "id": "exceptions.exit.latency_svc_from_msp",
+   "value": 13,
+   "source": "measured",
+   "unit": "cycles",
+   "note": "from the start of BX LR (EXC_RETURN) to the next Thread instruction, the BX included"
+  },
+  {
+   "id": "exceptions.exc_return.latency_svc_from_msp",
+   "value": "0xFFFFFFF9",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFF9",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.ipsr.latency_svc_from_msp",
+   "value": 11,
+   "source": "measured",
+   "prediction": {
+    "value": 11,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.nops_before_taken.latency_svc_from_msp",
+   "value": 0,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.tail_chain.tail_chain_pendsv_systick",
+   "value": 11,
+   "source": "measured",
+   "unit": "cycles",
+   "note": "from BX LR in the first handler to the second handler's first instruction, the BX included"
+  },
+  {
+   "id": "exceptions.entry.tail_chain_pendsv_systick",
+   "value": 12,
+   "source": "measured",
+   "unit": "cycles",
+   "trm": "the TRM gives 15 cycles from the interrupt signal; this interval starts later (the end of the trigger)"
+  },
+  {
+   "id": "exceptions.exit.tail_chain_pendsv_systick",
+   "value": 13,
+   "source": "measured",
+   "unit": "cycles"
+  },
+  {
+   "id": "exceptions.tail_chain.tail_chain_irq26_irq27",
+   "value": 11,
+   "source": "measured",
+   "unit": "cycles",
+   "note": "from BX LR in the first handler to the second handler's first instruction, the BX included"
+  },
+  {
+   "id": "exceptions.entry.tail_chain_irq26_irq27",
+   "value": 12,
+   "source": "measured",
+   "unit": "cycles",
+   "trm": "the TRM gives 15 cycles from the interrupt signal; this interval starts later (the end of the trigger)"
+  },
+  {
+   "id": "exceptions.exit.tail_chain_irq26_irq27",
+   "value": 13,
+   "source": "measured",
+   "unit": "cycles"
+  },
+  {
+   "id": "exceptions.frame.frame_svc_from_psp.nops_before_taken",
+   "value": 0,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.frame.frame_svc_from_psp.ipsr",
+   "value": 11,
+   "source": "measured",
+   "prediction": {
+    "value": 11,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_svc_from_psp.exc_return",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_svc_from_psp.frame",
+   "value": "0x20001EE0",
+   "source": "measured",
+   "prediction": {
+    "value": "0x20001EE0",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_svc_from_psp.stacked",
+   "value": {
+    "r0": "0xA0A0A0A0",
+    "r1": "0xA1A1A1A1",
+    "r2": "0xA2A2A2A2",
+    "r3": "0xA3A3A3A3",
+    "r12": "0xACACACAC",
+    "lr": "0x20010101",
+    "pc": "0x2001402C",
+    "xpsr": "0xA1000000"
+   },
+   "source": "measured",
+   "prediction": {
+    "value": {
+     "r0": "0xA0A0A0A0",
+     "r1": "0xA1A1A1A1",
+     "r2": "0xA2A2A2A2",
+     "r3": "0xA3A3A3A3",
+     "r12": "0xACACACAC",
+     "lr": "0x20010101",
+     "pc": "0x2001402C",
+     "xpsr": "0xA1000000"
+    },
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_pendsv_from_psp.nops_before_taken",
+   "value": 2,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.frame.frame_pendsv_from_psp.ipsr",
+   "value": 14,
+   "source": "measured",
+   "prediction": {
+    "value": 14,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_pendsv_from_psp.exc_return",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_pendsv_from_psp.frame",
+   "value": "0x20001EE0",
+   "source": "measured",
+   "prediction": {
+    "value": "0x20001EE0",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_pendsv_from_psp.stacked",
+   "value": {
+    "r0": "0xE000ED04",
+    "r1": "0x10000000",
+    "r2": "0xA2A2A2A2",
+    "r3": "0xA3A3A3A3",
+    "r12": "0xACACACAC",
+    "lr": "0x20010101",
+    "pc": "0x20014030",
+    "xpsr": "0xA1000000"
+   },
+   "source": "measured",
+   "prediction": {
+    "value": {
+     "r0": "0xE000ED04",
+     "r1": "0x10000000",
+     "r2": "0xA2A2A2A2",
+     "r3": "0xA3A3A3A3",
+     "r12": "0xACACACAC",
+     "lr": "0x20010101",
+     "pc": "0x20014030",
+     "xpsr": "0xA1000000"
+    },
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_systick_from_psp.ipsr",
+   "value": 15,
+   "source": "measured",
+   "prediction": {
+    "value": 15,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_systick_from_psp.exc_return",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_systick_from_psp.frame",
+   "value": "0x20001EE0",
+   "source": "measured",
+   "prediction": {
+    "value": "0x20001EE0",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_systick_from_psp.stacked",
+   "value": {
+    "r0": "0xA0A0A0A0",
+    "r1": "0xA1A1A1A1",
+    "r2": "0xA2A2A2A2",
+    "r3": "0xA3A3A3A3",
+    "r12": "0xACACACAC",
+    "lr": "0x20010101",
+    "pc": "in the NOP slide",
+    "xpsr": "0xA1000000"
+   },
+   "source": "measured",
+   "prediction": {
+    "value": {
+     "r0": "0xA0A0A0A0",
+     "r1": "0xA1A1A1A1",
+     "r2": "0xA2A2A2A2",
+     "r3": "0xA3A3A3A3",
+     "r12": "0xACACACAC",
+     "lr": "0x20010101",
+     "pc": "in the NOP slide",
+     "xpsr": "0xA1000000"
+    },
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq26_from_psp.nops_before_taken",
+   "value": 2,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.frame.frame_irq26_from_psp.ipsr",
+   "value": 42,
+   "source": "measured",
+   "prediction": {
+    "value": 42,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq26_from_psp.exc_return",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq26_from_psp.frame",
+   "value": "0x20001EE0",
+   "source": "measured",
+   "prediction": {
+    "value": "0x20001EE0",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq26_from_psp.stacked",
+   "value": {
+    "r0": "0xE000E200",
+    "r1": "0x04000000",
+    "r2": "0xA2A2A2A2",
+    "r3": "0xA3A3A3A3",
+    "r12": "0xACACACAC",
+    "lr": "0x20010101",
+    "pc": "0x20014036",
+    "xpsr": "0xA1000000"
+   },
+   "source": "measured",
+   "prediction": {
+    "value": {
+     "r0": "0xE000E200",
+     "r1": "0x04000000",
+     "r2": "0xA2A2A2A2",
+     "r3": "0xA3A3A3A3",
+     "r12": "0xACACACAC",
+     "lr": "0x20010101",
+     "pc": "0x20014036",
+     "xpsr": "0xA1000000"
+    },
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq27_from_psp.nops_before_taken",
+   "value": 2,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.frame.frame_irq27_from_psp.ipsr",
+   "value": 43,
+   "source": "measured",
+   "prediction": {
+    "value": 43,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq27_from_psp.exc_return",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq27_from_psp.frame",
+   "value": "0x20001EE0",
+   "source": "measured",
+   "prediction": {
+    "value": "0x20001EE0",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq27_from_psp.stacked",
+   "value": {
+    "r0": "0xE000E200",
+    "r1": "0x08000000",
+    "r2": "0xA2A2A2A2",
+    "r3": "0xA3A3A3A3",
+    "r12": "0xACACACAC",
+    "lr": "0x20010101",
+    "pc": "0x20014036",
+    "xpsr": "0xA1000000"
+   },
+   "source": "measured",
+   "prediction": {
+    "value": {
+     "r0": "0xE000E200",
+     "r1": "0x08000000",
+     "r2": "0xA2A2A2A2",
+     "r3": "0xA3A3A3A3",
+     "r12": "0xACACACAC",
+     "lr": "0x20010101",
+     "pc": "0x20014036",
+     "xpsr": "0xA1000000"
+    },
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq28_from_psp.nops_before_taken",
+   "value": 2,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.frame.frame_irq28_from_psp.ipsr",
+   "value": 44,
+   "source": "measured",
+   "prediction": {
+    "value": 44,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq28_from_psp.exc_return",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq28_from_psp.frame",
+   "value": "0x20001EE0",
+   "source": "measured",
+   "prediction": {
+    "value": "0x20001EE0",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq28_from_psp.stacked",
+   "value": {
+    "r0": "0xE000E200",
+    "r1": "0x10000000",
+    "r2": "0xA2A2A2A2",
+    "r3": "0xA3A3A3A3",
+    "r12": "0xACACACAC",
+    "lr": "0x20010101",
+    "pc": "0x20014036",
+    "xpsr": "0xA1000000"
+   },
+   "source": "measured",
+   "prediction": {
+    "value": {
+     "r0": "0xE000E200",
+     "r1": "0x10000000",
+     "r2": "0xA2A2A2A2",
+     "r3": "0xA3A3A3A3",
+     "r12": "0xACACACAC",
+     "lr": "0x20010101",
+     "pc": "0x20014036",
+     "xpsr": "0xA1000000"
+    },
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq29_from_psp.nops_before_taken",
+   "value": 2,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.frame.frame_irq29_from_psp.ipsr",
+   "value": 45,
+   "source": "measured",
+   "prediction": {
+    "value": 45,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq29_from_psp.exc_return",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq29_from_psp.frame",
+   "value": "0x20001EE0",
+   "source": "measured",
+   "prediction": {
+    "value": "0x20001EE0",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq29_from_psp.stacked",
+   "value": {
+    "r0": "0xE000E200",
+    "r1": "0x20000000",
+    "r2": "0xA2A2A2A2",
+    "r3": "0xA3A3A3A3",
+    "r12": "0xACACACAC",
+    "lr": "0x20010101",
+    "pc": "0x20014036",
+    "xpsr": "0xA1000000"
+   },
+   "source": "measured",
+   "prediction": {
+    "value": {
+     "r0": "0xE000E200",
+     "r1": "0x20000000",
+     "r2": "0xA2A2A2A2",
+     "r3": "0xA3A3A3A3",
+     "r12": "0xACACACAC",
+     "lr": "0x20010101",
+     "pc": "0x20014036",
+     "xpsr": "0xA1000000"
+    },
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq30_from_psp.nops_before_taken",
+   "value": 2,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.frame.frame_irq30_from_psp.ipsr",
+   "value": 46,
+   "source": "measured",
+   "prediction": {
+    "value": 46,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq30_from_psp.exc_return",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq30_from_psp.frame",
+   "value": "0x20001EE0",
+   "source": "measured",
+   "prediction": {
+    "value": "0x20001EE0",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq30_from_psp.stacked",
+   "value": {
+    "r0": "0xE000E200",
+    "r1": "0x40000000",
+    "r2": "0xA2A2A2A2",
+    "r3": "0xA3A3A3A3",
+    "r12": "0xACACACAC",
+    "lr": "0x20010101",
+    "pc": "0x20014036",
+    "xpsr": "0xA1000000"
+   },
+   "source": "measured",
+   "prediction": {
+    "value": {
+     "r0": "0xE000E200",
+     "r1": "0x40000000",
+     "r2": "0xA2A2A2A2",
+     "r3": "0xA3A3A3A3",
+     "r12": "0xACACACAC",
+     "lr": "0x20010101",
+     "pc": "0x20014036",
+     "xpsr": "0xA1000000"
+    },
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq31_from_psp.nops_before_taken",
+   "value": 2,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.frame.frame_irq31_from_psp.ipsr",
+   "value": 47,
+   "source": "measured",
+   "prediction": {
+    "value": 47,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq31_from_psp.exc_return",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq31_from_psp.frame",
+   "value": "0x20001EE0",
+   "source": "measured",
+   "prediction": {
+    "value": "0x20001EE0",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_irq31_from_psp.stacked",
+   "value": {
+    "r0": "0xE000E200",
+    "r1": "0x80000000",
+    "r2": "0xA2A2A2A2",
+    "r3": "0xA3A3A3A3",
+    "r12": "0xACACACAC",
+    "lr": "0x20010101",
+    "pc": "0x20014036",
+    "xpsr": "0xA1000000"
+   },
+   "source": "measured",
+   "prediction": {
+    "value": {
+     "r0": "0xE000E200",
+     "r1": "0x80000000",
+     "r2": "0xA2A2A2A2",
+     "r3": "0xA3A3A3A3",
+     "r12": "0xACACACAC",
+     "lr": "0x20010101",
+     "pc": "0x20014036",
+     "xpsr": "0xA1000000"
+    },
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_svc_from_psp_misaligned.nops_before_taken",
+   "value": 0,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.frame.frame_svc_from_psp_misaligned.ipsr",
+   "value": 11,
+   "source": "measured",
+   "prediction": {
+    "value": 11,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_svc_from_psp_misaligned.exc_return",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_svc_from_psp_misaligned.frame",
+   "value": "0x20001ED8",
+   "source": "measured",
+   "prediction": {
+    "value": "0x20001ED8",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_svc_from_psp_misaligned.stacked",
+   "value": {
+    "r0": "0xA0A0A0A0",
+    "r1": "0xA1A1A1A1",
+    "r2": "0xA2A2A2A2",
+    "r3": "0xA3A3A3A3",
+    "r12": "0xACACACAC",
+    "lr": "0x20010101",
+    "pc": "0x2001402C",
+    "xpsr": "0xA1000200"
+   },
+   "source": "measured",
+   "prediction": {
+    "value": {
+     "r0": "0xA0A0A0A0",
+     "r1": "0xA1A1A1A1",
+     "r2": "0xA2A2A2A2",
+     "r3": "0xA3A3A3A3",
+     "r12": "0xACACACAC",
+     "lr": "0x20010101",
+     "pc": "0x2001402C",
+     "xpsr": "0xA1000200"
+    },
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_pendsv_from_psp_misaligned.nops_before_taken",
+   "value": 2,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.frame.frame_pendsv_from_psp_misaligned.ipsr",
+   "value": 14,
+   "source": "measured",
+   "prediction": {
+    "value": 14,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_pendsv_from_psp_misaligned.exc_return",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_pendsv_from_psp_misaligned.frame",
+   "value": "0x20001ED8",
+   "source": "measured",
+   "prediction": {
+    "value": "0x20001ED8",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_pendsv_from_psp_misaligned.stacked",
+   "value": {
+    "r0": "0xE000ED04",
+    "r1": "0x10000000",
+    "r2": "0xA2A2A2A2",
+    "r3": "0xA3A3A3A3",
+    "r12": "0xACACACAC",
+    "lr": "0x20010101",
+    "pc": "0x20014030",
+    "xpsr": "0xA1000200"
+   },
+   "source": "measured",
+   "prediction": {
+    "value": {
+     "r0": "0xE000ED04",
+     "r1": "0x10000000",
+     "r2": "0xA2A2A2A2",
+     "r3": "0xA3A3A3A3",
+     "r12": "0xACACACAC",
+     "lr": "0x20010101",
+     "pc": "0x20014030",
+     "xpsr": "0xA1000200"
+    },
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_pendsv_from_msp.nops_before_taken",
+   "value": 2,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.frame.frame_pendsv_from_msp.ipsr",
+   "value": 14,
+   "source": "measured",
+   "prediction": {
+    "value": 14,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_pendsv_from_msp.exc_return",
+   "value": "0xFFFFFFF9",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFF9",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_pendsv_from_msp.frame",
+   "value": "0x200017E0",
+   "source": "measured",
+   "prediction": {
+    "value": "0x200017E0",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_pendsv_from_msp.stacked",
+   "value": {
+    "r0": "0xE000ED04",
+    "r1": "0x10000000",
+    "r2": "0xA2A2A2A2",
+    "r3": "0xA3A3A3A3",
+    "r12": "0xACACACAC",
+    "lr": "0x20010101",
+    "pc": "0x20014040",
+    "xpsr": "0xA1000000"
+   },
+   "source": "measured",
+   "prediction": {
+    "value": {
+     "r0": "0xE000ED04",
+     "r1": "0x10000000",
+     "r2": "0xA2A2A2A2",
+     "r3": "0xA3A3A3A3",
+     "r12": "0xACACACAC",
+     "lr": "0x20010101",
+     "pc": "0x20014040",
+     "xpsr": "0xA1000000"
+    },
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_pendsv_from_msp_misaligned.nops_before_taken",
+   "value": 2,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.frame.frame_pendsv_from_msp_misaligned.ipsr",
+   "value": 14,
+   "source": "measured",
+   "prediction": {
+    "value": 14,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_pendsv_from_msp_misaligned.exc_return",
+   "value": "0xFFFFFFF9",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFF9",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_pendsv_from_msp_misaligned.frame",
+   "value": "0x200017D8",
+   "source": "measured",
+   "prediction": {
+    "value": "0x200017D8",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_pendsv_from_msp_misaligned.stacked",
+   "value": {
+    "r0": "0xE000ED04",
+    "r1": "0x10000000",
+    "r2": "0xA2A2A2A2",
+    "r3": "0xA3A3A3A3",
+    "r12": "0xACACACAC",
+    "lr": "0x20010101",
+    "pc": "0x20014040",
+    "xpsr": "0xA1000200"
+   },
+   "source": "measured",
+   "prediction": {
+    "value": {
+     "r0": "0xE000ED04",
+     "r1": "0x10000000",
+     "r2": "0xA2A2A2A2",
+     "r3": "0xA3A3A3A3",
+     "r12": "0xACACACAC",
+     "lr": "0x20010101",
+     "pc": "0x20014040",
+     "xpsr": "0xA1000200"
+    },
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_svc_from_msp.nops_before_taken",
+   "value": 0,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "NOPs after the trigger that ran before the exception was taken"
+  },
+  {
+   "id": "exceptions.frame.frame_svc_from_msp.ipsr",
+   "value": 11,
+   "source": "measured",
+   "prediction": {
+    "value": 11,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_svc_from_msp.exc_return",
+   "value": "0xFFFFFFF9",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFF9",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_svc_from_msp.frame",
+   "value": "0x200017E0",
+   "source": "measured",
+   "prediction": {
+    "value": "0x200017E0",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.frame.frame_svc_from_msp.stacked",
+   "value": {
+    "r0": "0xA0A0A0A0",
+    "r1": "0xA1A1A1A1",
+    "r2": "0xA2A2A2A2",
+    "r3": "0xA3A3A3A3",
+    "r12": "0xACACACAC",
+    "lr": "0x20010101",
+    "pc": "0x2001403C",
+    "xpsr": "0xA1000000"
+   },
+   "source": "measured",
+   "prediction": {
+    "value": {
+     "r0": "0xA0A0A0A0",
+     "r1": "0xA1A1A1A1",
+     "r2": "0xA2A2A2A2",
+     "r3": "0xA3A3A3A3",
+     "r12": "0xACACACAC",
+     "lr": "0x20010101",
+     "pc": "0x2001403C",
+     "xpsr": "0xA1000000"
+    },
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.priority.priority_pendsv_systick_equal",
+   "value": 14,
+   "source": "measured",
+   "prediction": {
+    "value": 14,
+    "from": "ARMv6-M ARM"
+   },
+   "note": "the exception taken first (IPSR)"
+  },
+  {
+   "id": "exceptions.priority.priority_pendsv_systick_systick_higher",
+   "value": 15,
+   "source": "measured",
+   "prediction": {
+    "value": 15,
+    "from": "ARMv6-M ARM"
+   },
+   "note": "the exception taken first (IPSR)"
+  },
+  {
+   "id": "exceptions.priority.priority_pendsv_systick_pendsv_higher",
+   "value": 14,
+   "source": "measured",
+   "prediction": {
+    "value": 14,
+    "from": "ARMv6-M ARM"
+   },
+   "note": "the exception taken first (IPSR)"
+  },
+  {
+   "id": "exceptions.priority.priority_irq26_irq31_equal",
+   "value": 42,
+   "source": "measured",
+   "prediction": {
+    "value": 42,
+    "from": "ARMv6-M ARM"
+   },
+   "note": "the exception taken first (IPSR)"
+  },
+  {
+   "id": "exceptions.priority.priority_irq26_irq31_irq31_higher",
+   "value": 47,
+   "source": "measured",
+   "prediction": {
+    "value": 47,
+    "from": "ARMv6-M ARM"
+   },
+   "note": "the exception taken first (IPSR)"
+  },
+  {
+   "id": "exceptions.priority.priority_pendsv_irq26_equal",
+   "value": 14,
+   "source": "measured",
+   "prediction": {
+    "value": 14,
+    "from": "ARMv6-M ARM"
+   },
+   "note": "the exception taken first (IPSR)"
+  },
+  {
+   "id": "exceptions.priority.priority_pendsv_irq26_irq26_higher",
+   "value": 42,
+   "source": "measured",
+   "prediction": {
+    "value": 42,
+    "from": "ARMv6-M ARM"
+   },
+   "note": "the exception taken first (IPSR)"
+  },
+  {
+   "id": "exceptions.primask.taken_after_cpsie",
+   "value": 1,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "instructions after CPSIE i before the pended PendSV is taken (the ARMv6-M ARM only guarantees a CPS that lowers the priority is seen after an ISB, so 0 is not required)"
+  },
+  {
+   "id": "exceptions.svc_with_primask.taken",
+   "value": 3,
+   "source": "measured",
+   "prediction": {
+    "value": 3,
+    "from": "ARMv6-M ARM"
+   },
+   "note": "SVC at a priority that cannot take SVCall escalates to HardFault"
+  },
+  {
+   "id": "exceptions.priority_bits.shpr2",
+   "value": "0xC0000000",
+   "source": "measured",
+   "prediction": {
+    "value": "0xC0000000",
+    "from": "ARMv6-M ARM"
+   },
+   "note": "all ones written, read back: 2 implemented priority bits per field"
+  },
+  {
+   "id": "exceptions.priority_bits.shpr3",
+   "value": "0xC0C00000",
+   "source": "measured",
+   "prediction": {
+    "value": "0xC0C00000",
+    "from": "ARMv6-M ARM"
+   },
+   "note": "all ones written, read back: 2 implemented priority bits per field"
+  },
+  {
+   "id": "exceptions.priority_bits.ipr6",
+   "value": "0xC0C0C0C0",
+   "source": "measured",
+   "prediction": {
+    "value": "0xC0C0C0C0",
+    "from": "ARMv6-M ARM"
+   },
+   "note": "all ones written, read back: 2 implemented priority bits per field"
+  },
+  {
+   "id": "exceptions.disabled_irq.taken",
+   "value": 3,
+   "source": "measured",
+   "prediction": {
+    "value": 3,
+    "from": "ARMv6-M ARM"
+   },
+   "note": "3: the case ended in the sled (HardFault): the pended IRQ was not taken"
+  },
+  {
+   "id": "exceptions.disabled_irq.ispr_irq26",
+   "value": 1,
+   "source": "measured",
+   "prediction": {
+    "value": 1,
+    "from": "ARMv6-M ARM"
+   },
+   "note": "ISPR bit 26 after pending the disabled IRQ26"
+  },
+  {
+   "id": "exceptions.disabled_irq.ispr",
+   "value": "0x04018040",
+   "source": "measured",
+   "note": "the whole ISPR: its other bits are interrupts the boot ROM left pending"
+  },
+  {
+   "id": "exceptions.nested.irq_exc_return",
+   "value": "0xFFFFFFF1",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFF1",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.nested.irq_ipsr",
+   "value": 42,
+   "source": "measured",
+   "prediction": {
+    "value": 42,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.nested.stacked_ipsr",
+   "value": 14,
+   "source": "measured",
+   "prediction": {
+    "value": 14,
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.nested.pendsv_exc_return",
+   "value": "0xFFFFFFFD",
+   "source": "measured",
+   "prediction": {
+    "value": "0xFFFFFFFD",
+    "from": "ARMv6-M ARM"
+   }
+  },
+  {
+   "id": "exceptions.nested.preempted_after",
+   "value": 2,
+   "source": "measured",
+   "unit": "instructions",
+   "note": "handler instructions run after the store that pends the IRQ (a pend takes effect a few instructions later; only a DSB/ISB guarantees it at once)"
+  },
+  {
+   "id": "exceptions.wfi.wake_masked",
+   "value": 4,
+   "source": "measured",
+   "unit": "cycles",
+   "note": "from the SysTick count reaching 0 to the first SysTick read after WFI (PRIMASK set)"
+  },
+  {
+   "id": "exceptions.interrupted.ldm_r0_r1_r7",
+   "value": {
+    "-2": "not started",
+    "-1": "abandoned (part done)",
+    "0": "abandoned (part done)",
+    "1": "abandoned (part done)",
+    "2": "abandoned (part done)",
+    "3": "abandoned (part done)",
+    "4": "abandoned (part done)",
+    "5": "later (+1 NOPs)",
+    "6": "later (+2 NOPs)",
+    "7": "later (+3 NOPs)",
+    "8": "later (+4 NOPs)",
+    "9": "later (+5 NOPs)",
+    "10": "later (+6 NOPs)"
+   },
+   "source": "measured",
+   "note": "SysTick fired k cycles into the instruction (Table 81 model of the cycles since the SysTick clear); k <= 0 fires before it"
+  },
+  {
+   "id": "exceptions.interrupted.ldm_r0_r1_r7.verdict",
+   "value": "abandoned and restarted when interrupted part-way",
+   "source": "derived",
+   "prediction": {
+    "value": "abandoned and restarted when interrupted part-way",
+    "from": "Arm Cortex-M0+ TRM"
+   },
+   "note": "what every k shows together"
+  },
+  {
+   "id": "exceptions.interrupted.stm_r0_r1_r7",
+   "value": {
+    "-2": "abandoned (part done)",
+    "-1": "abandoned (part done)",
+    "0": "abandoned (part done)",
+    "1": "abandoned (part done)",
+    "2": "abandoned (part done)",
+    "3": "abandoned (part done)",
+    "4": "completed",
+    "5": "later (+1 NOPs)",
+    "6": "later (+2 NOPs)",
+    "7": "later (+3 NOPs)",
+    "8": "later (+4 NOPs)",
+    "9": "later (+5 NOPs)",
+    "10": "later (+6 NOPs)"
+   },
+   "source": "measured",
+   "note": "SysTick fired k cycles into the instruction (Table 81 model of the cycles since the SysTick clear); k <= 0 fires before it"
+  },
+  {
+   "id": "exceptions.interrupted.stm_r0_r1_r7.verdict",
+   "value": "abandoned and restarted when interrupted part-way",
+   "source": "derived",
+   "prediction": {
+    "value": "abandoned and restarted when interrupted part-way",
+    "from": "Arm Cortex-M0+ TRM"
+   },
+   "note": "what every k shows together"
+  },
+  {
+   "id": "exceptions.interrupted.push_r0_r7",
+   "value": {
+    "-2": "not started",
+    "-1": "not started",
+    "0": "not started",
+    "1": "not started",
+    "2": "not started",
+    "3": "not started",
+    "4": "not started",
+    "5": "completed",
+    "6": "later (+1 NOPs)",
+    "7": "later (+2 NOPs)",
+    "8": "later (+3 NOPs)",
+    "9": "later (+4 NOPs)",
+    "10": "later (+5 NOPs)",
+    "11": "later (+6 NOPs)"
+   },
+   "source": "measured",
+   "note": "SysTick fired k cycles into the instruction (Table 81 model of the cycles since the SysTick clear); k <= 0 fires before it"
+  },
+  {
+   "id": "exceptions.interrupted.push_r0_r7.verdict",
+   "value": "abandoned and restarted when interrupted part-way",
+   "source": "derived",
+   "prediction": {
+    "value": "abandoned and restarted when interrupted part-way",
+    "from": "Arm Cortex-M0+ TRM"
+   },
+   "note": "what every k shows together"
+  },
+  {
+   "id": "exceptions.interrupted.pop_r0_r7",
+   "value": {
+    "-2": "not started",
+    "-1": "abandoned (part done)",
+    "0": "abandoned (part done)",
+    "1": "abandoned (part done)",
+    "2": "abandoned (part done)",
+    "3": "abandoned (part done)",
+    "4": "abandoned (part done)",
+    "5": "abandoned (part done)",
+    "6": "later (+1 NOPs)",
+    "7": "later (+2 NOPs)",
+    "8": "later (+3 NOPs)",
+    "9": "later (+4 NOPs)",
+    "10": "later (+5 NOPs)",
+    "11": "later (+6 NOPs)"
+   },
+   "source": "measured",
+   "note": "SysTick fired k cycles into the instruction (Table 81 model of the cycles since the SysTick clear); k <= 0 fires before it"
+  },
+  {
+   "id": "exceptions.interrupted.pop_r0_r7.verdict",
+   "value": "abandoned and restarted when interrupted part-way",
+   "source": "derived",
+   "prediction": {
+    "value": "abandoned and restarted when interrupted part-way",
+    "from": "Arm Cortex-M0+ TRM"
+   },
+   "note": "what every k shows together"
+  }
+ ],
+ "scenarios": [
+  {
+   "scenario": "latency SVC",
+   "type": "latency",
+   "runs": [
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 11,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x2001402A",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 0,
+     "sp_after": "0x20001F00",
+     "entry": 13,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 11,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x2001402A",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 0,
+     "sp_after": "0x20001F00",
+     "entry": 13,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 11,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x2001402A",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 0,
+     "sp_after": "0x20001F00",
+     "entry": 13,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 11,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x2001402A",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 0,
+     "sp_after": "0x20001F00",
+     "entry": 13,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 11,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x2001402A",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 0,
+     "sp_after": "0x20001F00",
+     "entry": 13,
+     "exit": 13,
+     "ended": "fell-through"
+    }
+   ]
+  },
+  {
+   "scenario": "latency PendSV",
+   "type": "latency",
+   "runs": [
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 14,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014032",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 14,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014032",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 14,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014032",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 14,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014032",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 14,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014032",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    }
+   ]
+  },
+  {
+   "scenario": "latency IRQ26",
+   "type": "latency",
+   "runs": [
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 42,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 42,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 42,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 42,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 42,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    }
+   ]
+  },
+  {
+   "scenario": "latency IRQ27",
+   "type": "latency",
+   "runs": [
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 43,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 43,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 43,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 43,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 43,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    }
+   ]
+  },
+  {
+   "scenario": "latency IRQ28",
+   "type": "latency",
+   "runs": [
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 44,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 44,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 44,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 44,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 44,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    }
+   ]
+  },
+  {
+   "scenario": "latency IRQ29",
+   "type": "latency",
+   "runs": [
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 45,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 45,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 45,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 45,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 45,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    }
+   ]
+  },
+  {
+   "scenario": "latency IRQ30",
+   "type": "latency",
+   "runs": [
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 46,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 46,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 46,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 46,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 46,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    }
+   ]
+  },
+  {
+   "scenario": "latency IRQ31",
+   "type": "latency",
+   "runs": [
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 47,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 47,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 47,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 47,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 47,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001F00",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    }
+   ]
+  },
+  {
+   "scenario": "latency SysTick",
+   "type": "latency",
+   "runs": [
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 15,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x2001412C",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 123,
+     "sp_after": "0x20001F00",
+     "entry": 15,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 15,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x2001412C",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 123,
+     "sp_after": "0x20001F00",
+     "entry": 15,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 15,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x2001412C",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 123,
+     "sp_after": "0x20001F00",
+     "entry": 15,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 15,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x2001412C",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 123,
+     "sp_after": "0x20001F00",
+     "entry": 15,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 15,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x2001412C",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 123,
+     "sp_after": "0x20001F00",
+     "entry": 15,
+     "exit": 13,
+     "ended": "fell-through"
+    }
+   ]
+  },
+  {
+   "scenario": "latency SysTick+WFI",
+   "type": "latency",
+   "runs": [
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 15,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 0,
+     "sp_after": "0x20001F00",
+     "entry": 15,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 15,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 0,
+     "sp_after": "0x20001F00",
+     "entry": 15,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 15,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 0,
+     "sp_after": "0x20001F00",
+     "entry": 15,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 15,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 0,
+     "sp_after": "0x20001F00",
+     "entry": 15,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 15,
+     "frame": "0x20001EE0",
+     "stacked_pc": "0x20014038",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 0,
+     "sp_after": "0x20001F00",
+     "entry": 15,
+     "exit": 13,
+     "ended": "fell-through"
+    }
+   ]
+  },
+  {
+   "scenario": "latency PendSV from PSP misaligned",
+   "type": "latency",
+   "runs": [
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 14,
+     "frame": "0x20001ED8",
+     "stacked_pc": "0x20014032",
+     "stacked_xpsr": "0x01000200",
+     "nops_before": 2,
+     "sp_after": "0x20001EFC",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 14,
+     "frame": "0x20001ED8",
+     "stacked_pc": "0x20014032",
+     "stacked_xpsr": "0x01000200",
+     "nops_before": 2,
+     "sp_after": "0x20001EFC",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 14,
+     "frame": "0x20001ED8",
+     "stacked_pc": "0x20014032",
+     "stacked_xpsr": "0x01000200",
+     "nops_before": 2,
+     "sp_after": "0x20001EFC",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 14,
+     "frame": "0x20001ED8",
+     "stacked_pc": "0x20014032",
+     "stacked_xpsr": "0x01000200",
+     "nops_before": 2,
+     "sp_after": "0x20001EFC",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "ipsr": 14,
+     "frame": "0x20001ED8",
+     "stacked_pc": "0x20014032",
+     "stacked_xpsr": "0x01000200",
+     "nops_before": 2,
+     "sp_after": "0x20001EFC",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    }
+   ]
+  },
+  {
+   "scenario": "latency PendSV from MSP",
+   "type": "latency",
+   "runs": [
+    {
+     "exc_return": "0xFFFFFFF9",
+     "ipsr": 14,
+     "frame": "0x200017E0",
+     "stacked_pc": "0x20014042",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001800",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFF9",
+     "ipsr": 14,
+     "frame": "0x200017E0",
+     "stacked_pc": "0x20014042",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001800",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFF9",
+     "ipsr": 14,
+     "frame": "0x200017E0",
+     "stacked_pc": "0x20014042",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001800",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFF9",
+     "ipsr": 14,
+     "frame": "0x200017E0",
+     "stacked_pc": "0x20014042",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001800",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFF9",
+     "ipsr": 14,
+     "frame": "0x200017E0",
+     "stacked_pc": "0x20014042",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 2,
+     "sp_after": "0x20001800",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    }
+   ]
+  },
+  {
+   "scenario": "latency PendSV from MSP misaligned",
+   "type": "latency",
+   "runs": [
+    {
+     "exc_return": "0xFFFFFFF9",
+     "ipsr": 14,
+     "frame": "0x200017D8",
+     "stacked_pc": "0x20014042",
+     "stacked_xpsr": "0x01000200",
+     "nops_before": 2,
+     "sp_after": "0x200017FC",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFF9",
+     "ipsr": 14,
+     "frame": "0x200017D8",
+     "stacked_pc": "0x20014042",
+     "stacked_xpsr": "0x01000200",
+     "nops_before": 2,
+     "sp_after": "0x200017FC",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFF9",
+     "ipsr": 14,
+     "frame": "0x200017D8",
+     "stacked_pc": "0x20014042",
+     "stacked_xpsr": "0x01000200",
+     "nops_before": 2,
+     "sp_after": "0x200017FC",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFF9",
+     "ipsr": 14,
+     "frame": "0x200017D8",
+     "stacked_pc": "0x20014042",
+     "stacked_xpsr": "0x01000200",
+     "nops_before": 2,
+     "sp_after": "0x200017FC",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFF9",
+     "ipsr": 14,
+     "frame": "0x200017D8",
+     "stacked_pc": "0x20014042",
+     "stacked_xpsr": "0x01000200",
+     "nops_before": 2,
+     "sp_after": "0x200017FC",
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    }
+   ]
+  },
+  {
+   "scenario": "latency SVC from MSP",
+   "type": "latency",
+   "runs": [
+    {
+     "exc_return": "0xFFFFFFF9",
+     "ipsr": 11,
+     "frame": "0x200017E0",
+     "stacked_pc": "0x2001403A",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 0,
+     "sp_after": "0x20001800",
+     "entry": 13,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFF9",
+     "ipsr": 11,
+     "frame": "0x200017E0",
+     "stacked_pc": "0x2001403A",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 0,
+     "sp_after": "0x20001800",
+     "entry": 13,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFF9",
+     "ipsr": 11,
+     "frame": "0x200017E0",
+     "stacked_pc": "0x2001403A",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 0,
+     "sp_after": "0x20001800",
+     "entry": 13,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFF9",
+     "ipsr": 11,
+     "frame": "0x200017E0",
+     "stacked_pc": "0x2001403A",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 0,
+     "sp_after": "0x20001800",
+     "entry": 13,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFF9",
+     "ipsr": 11,
+     "frame": "0x200017E0",
+     "stacked_pc": "0x2001403A",
+     "stacked_xpsr": "0x01000000",
+     "nops_before": 0,
+     "sp_after": "0x20001800",
+     "entry": 13,
+     "exit": 13,
+     "ended": "fell-through"
+    }
+   ]
+  },
+  {
+   "scenario": "tail-chain PendSV+SysTick",
+   "type": "tail",
+   "runs": [
+    {
+     "exc_return": "0xFFFFFFFD",
+     "stacked_pc": "0x20014032",
+     "nops_before": 2,
+     "tail_chain": 11,
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "stacked_pc": "0x20014032",
+     "nops_before": 2,
+     "tail_chain": 11,
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "stacked_pc": "0x20014032",
+     "nops_before": 2,
+     "tail_chain": 11,
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "stacked_pc": "0x20014032",
+     "nops_before": 2,
+     "tail_chain": 11,
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "stacked_pc": "0x20014032",
+     "nops_before": 2,
+     "tail_chain": 11,
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    }
+   ]
+  },
+  {
+   "scenario": "tail-chain IRQ26+IRQ27",
+   "type": "tail",
+   "runs": [
+    {
+     "exc_return": "0xFFFFFFFD",
+     "stacked_pc": "0x20014038",
+     "nops_before": 2,
+     "tail_chain": 11,
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "stacked_pc": "0x20014038",
+     "nops_before": 2,
+     "tail_chain": 11,
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "stacked_pc": "0x20014038",
+     "nops_before": 2,
+     "tail_chain": 11,
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "stacked_pc": "0x20014038",
+     "nops_before": 2,
+     "tail_chain": 11,
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    },
+    {
+     "exc_return": "0xFFFFFFFD",
+     "stacked_pc": "0x20014038",
+     "nops_before": 2,
+     "tail_chain": 11,
+     "entry": 12,
+     "exit": 13,
+     "ended": "fell-through"
+    }
+   ]
+  },
+  {
+   "scenario": "frame SVC from PSP",
+   "type": "frame",
+   "runs": [
+    {
+     "ipsr": 11,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xA0A0A0A0",
+      "r1": "0xA1A1A1A1",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x2001402C",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 11,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xA0A0A0A0",
+      "r1": "0xA1A1A1A1",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x2001402C",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 11,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xA0A0A0A0",
+      "r1": "0xA1A1A1A1",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x2001402C",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 11,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xA0A0A0A0",
+      "r1": "0xA1A1A1A1",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x2001402C",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 11,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xA0A0A0A0",
+      "r1": "0xA1A1A1A1",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x2001402C",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    }
+   ]
+  },
+  {
+   "scenario": "frame PendSV from PSP",
+   "type": "frame",
+   "runs": [
+    {
+     "ipsr": 14,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000ED04",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014030",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 14,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000ED04",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014030",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 14,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000ED04",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014030",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 14,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000ED04",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014030",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 14,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000ED04",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014030",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    }
+   ]
+  },
+  {
+   "scenario": "frame SysTick from PSP",
+   "type": "frame",
+   "runs": [
+    {
+     "ipsr": 15,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xA0A0A0A0",
+      "r1": "0xA1A1A1A1",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "in the NOP slide",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 15,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xA0A0A0A0",
+      "r1": "0xA1A1A1A1",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "in the NOP slide",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 15,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xA0A0A0A0",
+      "r1": "0xA1A1A1A1",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "in the NOP slide",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 15,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xA0A0A0A0",
+      "r1": "0xA1A1A1A1",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "in the NOP slide",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 15,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xA0A0A0A0",
+      "r1": "0xA1A1A1A1",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "in the NOP slide",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    }
+   ]
+  },
+  {
+   "scenario": "frame IRQ26 from PSP",
+   "type": "frame",
+   "runs": [
+    {
+     "ipsr": 42,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x04000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 42,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x04000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 42,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x04000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 42,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x04000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 42,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x04000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    }
+   ]
+  },
+  {
+   "scenario": "frame IRQ27 from PSP",
+   "type": "frame",
+   "runs": [
+    {
+     "ipsr": 43,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x08000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 43,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x08000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 43,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x08000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 43,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x08000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 43,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x08000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    }
+   ]
+  },
+  {
+   "scenario": "frame IRQ28 from PSP",
+   "type": "frame",
+   "runs": [
+    {
+     "ipsr": 44,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 44,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 44,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 44,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 44,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    }
+   ]
+  },
+  {
+   "scenario": "frame IRQ29 from PSP",
+   "type": "frame",
+   "runs": [
+    {
+     "ipsr": 45,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x20000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 45,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x20000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 45,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x20000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 45,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x20000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 45,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x20000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    }
+   ]
+  },
+  {
+   "scenario": "frame IRQ30 from PSP",
+   "type": "frame",
+   "runs": [
+    {
+     "ipsr": 46,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x40000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 46,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x40000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 46,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x40000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 46,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x40000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 46,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x40000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    }
+   ]
+  },
+  {
+   "scenario": "frame IRQ31 from PSP",
+   "type": "frame",
+   "runs": [
+    {
+     "ipsr": 47,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x80000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 47,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x80000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 47,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x80000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 47,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x80000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 47,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001EE0",
+     "stacked": {
+      "r0": "0xE000E200",
+      "r1": "0x80000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014036",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001EE0",
+     "control": 0,
+     "primask": 0
+    }
+   ]
+  },
+  {
+   "scenario": "frame SVC from PSP misaligned",
+   "type": "frame",
+   "runs": [
+    {
+     "ipsr": 11,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001ED8",
+     "stacked": {
+      "r0": "0xA0A0A0A0",
+      "r1": "0xA1A1A1A1",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x2001402C",
+      "xpsr": "0xA1000200"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001ED8",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 11,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001ED8",
+     "stacked": {
+      "r0": "0xA0A0A0A0",
+      "r1": "0xA1A1A1A1",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x2001402C",
+      "xpsr": "0xA1000200"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001ED8",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 11,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001ED8",
+     "stacked": {
+      "r0": "0xA0A0A0A0",
+      "r1": "0xA1A1A1A1",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x2001402C",
+      "xpsr": "0xA1000200"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001ED8",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 11,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001ED8",
+     "stacked": {
+      "r0": "0xA0A0A0A0",
+      "r1": "0xA1A1A1A1",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x2001402C",
+      "xpsr": "0xA1000200"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001ED8",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 11,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001ED8",
+     "stacked": {
+      "r0": "0xA0A0A0A0",
+      "r1": "0xA1A1A1A1",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x2001402C",
+      "xpsr": "0xA1000200"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001ED8",
+     "control": 0,
+     "primask": 0
+    }
+   ]
+  },
+  {
+   "scenario": "frame PendSV from PSP misaligned",
+   "type": "frame",
+   "runs": [
+    {
+     "ipsr": 14,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001ED8",
+     "stacked": {
+      "r0": "0xE000ED04",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014030",
+      "xpsr": "0xA1000200"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001ED8",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 14,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001ED8",
+     "stacked": {
+      "r0": "0xE000ED04",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014030",
+      "xpsr": "0xA1000200"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001ED8",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 14,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001ED8",
+     "stacked": {
+      "r0": "0xE000ED04",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014030",
+      "xpsr": "0xA1000200"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001ED8",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 14,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001ED8",
+     "stacked": {
+      "r0": "0xE000ED04",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014030",
+      "xpsr": "0xA1000200"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001ED8",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 14,
+     "exc_return": "0xFFFFFFFD",
+     "frame": "0x20001ED8",
+     "stacked": {
+      "r0": "0xE000ED04",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014030",
+      "xpsr": "0xA1000200"
+     },
+     "msp": "0x20001800",
+     "psp": "0x20001ED8",
+     "control": 0,
+     "primask": 0
+    }
+   ]
+  },
+  {
+   "scenario": "frame PendSV from MSP",
+   "type": "frame",
+   "runs": [
+    {
+     "ipsr": 14,
+     "exc_return": "0xFFFFFFF9",
+     "frame": "0x200017E0",
+     "stacked": {
+      "r0": "0xE000ED04",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014040",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x200017E0",
+     "psp": "0x20001F00",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 14,
+     "exc_return": "0xFFFFFFF9",
+     "frame": "0x200017E0",
+     "stacked": {
+      "r0": "0xE000ED04",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014040",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x200017E0",
+     "psp": "0x20001F00",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 14,
+     "exc_return": "0xFFFFFFF9",
+     "frame": "0x200017E0",
+     "stacked": {
+      "r0": "0xE000ED04",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014040",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x200017E0",
+     "psp": "0x20001F00",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 14,
+     "exc_return": "0xFFFFFFF9",
+     "frame": "0x200017E0",
+     "stacked": {
+      "r0": "0xE000ED04",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014040",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x200017E0",
+     "psp": "0x20001F00",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 14,
+     "exc_return": "0xFFFFFFF9",
+     "frame": "0x200017E0",
+     "stacked": {
+      "r0": "0xE000ED04",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014040",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x200017E0",
+     "psp": "0x20001F00",
+     "control": 0,
+     "primask": 0
+    }
+   ]
+  },
+  {
+   "scenario": "frame PendSV from MSP misaligned",
+   "type": "frame",
+   "runs": [
+    {
+     "ipsr": 14,
+     "exc_return": "0xFFFFFFF9",
+     "frame": "0x200017D8",
+     "stacked": {
+      "r0": "0xE000ED04",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014040",
+      "xpsr": "0xA1000200"
+     },
+     "msp": "0x200017D8",
+     "psp": "0x20001F00",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 14,
+     "exc_return": "0xFFFFFFF9",
+     "frame": "0x200017D8",
+     "stacked": {
+      "r0": "0xE000ED04",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014040",
+      "xpsr": "0xA1000200"
+     },
+     "msp": "0x200017D8",
+     "psp": "0x20001F00",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 14,
+     "exc_return": "0xFFFFFFF9",
+     "frame": "0x200017D8",
+     "stacked": {
+      "r0": "0xE000ED04",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014040",
+      "xpsr": "0xA1000200"
+     },
+     "msp": "0x200017D8",
+     "psp": "0x20001F00",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 14,
+     "exc_return": "0xFFFFFFF9",
+     "frame": "0x200017D8",
+     "stacked": {
+      "r0": "0xE000ED04",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014040",
+      "xpsr": "0xA1000200"
+     },
+     "msp": "0x200017D8",
+     "psp": "0x20001F00",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 14,
+     "exc_return": "0xFFFFFFF9",
+     "frame": "0x200017D8",
+     "stacked": {
+      "r0": "0xE000ED04",
+      "r1": "0x10000000",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x20014040",
+      "xpsr": "0xA1000200"
+     },
+     "msp": "0x200017D8",
+     "psp": "0x20001F00",
+     "control": 0,
+     "primask": 0
+    }
+   ]
+  },
+  {
+   "scenario": "frame SVC from MSP",
+   "type": "frame",
+   "runs": [
+    {
+     "ipsr": 11,
+     "exc_return": "0xFFFFFFF9",
+     "frame": "0x200017E0",
+     "stacked": {
+      "r0": "0xA0A0A0A0",
+      "r1": "0xA1A1A1A1",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x2001403C",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x200017E0",
+     "psp": "0x20001F00",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 11,
+     "exc_return": "0xFFFFFFF9",
+     "frame": "0x200017E0",
+     "stacked": {
+      "r0": "0xA0A0A0A0",
+      "r1": "0xA1A1A1A1",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x2001403C",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x200017E0",
+     "psp": "0x20001F00",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 11,
+     "exc_return": "0xFFFFFFF9",
+     "frame": "0x200017E0",
+     "stacked": {
+      "r0": "0xA0A0A0A0",
+      "r1": "0xA1A1A1A1",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x2001403C",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x200017E0",
+     "psp": "0x20001F00",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 11,
+     "exc_return": "0xFFFFFFF9",
+     "frame": "0x200017E0",
+     "stacked": {
+      "r0": "0xA0A0A0A0",
+      "r1": "0xA1A1A1A1",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x2001403C",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x200017E0",
+     "psp": "0x20001F00",
+     "control": 0,
+     "primask": 0
+    },
+    {
+     "ipsr": 11,
+     "exc_return": "0xFFFFFFF9",
+     "frame": "0x200017E0",
+     "stacked": {
+      "r0": "0xA0A0A0A0",
+      "r1": "0xA1A1A1A1",
+      "r2": "0xA2A2A2A2",
+      "r3": "0xA3A3A3A3",
+      "r12": "0xACACACAC",
+      "lr": "0x20010101",
+      "pc": "0x2001403C",
+      "xpsr": "0xA1000000"
+     },
+     "msp": "0x200017E0",
+     "psp": "0x20001F00",
+     "control": 0,
+     "primask": 0
+    }
+   ]
+  },
+  {
+   "scenario": "priority PendSV+SysTick, equal",
+   "type": "priority",
+   "runs": [
+    {
+     "taken": 14,
+     "stacked_pc": "0x20014034"
+    },
+    {
+     "taken": 14,
+     "stacked_pc": "0x20014034"
+    },
+    {
+     "taken": 14,
+     "stacked_pc": "0x20014034"
+    },
+    {
+     "taken": 14,
+     "stacked_pc": "0x20014034"
+    },
+    {
+     "taken": 14,
+     "stacked_pc": "0x20014034"
+    }
+   ]
+  },
+  {
+   "scenario": "priority PendSV+SysTick, SysTick higher",
+   "type": "priority",
+   "runs": [
+    {
+     "taken": 15,
+     "stacked_pc": "0x20014034"
+    },
+    {
+     "taken": 15,
+     "stacked_pc": "0x20014034"
+    },
+    {
+     "taken": 15,
+     "stacked_pc": "0x20014034"
+    },
+    {
+     "taken": 15,
+     "stacked_pc": "0x20014034"
+    },
+    {
+     "taken": 15,
+     "stacked_pc": "0x20014034"
+    }
+   ]
+  },
+  {
+   "scenario": "priority PendSV+SysTick, PendSV higher",
+   "type": "priority",
+   "runs": [
+    {
+     "taken": 14,
+     "stacked_pc": "0x20014034"
+    },
+    {
+     "taken": 14,
+     "stacked_pc": "0x20014034"
+    },
+    {
+     "taken": 14,
+     "stacked_pc": "0x20014034"
+    },
+    {
+     "taken": 14,
+     "stacked_pc": "0x20014034"
+    },
+    {
+     "taken": 14,
+     "stacked_pc": "0x20014034"
+    }
+   ]
+  },
+  {
+   "scenario": "priority IRQ26+IRQ31, equal",
+   "type": "priority",
+   "runs": [
+    {
+     "taken": 42,
+     "stacked_pc": "0x2001403A"
+    },
+    {
+     "taken": 42,
+     "stacked_pc": "0x2001403A"
+    },
+    {
+     "taken": 42,
+     "stacked_pc": "0x2001403A"
+    },
+    {
+     "taken": 42,
+     "stacked_pc": "0x2001403A"
+    },
+    {
+     "taken": 42,
+     "stacked_pc": "0x2001403A"
+    }
+   ]
+  },
+  {
+   "scenario": "priority IRQ26+IRQ31, IRQ31 higher",
+   "type": "priority",
+   "runs": [
+    {
+     "taken": 47,
+     "stacked_pc": "0x2001403A"
+    },
+    {
+     "taken": 47,
+     "stacked_pc": "0x2001403A"
+    },
+    {
+     "taken": 47,
+     "stacked_pc": "0x2001403A"
+    },
+    {
+     "taken": 47,
+     "stacked_pc": "0x2001403A"
+    },
+    {
+     "taken": 47,
+     "stacked_pc": "0x2001403A"
+    }
+   ]
+  },
+  {
+   "scenario": "priority PendSV+IRQ26, equal",
+   "type": "priority",
+   "runs": [
+    {
+     "taken": 14,
+     "stacked_pc": "0x20014040"
+    },
+    {
+     "taken": 14,
+     "stacked_pc": "0x20014040"
+    },
+    {
+     "taken": 14,
+     "stacked_pc": "0x20014040"
+    },
+    {
+     "taken": 14,
+     "stacked_pc": "0x20014040"
+    },
+    {
+     "taken": 14,
+     "stacked_pc": "0x20014040"
+    }
+   ]
+  },
+  {
+   "scenario": "priority PendSV+IRQ26, IRQ26 higher",
+   "type": "priority",
+   "runs": [
+    {
+     "taken": 42,
+     "stacked_pc": "0x20014040"
+    },
+    {
+     "taken": 42,
+     "stacked_pc": "0x20014040"
+    },
+    {
+     "taken": 42,
+     "stacked_pc": "0x20014040"
+    },
+    {
+     "taken": 42,
+     "stacked_pc": "0x20014040"
+    },
+    {
+     "taken": 42,
+     "stacked_pc": "0x20014040"
+    }
+   ]
+  },
+  {
+   "scenario": "PRIMASK holds PendSV until CPSIE",
+   "type": "primask",
+   "runs": [
+    {
+     "taken": 14,
+     "after_cpsie": 1
+    },
+    {
+     "taken": 14,
+     "after_cpsie": 1
+    },
+    {
+     "taken": 14,
+     "after_cpsie": 1
+    },
+    {
+     "taken": 14,
+     "after_cpsie": 1
+    },
+    {
+     "taken": 14,
+     "after_cpsie": 1
+    }
+   ]
+  },
+  {
+   "scenario": "SVC with PRIMASK set",
+   "type": "svc-masked",
+   "runs": [
+    {
+     "taken": 3,
+     "stacked_pc": 2
+    },
+    {
+     "taken": 3,
+     "stacked_pc": 2
+    },
+    {
+     "taken": 3,
+     "stacked_pc": 2
+    },
+    {
+     "taken": 3,
+     "stacked_pc": 2
+    },
+    {
+     "taken": 3,
+     "stacked_pc": 2
+    }
+   ]
+  },
+  {
+   "scenario": "implemented priority bits",
+   "type": "prio-bits",
+   "runs": [
+    {
+     "shpr2": "0xC0000000",
+     "shpr3": "0xC0C00000",
+     "ipr6": "0xC0C0C0C0"
+    },
+    {
+     "shpr2": "0xC0000000",
+     "shpr3": "0xC0C00000",
+     "ipr6": "0xC0C0C0C0"
+    },
+    {
+     "shpr2": "0xC0000000",
+     "shpr3": "0xC0C00000",
+     "ipr6": "0xC0C0C0C0"
+    },
+    {
+     "shpr2": "0xC0000000",
+     "shpr3": "0xC0C00000",
+     "ipr6": "0xC0C0C0C0"
+    },
+    {
+     "shpr2": "0xC0000000",
+     "shpr3": "0xC0C00000",
+     "ipr6": "0xC0C0C0C0"
+    }
+   ]
+  },
+  {
+   "scenario": "IRQ26 pended, not enabled",
+   "type": "disabled-irq",
+   "runs": [
+    {
+     "taken": 3,
+     "ispr": "0x04018040",
+     "ended": "fell-through"
+    },
+    {
+     "taken": 3,
+     "ispr": "0x04018040",
+     "ended": "fell-through"
+    },
+    {
+     "taken": 3,
+     "ispr": "0x04018040",
+     "ended": "fell-through"
+    },
+    {
+     "taken": 3,
+     "ispr": "0x04018040",
+     "ended": "fell-through"
+    },
+    {
+     "taken": 3,
+     "ispr": "0x04018040",
+     "ended": "fell-through"
+    }
+   ]
+  },
+  {
+   "scenario": "nested: IRQ26 preempts PendSV",
+   "type": "nested",
+   "runs": [
+    {
+     "irq_exc_return": "0xFFFFFFF1",
+     "irq_ipsr": 42,
+     "stacked_ipsr": 14,
+     "frame_on_msp": "0x200017E0",
+     "pendsv_exc_return": "0xFFFFFFFD",
+     "preempted_after": 2,
+     "ended": "fell-through"
+    },
+    {
+     "irq_exc_return": "0xFFFFFFF1",
+     "irq_ipsr": 42,
+     "stacked_ipsr": 14,
+     "frame_on_msp": "0x200017E0",
+     "pendsv_exc_return": "0xFFFFFFFD",
+     "preempted_after": 2,
+     "ended": "fell-through"
+    },
+    {
+     "irq_exc_return": "0xFFFFFFF1",
+     "irq_ipsr": 42,
+     "stacked_ipsr": 14,
+     "frame_on_msp": "0x200017E0",
+     "pendsv_exc_return": "0xFFFFFFFD",
+     "preempted_after": 2,
+     "ended": "fell-through"
+    },
+    {
+     "irq_exc_return": "0xFFFFFFF1",
+     "irq_ipsr": 42,
+     "stacked_ipsr": 14,
+     "frame_on_msp": "0x200017E0",
+     "pendsv_exc_return": "0xFFFFFFFD",
+     "preempted_after": 2,
+     "ended": "fell-through"
+    },
+    {
+     "irq_exc_return": "0xFFFFFFF1",
+     "irq_ipsr": 42,
+     "stacked_ipsr": 14,
+     "frame_on_msp": "0x200017E0",
+     "pendsv_exc_return": "0xFFFFFFFD",
+     "preempted_after": 2,
+     "ended": "fell-through"
+    }
+   ]
+  },
+  {
+   "scenario": "WFI wakes with PRIMASK set",
+   "type": "wfi-masked",
+   "runs": [
+    {
+     "wake": 4,
+     "taken": 3
+    },
+    {
+     "wake": 4,
+     "taken": 3
+    },
+    {
+     "wake": 4,
+     "taken": 3
+    },
+    {
+     "wake": 4,
+     "taken": 3
+    },
+    {
+     "wake": 4,
+     "taken": 3
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted LDM r0!,{r1-r7} k=-2",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted LDM r0!,{r1-r7} k=-1",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 1,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 1,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 1,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 1,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 1,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted LDM r0!,{r1-r7} k=0",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 2,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 2,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 2,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 2,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 2,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted LDM r0!,{r1-r7} k=1",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 3,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 3,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 3,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 3,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 3,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted LDM r0!,{r1-r7} k=2",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 4,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 4,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 4,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 4,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 4,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted LDM r0!,{r1-r7} k=3",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 5,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 5,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 5,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 5,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 5,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted LDM r0!,{r1-r7} k=4",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 6,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 6,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 6,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 6,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 6,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted LDM r0!,{r1-r7} k=5",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+1 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+1 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+1 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+1 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+1 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted LDM r0!,{r1-r7} k=6",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+2 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+2 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+2 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+2 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+2 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted LDM r0!,{r1-r7} k=7",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+3 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+3 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+3 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+3 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+3 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted LDM r0!,{r1-r7} k=8",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+4 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+4 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+4 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+4 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+4 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted LDM r0!,{r1-r7} k=9",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+5 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+5 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+5 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+5 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+5 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted LDM r0!,{r1-r7} k=10",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+6 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+6 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+6 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+6 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+6 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted STM r0!,{r1-r7} k=-2",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 1,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 1,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 1,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 1,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 1,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted STM r0!,{r1-r7} k=-1",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 2,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 2,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 2,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 2,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 2,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted STM r0!,{r1-r7} k=0",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 3,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 3,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 3,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 3,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 3,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted STM r0!,{r1-r7} k=1",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 4,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 4,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 4,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 4,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 4,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted STM r0!,{r1-r7} k=2",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 5,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 5,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 5,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 5,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 5,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted STM r0!,{r1-r7} k=3",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 6,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 6,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 6,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 6,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 6,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted STM r0!,{r1-r7} k=4",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "completed",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "completed",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "completed",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "completed",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "completed",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted STM r0!,{r1-r7} k=5",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+1 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+1 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+1 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+1 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+1 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted STM r0!,{r1-r7} k=6",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+2 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+2 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+2 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+2 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+2 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted STM r0!,{r1-r7} k=7",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+3 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+3 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+3 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+3 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+3 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted STM r0!,{r1-r7} k=8",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+4 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+4 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+4 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+4 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+4 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted STM r0!,{r1-r7} k=9",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+5 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+5 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+5 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+5 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+5 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted STM r0!,{r1-r7} k=10",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+6 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+6 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+6 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+6 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    },
+    {
+     "outcome": "later (+6 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 28
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted PUSH {r0-r7} k=-2",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted PUSH {r0-r7} k=-1",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted PUSH {r0-r7} k=0",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted PUSH {r0-r7} k=1",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted PUSH {r0-r7} k=2",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted PUSH {r0-r7} k=3",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted PUSH {r0-r7} k=4",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted PUSH {r0-r7} k=5",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "completed",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "completed",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "completed",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "completed",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "completed",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted PUSH {r0-r7} k=6",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+1 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+1 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+1 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+1 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+1 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted PUSH {r0-r7} k=7",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+2 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+2 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+2 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+2 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+2 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted PUSH {r0-r7} k=8",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+3 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+3 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+3 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+3 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+3 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted PUSH {r0-r7} k=9",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+4 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+4 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+4 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+4 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+4 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted PUSH {r0-r7} k=10",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+5 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+5 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+5 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+5 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+5 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted PUSH {r0-r7} k=11",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+6 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+6 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+6 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+6 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    },
+    {
+     "outcome": "later (+6 NOPs)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": "0xFFFFFFE0"
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted POP {r0-r7} k=-2",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    },
+    {
+     "outcome": "not started",
+     "taken": 15,
+     "effects": 0,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted POP {r0-r7} k=-1",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 1,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 1,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 1,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 1,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 1,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted POP {r0-r7} k=0",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 2,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 2,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 2,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 2,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 2,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted POP {r0-r7} k=1",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 3,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 3,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 3,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 3,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 3,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted POP {r0-r7} k=2",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 4,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 4,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 4,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 4,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 4,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted POP {r0-r7} k=3",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 5,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 5,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 5,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 5,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 5,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted POP {r0-r7} k=4",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 6,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 6,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 6,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 6,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 6,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted POP {r0-r7} k=5",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 0
+    },
+    {
+     "outcome": "abandoned (part done)",
+     "taken": 15,
+     "effects": 7,
+     "writeback": 0
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted POP {r0-r7} k=6",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+1 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+1 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+1 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+1 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+1 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted POP {r0-r7} k=7",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+2 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+2 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+2 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+2 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+2 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted POP {r0-r7} k=8",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+3 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+3 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+3 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+3 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+3 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted POP {r0-r7} k=9",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+4 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+4 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+4 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+4 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+4 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted POP {r0-r7} k=10",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+5 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+5 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+5 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+5 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+5 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    }
+   ]
+  },
+  {
+   "scenario": "interrupted POP {r0-r7} k=11",
+   "type": "interrupted",
+   "runs": [
+    {
+     "outcome": "later (+6 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+6 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+6 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+6 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    },
+    {
+     "outcome": "later (+6 NOPs)",
+     "taken": 15,
+     "effects": 8,
+     "writeback": 32
+    }
+   ]
+  }
+ ]
+}

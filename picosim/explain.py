@@ -26,10 +26,19 @@ import re
 
 from . import timing
 from .cpu import SimulatorError, svc_write_data
+from .memmap import OS_END, SRAM_BASE, STACK_TOP, is_memory, in_os
 from .walkthrough import (REG_NAMES, COND, Walkthrough, h32, h16, _operands, _reg, _imm,
                           _join, _cap)
 
-OS_TOP = 0x3000          # the built-in OS lives below this address
+OS_TOP = OS_END          # the built-in OS is in flash below this address (in_os)
+
+
+def on_a_pico(fault):
+    """What a real Pico would do at this fault, in one sentence."""
+    if 'read-only memory' in fault:
+        return ("A real Pico would not stop: it would just lose the value, which is much harder "
+                "to find, so picosim stops here instead.")
+    return "A real Pico would crash here too (a HardFault)."
 
 SIO = {0x04: "GPIO_IN", 0x10: "GPIO_OUT", 0x14: "GPIO_OUT_SET", 0x18: "GPIO_OUT_CLR",
        0x1C: "GPIO_OUT_XOR", 0x20: "GPIO_OE", 0x24: "GPIO_OE_SET", 0x28: "GPIO_OE_CLR",
@@ -250,26 +259,26 @@ class Explainer:
         """'loop (at 3004, line 21)' / 'putchar (at 0010, in the built-in OS)'."""
         lab = self.label(addr)
         line, _, _ = self.line_of(addr)
-        place = "in the built-in OS" if addr < OS_TOP else (f"line {line}" if line else '')
+        place = "in the built-in OS" if in_os(addr) else (f"line {line}" if line else '')
         if lab:
-            return f"{lab} (at {addr:04X}" + (f", {place})" if place else ")")
-        return f"{addr:04X}" + (f" ({place})" if place else '')
+            return f"{lab} (at {addr:08X}" + (f", {place})" if place else ")")
+        return f"{addr:08X}" + (f" ({place})" if place else '')
 
     def inline(self, addr, text):
         """An instruction named inside a sentence: "line 22 (movs r0, #'H')"."""
         line, code, _ = self.line_of(addr)
         shown = code or ' '.join(text.split())
-        if addr < OS_TOP:
-            return f"{shown} at {addr:04X} in the built-in OS"
-        return f"line {line} ({shown})" if line else f"{shown} at {addr:04X}"
+        if in_os(addr):
+            return f"{shown} at {addr:08X} in the built-in OS"
+        return f"line {line} ({shown})" if line else f"{shown} at {addr:08X}"
 
     def head(self, addr, text):
         """How an instruction is named at the top of a section."""
         line, code, _ = self.line_of(addr)
         shown = code or ' '.join(text.split())
-        if addr < OS_TOP:
-            return f"{addr:04X}  {shown}   (built-in OS)"
-        return f"Line {line}:  {shown}" if line else f"{addr:04X}  {shown}"
+        if in_os(addr):
+            return f"{addr:08X}  {shown}   (built-in OS)"
+        return f"Line {line}:  {shown}" if line else f"{addr:08X}  {shown}"
 
     def charish(self, run, reg):
         """True when a value in `reg` is a character here: the line writes a
@@ -300,7 +309,7 @@ class Explainer:
         a main that returns runs the OS's last instructions, as Step does."""
         sp = self._scratch_core()
         c = sp.cpu._core
-        c.load_memory(core.get_memory(), 0)
+        c.load_memory(core.get_memory(), SRAM_BASE)
         c.regs = list(core.regs)
         c.N, c.Z, c.C, c.V = core.N, core.Z, core.C, core.V
         c.PRIMASK, c.CONTROL, c.PSP = core.PRIMASK, core.CONTROL, core.PSP
@@ -340,8 +349,8 @@ class Explainer:
                     c.check_halt()
                     break
             call = self.words_call_target(addr, text, pre)
-            if whole_os_calls and call is not None and call[1] < OS_TOP and not c.halted:
-                whole = self.label(call[1]) or f"{call[1]:04X}"
+            if whole_os_calls and call is not None and in_os(call[1]) and not c.halted:
+                whole = self.label(call[1]) or f"{call[1]:08X}"
                 for _ in range(10000):
                     if c.halted or (c.pc == call[0] and c.sp >= pre['regs'][13]):
                         break
@@ -350,9 +359,9 @@ class Explainer:
                         break
                     c.step()
                     c.check_halt()
-            if whole_os_calls and not c.halted and c.pc < OS_TOP and addr >= OS_TOP:
+            if whole_os_calls and not c.halted and in_os(c.pc) and not in_os(addr):
                 for _ in range(16):          # main returned: the OS halts at once
-                    if c.halted or c.pc >= OS_TOP:
+                    if c.halted or not in_os(c.pc):
                         break
                     c.step()
                     c.check_halt()
@@ -395,10 +404,10 @@ class Explainer:
             return regs[REG_NAMES.index(r)] if r in REG_NAMES else 0
 
         def place(a, via=''):
-            """'memory address 0x3024 (the label numbers, the address in R1)'"""
+            """'memory address 0x20000024 (the label numbers, the address in R1)'"""
             if a is None:
                 return 'memory'
-            if a >= 0x10000:
+            if not is_memory(a):
                 return f"the I/O register {io_name(a)}" + (f" ({via})" if via else '')
             lab = self.label(a) or next((n for n, x in self.prog.label_map.items() if x == a), '')
             notes = ([f"the label {lab}"] if lab else []) + ([via] if via else [])
@@ -426,7 +435,7 @@ class Explainer:
             names = reg_list(ops[0])
             s = T(f"Took {_join(names)} back off the stack (SP went up from {h32(r0[13])} to {h32(r1[13])}).",
                   f"will take {_join(names)} back off the stack (SP goes up to {h32(r1[13])}).")
-            if 'PC' in names and (pc1 & ~1) < OS_TOP <= run.addr:
+            if 'PC' in names and in_os(pc1 & ~1) and not in_os(run.addr):
                 s += T(" Loading PC is a jump: main returned to the built-in OS, which had called it.",
                        " Loading PC is a jump: main returns to the built-in OS, which called it.")
             elif 'PC' in names:
@@ -438,7 +447,7 @@ class Explainer:
             v = rv(rd, r1)
             lab = self.label(v) or self.label(v & ~1) or \
                 next((n for n, x in self.prog.label_map.items() if x == v), '')
-            what = f" (the address of {lab})" if lab else (f" (the address of {io_name(v)})" if v >= 0x10000 and
+            what = f" (the address of {lab})" if lab else (f" (the address of {io_name(v)})" if not is_memory(v) and
                                                            io_name(v) != h32(v) else '')
             return T(f"Loaded {h32(v)}{what} into {rd}. The assembler stored this number just after "
                      "the code, because MOVS cannot make numbers this big.",
@@ -454,7 +463,7 @@ class Explainer:
             if m and _reg(m.group(1)) in REG_NAMES:
                 via = f"the address in {_reg(m.group(1))}" + (" plus an offset" if ',' in ops[1] else '')
             v = rv(rd, r1)
-            io = run.mem_addr is not None and run.mem_addr >= 0x10000
+            io = run.mem_addr is not None and not is_memory(run.mem_addr)
             shown = num(v, io, self.charish(run, rd) or base == 'ldrb')
             return T(f"Loaded {size} from {place(run.mem_addr, via)} into {rd}: {rd} = {shown}.",
                      f"will load {size} from {place(run.mem_addr, via)} into {rd}, so {rd} becomes {shown}.")
@@ -462,7 +471,7 @@ class Explainer:
             rs = _reg(ops[0])
             part = {'strb': 'the low byte of ', 'strh': 'the low halfword of '}.get(base, '')
             v = rv(rs, r0)
-            io = run.mem_addr is not None and run.mem_addr >= 0x10000
+            io = run.mem_addr is not None and not is_memory(run.mem_addr)
             s = T(f"Stored {part}{rs} ({num(v, io)}) into {place(run.mem_addr)}.",
                   f"will store {part}{rs} ({num(v, io)}) into {place(run.mem_addr)}.")
             if io:
@@ -712,9 +721,9 @@ class Explainer:
         if run.halted:
             return [1, "The processor stops here: the program is finished."]
         if b == a + size:
-            return [1, f"PC: {a:04X} {'will move' if future else 'moved'} on to {b:04X}, the next instruction "
+            return [1, f"PC: {a:08X} {'will move' if future else 'moved'} on to {b:08X}, the next instruction "
                        f"(this one is {size} bytes long)."]
-        return [1, f"PC: {a:04X} {'will jump' if future else 'jumped'} to {self.where(b)}."]
+        return [1, f"PC: {a:08X} {'will jump' if future else 'jumped'} to {self.where(b)}."]
 
     def cycle_line(self, run, future=False):
         if not run.cycles:
@@ -760,8 +769,8 @@ class Explainer:
             hw = core.read16(run.addr)
             if core.is_32bit_thumb(hw):
                 return [2, f"In memory this instruction is 32 bits, 0x{hw:04X} 0x{core.read16(run.addr + 2):04X}, "
-                           f"at address {run.addr:04X}."]
-            return [2, f"In memory this instruction is the 16-bit number 0x{hw:04X}, at address {run.addr:04X}."]
+                           f"at address {run.addr:08X}."]
+            return [2, f"In memory this instruction is the 16-bit number 0x{hw:04X}, at address {run.addr:08X}."]
         except (RuntimeError, ValueError):
             return None
 
@@ -780,7 +789,7 @@ class Explainer:
         why = ''
         if addr <= 4 and base in ('ldr', 'blx'):          # _start: the first three instructions
             why = "picosim's built-in OS is starting your program: it finds the address of main and calls it."
-        elif base == 'bkpt' and addr < OS_TOP:
+        elif base == 'bkpt' and in_os(addr):
             why = "main has returned to the built-in OS, which stops the processor here."
         elif base == 'svc':
             why = "This is how putchar and getchar ask picosim to print a character or read a key."
@@ -813,9 +822,9 @@ class Explainer:
             v = run.post['regs'][REG_NAMES.index(_reg(ops[0]))] if _reg(ops[0]) in REG_NAMES else 0
             why = ("The program needs a number (often an address) too big for MOVS, so it loads it from a literal pool."
                    if v > 255 else "LDR Rd, = loads a named constant whatever its size, so the line works with any value.")
-        elif base.startswith('str') and run.mem_addr is not None and run.mem_addr >= 0x10000:
+        elif base.startswith('str') and run.mem_addr is not None and not is_memory(run.mem_addr):
             why = "Writing a hardware register is how a program controls the Pico's pins."
-        elif base.startswith('ldr') and run.mem_addr is not None and run.mem_addr >= 0x10000:
+        elif base.startswith('ldr') and run.mem_addr is not None and not is_memory(run.mem_addr):
             why = "Reading a hardware register is how a program finds out the level of the Pico's pins."
         elif base.startswith(('ldr', 'str')):
             why = "Values live in memory; the ALU only works on registers, so they are loaded and stored."
@@ -847,7 +856,7 @@ class Explainer:
         if run.fault:
             return {'head': self.head(run.addr, run.text),
                     'simple': f"This instruction will stop the program with a CPU fault: {run.fault}",
-                    'why': "A real Pico would crash here too. Read the message, fix the program and Reload.",
+                    'why': on_a_pico(run.fault) + " Read the message, fix the program and Reload.",
                     'detail': []}
         simple = _cap(self.say(run, future=True))
         b = run.post['regs'][15] & ~1
@@ -860,13 +869,13 @@ class Explainer:
             nt = self.prog.asm_map.get(b, '')
             goes = f"After it the program carries on with the next instruction, {self.inline(b, nt)}." if nt else \
                 "After it the program carries on with the next instruction."
-        elif b < OS_TOP <= run.addr and _mnemonic(run.text) in ('bl', 'blx'):
+        elif in_os(b) and not in_os(run.addr) and _mnemonic(run.text) in ('bl', 'blx'):
             goes = f"After it the program is inside {self.where(b)}; the function comes back to the next line when it is done."
-        elif b < OS_TOP <= run.addr:
+        elif in_os(b) and not in_os(run.addr):
             goes = "After it the program is back in the built-in OS."
         elif _mnemonic(run.text) in ('bx', 'pop'):
             goes = f"After it the program is back in the code that called the function, at {self.inline(b, self.prog.asm_map.get(b, ''))}."
-        elif b < run.addr and b >= OS_TOP and run.addr >= OS_TOP:
+        elif b < run.addr and not in_os(b) and not in_os(run.addr):
             goes = f"After it the program goes back up to {self.inline(b, self.prog.asm_map.get(b, ''))}."
         else:
             goes = f"After it the program continues at {self.inline(b, self.prog.asm_map.get(b, ''))}."
@@ -981,10 +990,10 @@ def build(srv):
             simple = ("Nothing of your program has run yet. picosim's built-in OS has already started it, "
                       "so the next instruction is the first line of main.")
         else:
-            simple = ("Nothing has run yet. The CPU starts at address 0000, in picosim's built-in OS, "
+            simple = ("Nothing has run yet. The CPU starts at address 10000000, in picosim's built-in OS (at the start of flash), "
                       "which sets things up and then calls your main.")
         now = {'head': "The program is loaded", 'simple': simple,
-               'detail': [[1, "SP = 0x00010000: the stack starts at the top of RAM and grows down."],
+               'detail': [[1, f"SP = 0x{STACK_TOP:08X}: the stack starts at the top of SRAM and grows down."],
                           [1, "Press Step instruction (S) to run the next instruction and see what it did."],
                           [3, "Press Step cycle (C) to run just one clock cycle of it instead."]]}
     elif kind == 'run':
@@ -1038,7 +1047,7 @@ def build(srv):
             now['simple'] += " That was the last cycle: the instruction is finished. " + ex.say(run)
     elif kind == 'call':
         call = ex.words_call_target(before['pc'], srv.prog.asm_map.get(before['pc'], ''), before['snap'])
-        name = (ex.label(call[1]) or f"{call[1]:04X}") if call else "the function"
+        name = (ex.label(call[1]) or f"{call[1]:08X}") if call else "the function"
         run = Run(srv.prog.asm_map.get(before['pc'], '???'), before['pc'], before['snap'], snap(c),
                   out=srv.out_text[before['out']:], pins=_pin_changes(srv), whole_call=name, halted=c.halted)
         now = {'head': ex.head(before['pc'], run.text), 'simple': ex.say(run),
@@ -1061,11 +1070,13 @@ def build(srv):
     elif before is not None:                      # insn, step
         run = _history_run(srv, ex, before)
         now = ex.instruction_now(run, c)
-        if srv.step_over_os and before['pc'] >= OS_TOP and c.halted and srv.fault is None:
+        if srv.step_over_os and not in_os(before['pc']) and c.halted and srv.fault is None:
             now['simple'] += " The OS then stopped the processor: the program is finished."
     if srv.fault:
         now = now or {'head': '', 'simple': '', 'detail': []}
-        now['fault'] = (f"The CPU stopped with a fault: {srv.fault.rstrip('.')}. A real Pico would crash here too. "
+        if kind not in ('call', 'run', 'pipe') and before is not None:
+            now['simple'] = "This instruction did not finish: it stopped the program (below)."
+        now['fault'] = (f"The CPU stopped with a fault: {srv.fault.rstrip('.')}. {on_a_pico(srv.fault)} "
                         "The console says what went wrong; fix the program, save it and press Reload.")
 
     # what comes next
@@ -1076,7 +1087,7 @@ def build(srv):
                'goes': "Press Reload to start the program again from the beginning.", 'why': None, 'detail': []}
     elif srv.waiting_input or srv.needs_input():
         at = c.insn_addr if c.in_insn else c.pc
-        if srv.step_over_os and at < OS_TOP and srv.stop_at is not None:
+        if srv.step_over_os and in_os(at) and srv.stop_at is not None:
             at = srv.stop_at[0] - 4                   # Level 1: the program's own bl getchar line
         nxt = {'head': ex.head(at, srv.prog.asm_map.get(at, '')),
                'simple': "getchar is waiting for a key. Click in the serial console and type one: getchar "

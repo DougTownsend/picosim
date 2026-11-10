@@ -402,7 +402,7 @@ func _fill_metrics() -> void:
 	mix_bars.set_rows(mrows)
 
 	var tail := "[b]Memory and I/O (data accesses)[/b]\n"
-	var regs := ["RAM", "SIO (single-cycle IOPORT)", "APB peripherals", "other AHB"]
+	var regs := ["memory (SRAM, flash)", "SIO (single-cycle IOPORT)", "APB peripherals", "other AHB"]
 	tail += "[table=3]" + _hcell("Where") + _hcell("Reads") + _hcell("Writes")
 	for i in 4:
 		tail += _cell(regs[i]) + _cell(_n(s["data"]["reads"][i])) + _cell(_n(s["data"]["writes"][i]))
@@ -418,7 +418,7 @@ func _fill_metrics() -> void:
 	tail += "\n[b]Costliest instructions (multi-cycle cycles)[/b]\n[table=5]" + _hcell("Address") + _hcell("Instruction") + _hcell("Runs") + _hcell("Multi-cycle") + _hcell("RP2040")
 	for r in s["top"]:
 		var p = r["cycles"]["m0plus"]
-		tail += _cell("[code]%04X[/code]" % int(r["addr"])) + _cell("[code]%s[/code]" % _esc(str(r["text"]))) + \
+		tail += _cell("[code]%08X[/code]" % int(r["addr"])) + _cell("[code]%s[/code]" % _esc(str(r["text"]))) + \
 			_cell(_n(r["execs"])) + _cell(_n(r["cycles"]["multicycle"]) if r["cycles"]["multicycle"] != null else "—") + \
 			_cell(_n(p) if p != null else "not timed")
 	tail += "[/table]\n"
@@ -523,7 +523,7 @@ func _pipe_explain(sch: Dictionary, t: int) -> String:
 		if r == null:
 			out += "[color=%s]not shown: it holds an instruction outside the window drawn here (older, or one the program has not reached yet)[/color]\n" % dim
 			continue
-		var txt := "[code]%04X  %s[/code]" % [int(r["addr"]), _esc(str(r["text"]))]
+		var txt := "[code]%08X  %s[/code]" % [int(r["addr"]), _esc(str(r["text"]))]
 		if st == "E":
 			var k := t - int(r["start"]) + 1
 			if not r["timed"]:
@@ -701,7 +701,7 @@ class PipeChart extends Control:
 		draw_string(font, Vector2(xoff + 4, 38), "cycle →", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, dim)
 		for i in rows.size():
 			var r: Dictionary = rows[i]
-			var lbl := "%04X  %s" % [int(r["addr"]), str(r["text"])]
+			var lbl := "%08X  %s" % [int(r["addr"]), str(r["text"])]
 			if r.get("pending", false):
 				lbl += "   (next)"
 			draw_string(mono, Vector2(xoff + 4, HEAD + i * ROW_H + 15), lbl, HORIZONTAL_ALIGNMENT_LEFT, LABEL_W - 10, 12,
@@ -741,6 +741,6 @@ class PipeChart extends Control:
 		for p in r["stages"]:
 			if int(p[0]) == ci[0]:
 				var nm: String = {"F": "Fetch", "D": "Decode", "E": "Execute"}[str(p[1])]
-				return "Cycle %d · %s\n%04X  %s%s" % [ci[0] - cmin, nm, int(r["addr"]), str(r["text"]),
+				return "Cycle %d · %s\n%08X  %s%s" % [ci[0] - cmin, nm, int(r["addr"]), str(r["text"]),
 					"\n(discarded: wrong path after a branch)" if r["flushed"] else ""]
-		return "%04X  %s" % [int(r["addr"]), str(r["text"])]
+		return "%08X  %s" % [int(r["addr"]), str(r["text"])]

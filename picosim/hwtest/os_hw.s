@@ -8,10 +8,12 @@
  * Testing loads a program into the RP2040's SRAM through the debug port and
  * runs it there.  This file takes the place of os.s: every routine a program
  * can call starts at the same offset as in os.s, and it is linked at
- * 0x20000000 with the program at 0x20003000, so every address on the chip is
- * the simulator's address + 0x20000000 (image.py checks this).
+ * 0x20020000 with the program at 0x20020100, so every code address on the
+ * chip is the simulator's address + 0x10020000; data addresses are the same
+ * (image.py checks this).  The routines only the chip runs are in .text.hw,
+ * just below, at 0x2001FC00.
  *
- *   _start              the same as os.s (MAIN_PTR moves to SRAM)
+ *   _start              the same as os.s (MAIN_PTR moves with the code)
  *   putchar / getchar   BKPT #2 / #3: the chip stops, the test runner does
  *                       the I/O (reads R0, or puts the next input in R0)
  *                       and returns to the caller, as picosim's SVC does
@@ -25,14 +27,14 @@
  * it, and main's return reads it a last time.  Each pair goes into
  * BENCH_TABLE as bench_stop's do.
  *
- * BENCH_TABLE (in the OS's part of SRAM, which picosim never compares):
+ * BENCH_TABLE (in SRAM the program does not use, image.DATA_LIMIT):
  *   +0  number of regions recorded      +4  SysTick value at the last bench_start
  *   +8  [start, stop] SysTick values, 8 bytes per region (BENCH_MAX regions)
  */
 
-.equ MAIN_PTR,    0x20002FFC
+.equ MAIN_PTR,    0x200200FC     /* os.s's 0x100000FC, moved with the code */
 .equ SYST_CVR,    0xE000E018
-.equ BENCH_TABLE, 0x20002000
+.equ BENCH_TABLE, 0x2001E000     /* image.BENCH_TABLE */
 .equ BENCH_MAX,   250
 
 .text
@@ -76,6 +78,8 @@ bench_start:
 .type   bench_stop, %function
 bench_stop:
     b    hw_bench_stop
+
+.section .text.hw, "ax"
 
 /* The SysTick read is the third instruction of both routines, so the time
  * between the two reads is the region plus a fixed overhead, which the

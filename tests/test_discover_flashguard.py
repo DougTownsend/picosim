@@ -54,8 +54,11 @@ class FakeOpenOCD:
                 return "Error: Failed to probe flash\nauto_probe failed\n"
             return "flash 'rp2040_flash' found at 0x10000000\n"
         if cmd == 'flash info 0':
-            return (f"#0 : rp2040_flash at 0x10000000, size 0x{self.reported_size:08x}, "
-                    "buswidth 0, chipwidth 0\n\t#  0: 0x00000000 (0x1000 4kB) not protected\n")
+            # as OpenOCD 0.12 with the rp2040 driver: it prints, then fails the protection check
+            raise RuntimeError("monitor command 'flash info 0' failed (E74)")
+        if cmd == 'flash banks':
+            return (f"#0 : rp2040.flash (rp2040_flash) at 0x10000000, size 0x{self.reported_size:08x}, "
+                    "buswidth 0, chipwidth 0\n")
         if cmd.startswith('flash read_bank 0 '):
             p = _path(cmd)
             data = bytes(self.flash)

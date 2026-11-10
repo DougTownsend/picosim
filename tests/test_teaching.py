@@ -54,7 +54,7 @@ class ListingTest(unittest.TestCase):
     def test_os_rows_and_io_use(self):
         s = server(os.path.join(EX, '02_add.s'))
         prog = next(m for m in s.out if m.get('type') == 'program')
-        self.assertTrue(all(r['os'] == (r['addr'] < 0x3000) for r in prog['listing']))
+        self.assertTrue(all(r['os'] == (0x10000000 <= r['addr'] < 0x10000100) for r in prog['listing']))
         self.assertFalse(prog['uses_io'])
         s = server(os.path.join(EX, '05_blink_led.s'))
         prog = next(m for m in s.out if m.get('type') == 'program')

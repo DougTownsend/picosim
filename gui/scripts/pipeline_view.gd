@@ -265,7 +265,7 @@ func _get_tooltip(at: Vector2) -> String:
 		var tok = pipe.get(slot)
 		if tok != null and _token_rect(SLOT_E if slot == "E" else SLOT_F,
 				TOKEN_W_E if slot == "E" else TOKEN_W_F).has_point(at):
-			return "%04X  %s\n%s" % [int(tok["addr"]), str(tok["text"]), _token_note(tok, slot)]
+			return "%08X  %s\n%s" % [int(tok["addr"]), str(tok["text"]), _token_note(tok, slot)]
 	return ""
 
 
@@ -834,7 +834,7 @@ func _draw_token(tok: Dictionary, slot: String, c: Vector2, w: float, alpha: flo
 	tc.a = alpha
 	var mc := C_MUTED
 	mc.a = alpha
-	var txt := "%04X  %s" % [int(tok["addr"]), str(tok["text"])]
+	var txt := "%08X  %s" % [int(tok["addr"]), str(tok["text"])]
 	_fit(r.position + Vector2(14, 19) * _scale, txt, 12.5, tc, mono, w - 22)
 	var note := _token_note(tok, slot) if slot != "" else ""
 	if cross:
@@ -880,7 +880,7 @@ func _draw_strip() -> void:
 		var col := _token_color(tok)
 		draw_circle(_p(26, y + rh / 2.0), 4.5 * _scale, col)
 		var lc := C_DIM if bool(tok["flushed"]) else C_TEXT
-		_fit(_p(36, y + rh / 2.0 + 4), "%04X  %s" % [int(tok["addr"]), str(tok["text"])], 10, lc, mono, x0 - 44)
+		_fit(_p(36, y + rh / 2.0 + 4), "%08X  %s" % [int(tok["addr"]), str(tok["text"])], 10, lc, mono, x0 - 44)
 		for cell in tok["cells"]:
 			var u := int(cell[0])
 			var code := str(cell[1])
@@ -932,7 +932,7 @@ static func stage_text(p: Dictionary) -> Dictionary:
 	if e == null:
 		et = "empty: the first instruction is still being fetched."
 	else:
-		et = "[code]%04X  %s[/code]" % [int(e["addr"]), _esc(str(e["text"]))]
+		et = "[code]%08X  %s[/code]" % [int(e["addr"]), _esc(str(e["text"]))]
 		if not bool(e["timed"]):
 			et += ": the datasheet gives no cycle count for this instruction (Table 81 note e), so it is drawn as one cycle."
 		else:
@@ -949,7 +949,7 @@ static func stage_text(p: Dictionary) -> Dictionary:
 	if f == null:
 		ft = "empty: the program has ended."
 	else:
-		ft = "[code]%04X  %s[/code]" % [int(f["addr"]), _esc(str(f["text"]))]
+		ft = "[code]%08X  %s[/code]" % [int(f["addr"]), _esc(str(f["text"]))]
 		if bool(f["flushed"]) and e != null and bool(e["redirect"]):
 			ft += ": fetched from the next sequential address (the M0+ predicts not-taken), but the branch in Execute was taken, so it is flushed (✕) and never executes."
 		elif bool(f["flushed"]):

@@ -153,9 +153,10 @@ in picosim's own core and compares:
 - every word it changed in the scratch window;
 - for timing cases, the cycles against picosim's RP2040 model (`timing.py`).
 
-Until picosim has the chip's memory map (Stage 2), the chip's addresses are
-mapped onto picosim's 64 KiB (ROM → 0x0000, the sled → 0x4000–0xBFFF,
-scratch → 0xC000, the stack area → 0xF000). Things picosim cannot model yet
+picosim has the chip's memory map, so a case is replayed at its chip
+addresses (the sled, scratch window and stack area are all in SRAM); only a
+window picosim does not have, such as the non-striped SRAM alias at
+`0x21000000`, is moved to a free part of SRAM. Things picosim cannot model yet
 (exception frames, lockups, addresses outside its memory) are reported as
 *pending*, never as failures. `tests/test_hwfacts.py` fails only on a
 difference that `hwfacts/known_differences.json` does not explain.

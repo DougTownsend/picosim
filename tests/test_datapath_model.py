@@ -61,6 +61,7 @@ class DatapathModelTest(unittest.TestCase):
         shift amounts past 32, all condition codes)."""
         import random
         from picosim._picosim_core import CPUCore
+        from picosim.memmap import SRAM_BASE as S     # everything runs in SRAM
         from test_timing import TABLE81
         rnd = random.Random(2026)
         encodings = [(h1, h2) for _, h1, h2, _, _, _ in TABLE81]
@@ -73,23 +74,23 @@ class DatapathModelTest(unittest.TestCase):
             for trial in range(40):
                 c = CPUCore()
                 c.strict = False                        # random BX targets, unaligned bases
-                addr = rnd.choice([0x1000, 0x1002])
+                addr = S + rnd.choice([0x1000, 0x1002])
                 c.write16(addr, hw1)
                 c.write16(addr + 2, hw2)
                 for r in range(13):
                     v = rnd.choice([rnd.getrandbits(32), rnd.randrange(0, 40), 0x80000000,
-                                    0x7FFFFFFF, 0xFFFFFFFF, 0x2000 + 4 * rnd.randrange(64)])
+                                    0x7FFFFFFF, 0xFFFFFFFF, S + 0x2000 + 4 * rnd.randrange(64)])
                     c.set_reg(r, v)
-                for r in range(8):                      # keep load/store bases inside RAM
+                for r in range(8):                      # keep load/store bases inside SRAM
                     if hw1 >> 12 in (0x5, 0x6, 0x7, 0x8, 0xC):
-                        c.set_reg(r, 0x2000 + 4 * rnd.randrange(64))
+                        c.set_reg(r, S + 0x2000 + 4 * rnd.randrange(64))
                 if hw1 >> 12 == 0x5:
                     c.set_reg(1, 4 * rnd.randrange(8))
-                c.sp = 0x8000 - 4 * rnd.randrange(16)
-                c.set_reg(14, 0x3001)
+                c.sp = S + 0x8000 - 4 * rnd.randrange(16)
+                c.set_reg(14, S + 0x3001)
                 for f in 'NZCV':
                     setattr(c, f, rnd.randrange(2))
-                for a in range(0x2000, 0x2200, 4):
+                for a in range(S + 0x2000, S + 0x2200, 4):
                     c.write32(a, rnd.getrandbits(32))
                 for a in range(c.sp, c.sp + 64, 4):
                     c.write32(a, rnd.getrandbits(32) | 1)

@@ -2,7 +2,9 @@
  * picosim_core.cpp — ARMv6-M (Cortex-M0+) CPU core in C++
  *
  * Exposes a CPUCore class to Python via pybind11.
- * Flat 64 KB RAM lives in C++; peripheral addresses (>= 0x10000) are
+ * Memory is the RP2040's: ROM at 0x00000000, XIP flash at 0x10000000
+ * (picosim's OS, then the program's code and constants) and SRAM at
+ * 0x20000000-0x20041FFF (its data and stack) live in C++; every other address is
  * dispatched to Python callbacks for GPIO etc.
  * SVC syscalls are also dispatched to a Python callback.
  */
@@ -12,6 +14,7 @@
 #include <pybind11/stl.h>
 
 #include <algorithm>
+#include <map>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -48,19 +51,51 @@ struct CycleInfo {
 
 struct MemWrite { uint32_t addr; int width; uint32_t old_v; bool io; uint32_t val; };
 
+// ── the memory map ───────────────────────────────────────────────────────────
+// The RP2040's memories, at their real addresses.  Stores into ROM or flash
+// stop the program (see write_fault); everything else is an I/O register,
+// handled in Python (an address no peripheral claims is a bus fault there).
+static const uint32_t ROM_BASE   = 0x00000000u, ROM_SIZE   = 0x4000u;    // 16 KB boot ROM (empty here)
+static const uint32_t FLASH_BASE = 0x10000000u, FLASH_SIZE = 0x200000u;  // 2 MB XIP flash: the OS, the program
+static const uint32_t SRAM_BASE  = 0x20000000u, SRAM_SIZE  = 0x42000u;   // 264 KB: data and the stack
+static const uint8_t  FLASH_ERASED = 0xFF;      // flash past the program reads as erased
+
+enum MemKind { MK_IO = 0, MK_ROM = 1, MK_FLASH = 2, MK_SRAM = 3 };
+
+static int mem_kind(uint32_t addr) {
+    if (addr - ROM_BASE < ROM_SIZE) return MK_ROM;
+    if (addr - FLASH_BASE < FLASH_SIZE) return MK_FLASH;
+    if (addr - SRAM_BASE < SRAM_SIZE) return MK_SRAM;
+    return MK_IO;
+}
+
 // ── performance profiling ────────────────────────────────────────────────────
 // Data accesses (not instruction fetches) are classified by where they go on
-// the RP2040: RAM below 0x10000 (SRAM, zero wait states), the SIO block on the
-// single-cycle IOPORT (0xD0000000-0xDFFFFFFF), the APB peripherals
+// the RP2040: memory (ROM, flash or SRAM, zero wait states), the SIO block on
+// the single-cycle IOPORT (0xD0000000-0xDFFFFFFF), the APB peripherals
 // (0x40000000-0x4FFFFFFF, which have bus wait states) or other AHB space.
 enum Region { RG_RAM = 0, RG_SIO = 1, RG_APB = 2, RG_AHB = 3 };
 
 static int region_of(uint32_t addr) {
-    if (addr < 0x10000u) return RG_RAM;
+    if (mem_kind(addr) != MK_IO) return RG_RAM;
     if ((addr & 0xF0000000u) == 0xD0000000u) return RG_SIO;
     if ((addr & 0xF0000000u) == 0x40000000u) return RG_APB;
     return RG_AHB;
 }
+
+// Code is profiled in 0x8000 halfword slots: the first 64 KB of flash, where
+// the OS and the program are.  Code anywhere else (SRAM, ROM, deeper in
+// flash) has NO_SLOT: it is profiled by address in a map instead (slower,
+// and rare: code a program copies to SRAM, a replayed hardware case), and
+// it has no heat-map trace code.
+static const uint32_t CODE_SLOTS = 0x8000u, NO_SLOT = 0xFFFFFFFFu;
+
+static uint32_t code_slot(uint32_t addr) {
+    uint32_t off = addr - FLASH_BASE;
+    return off < CODE_SLOTS * 2 ? off >> 1 : NO_SLOT;
+}
+
+static uint32_t slot_addr(uint32_t slot) { return FLASH_BASE + slot * 2; }
 
 // One completed instruction.
 struct InsnRec {
@@ -109,7 +144,9 @@ static inline int32_t sign_extend(uint32_t v, int bits) {
 class CPUCore {
 public:
     // ── state ────────────────────────────────────────────────────────────────
-    uint8_t  mem[0x10000];   // 64 KB flat RAM
+    uint8_t  rom[ROM_SIZE];      // the OS (read-only to the program)
+    uint8_t  sram[SRAM_SIZE];    // data and the stack
+    std::vector<uint8_t> flash;  // the program, as loaded; the rest of flash reads FLASH_ERASED
     uint32_t regs[16];       // R0–R15 (R13=SP, R14=LR, R15=PC)
     int N, Z, C, V;          // APSR flags
     bool     halted;
@@ -132,7 +169,8 @@ public:
     std::function<void(int)> svc_handler;
 
     CPUCore() {
-        std::memset(mem, 0, sizeof(mem));
+        std::memset(rom, 0, sizeof(rom));
+        std::memset(sram, 0, sizeof(sram));
         std::memset(regs, 0, sizeof(regs));
         N = Z = C = V = 0;
         halted = false;
@@ -153,13 +191,16 @@ public:
     InsnRec  cur_rec{};               // the instruction in progress
     std::vector<InsnRec> recent = std::vector<InsnRec>(RECENT);
     uint64_t recent_n = 0;            // records written so far
-    std::vector<AddrProf> prof = std::vector<AddrProf>(0x8000);
+    std::vector<AddrProf> prof = std::vector<AddrProf>(CODE_SLOTS);
+    std::map<uint32_t, AddrProf> prof_other;   // code with NO_SLOT, by address
 
     // Instruction trace for the heat map's timeline (picosim/heat.py): one
-    // uint16 per completed instruction, (address/2 & 0x7FFF) << 1 | taken.
+    // uint16 per completed instruction, code_slot(address) << 1 | taken
+    // (NO_TRACE for code with no slot).
     // Off until itrace_enable(cap); entries past the cap are not kept.
     std::vector<uint16_t> itrace;
     size_t   itrace_cap = 0;
+    static const uint16_t NO_TRACE = 0xFFFF;   // never in the heat table: ends a timeline walk
     uint64_t itrace_dropped = 0;
     // heat_set_table(): for each trace code, the component indices used in
     // each of its clock cycles (an index repeats when used twice)
@@ -187,7 +228,8 @@ public:
         cur_rec.branched = regs[15] != _insn_addr + (wide ? 4u : 2u);
         recent[recent_n % RECENT] = cur_rec;
         recent_n++;
-        AddrProf& a = prof[(_insn_addr >> 1) & 0x7FFF];
+        uint32_t slot = code_slot(_insn_addr);
+        AddrProf& a = slot != NO_SLOT ? prof[slot] : prof_other[_insn_addr];
         a.execs++;
         a.branched += cur_rec.branched;
         a.taken += cur_rec.cond_taken;
@@ -195,7 +237,8 @@ public:
         for (int i = 0; i < 4; ++i) { a.reads[i] += cur_rec.reads[i]; a.writes[i] += cur_rec.writes[i]; }
         if (itrace_cap) {
             if (itrace.size() < itrace_cap)
-                itrace.push_back((uint16_t)((((_insn_addr >> 1) & 0x7FFF) << 1) | (cur_rec.cond_taken ? 1 : 0)));
+                itrace.push_back(slot == NO_SLOT ? NO_TRACE
+                                 : (uint16_t)((slot << 1) | (cur_rec.cond_taken ? 1 : 0)));
             else
                 itrace_dropped++;
         }
@@ -239,6 +282,7 @@ public:
     void reset_profile() {
         recent_n = 0;
         for (auto& a : prof) a = AddrProf{};
+        prof_other.clear();
     }
 
     // ── register helpers ─────────────────────────────────────────────────────
@@ -268,17 +312,69 @@ public:
 
     // ── memory access ────────────────────────────────────────────────────────
 
-    bool is_peripheral(uint32_t addr) const { return addr >= 0x10000u; }
+    bool is_peripheral(uint32_t addr) const { return mem_kind(addr) == MK_IO; }
 
-    // Flat RAM, little-endian.  An access that runs past 0xFFFF wraps to 0
-    // (only possible through the Python API: instructions must be aligned).
+    // One byte of ROM, flash or SRAM (0 for any other address: only an
+    // unaligned access by a non-strict core can run off the end of one).
+    uint8_t mem_get(uint32_t a) const {
+        switch (mem_kind(a)) {
+        case MK_ROM:   return rom[a - ROM_BASE];
+        case MK_SRAM:  return sram[a - SRAM_BASE];
+        case MK_FLASH: { uint32_t o = a - FLASH_BASE; return o < flash.size() ? flash[o] : FLASH_ERASED; }
+        default:       return 0;
+        }
+    }
+    // Store one byte (the loader and the debugger can write ROM and flash).
+    void mem_set(uint32_t a, uint8_t v) {
+        switch (mem_kind(a)) {
+        case MK_ROM:  rom[a - ROM_BASE] = v; break;
+        case MK_SRAM: sram[a - SRAM_BASE] = v; break;
+        case MK_FLASH: {
+            uint32_t o = a - FLASH_BASE;
+            if (o >= flash.size()) flash.resize(o + 1, FLASH_ERASED);
+            flash[o] = v;
+            break;
+        }
+        default: break;
+        }
+    }
+
+    // [addr, addr + n) lies inside one of ROM, flash or SRAM.
+    static bool in_one_memory(uint32_t addr, uint64_t n) {
+        int k = mem_kind(addr);
+        if (k == MK_IO || !n) return k != MK_IO;
+        uint64_t base = k == MK_ROM ? ROM_BASE : k == MK_FLASH ? FLASH_BASE : SRAM_BASE;
+        uint64_t size = k == MK_ROM ? ROM_SIZE : k == MK_FLASH ? FLASH_SIZE : SRAM_SIZE;
+        return (uint64_t)addr + n <= base + size;
+    }
+
+    // Memory is little-endian.
     uint32_t ram_get(uint32_t addr, int width) const {
         uint32_t v = 0;
-        for (int i = 0; i < width; ++i) v |= (uint32_t)mem[(addr + i) & 0xFFFF] << (8 * i);
+        for (int i = 0; i < width; ++i) v |= (uint32_t)mem_get(addr + i) << (8 * i);
         return v;
     }
     void ram_put(uint32_t addr, int width, uint32_t v) {
-        for (int i = 0; i < width; ++i) mem[(addr + i) & 0xFFFF] = (uint8_t)(v >> (8 * i));
+        for (int i = 0; i < width; ++i) mem_set(addr + i, (uint8_t)(v >> (8 * i)));
+    }
+
+    // An instruction's store into ROM or flash.  Neither can be written by a
+    // store on the RP2040: the ROM ignores it (measured on a Pico), and a
+    // store into the flash window does not reach the flash chip.  picosim
+    // stops there, so the program's mistake is seen where it happens.
+    void write_fault(uint32_t addr) const {
+        if (!count_data) return;                       // the loader or the debugger
+        int k = mem_kind(addr);
+        if (k != MK_ROM && k != MK_FLASH) return;
+        std::string where = k == MK_ROM
+            ? "the Pico's boot ROM (0x00000000-0x00003FFF). It is read-only: the Pico ignores "
+              "the store, so the value would silently not change"
+            : "flash (0x10000000 and up), where the program's code and constants are. A store "
+              "cannot write the Pico's flash, so the value would not be kept";
+        throw std::runtime_error(
+            "Write to read-only memory: the instruction at " + hexs(_insn_addr) + " stores to " +
+            hex32(addr) + ", in " + where + ". Put variables the program changes in .data "
+            "(or .bss), which picosim places in SRAM at 0x20000000, as the Pico SDK does.");
     }
 
     // ARMv6-M has no unaligned accesses: an instruction's halfword or word
@@ -300,7 +396,7 @@ public:
             if (peripheral_read) return (uint8_t)peripheral_read(addr, 1);
             return 0;
         }
-        return mem[addr & 0xFFFF];
+        return mem_get(addr);
     }
 
     uint16_t read16(uint32_t addr) {
@@ -325,10 +421,11 @@ public:
 
     void log_write(uint32_t addr, int width, uint32_t val) {
         if (width > 1) check_align(addr, width, true);
+        write_fault(addr);
         note_access(addr, true);
         if (!mem_log) return;
         if (is_peripheral(addr)) { mem_log->push_back({addr, width, 0, true, val}); return; }
-        mem_log->push_back({addr & 0xFFFF, width, ram_get(addr, width), false, val});
+        mem_log->push_back({addr, width, ram_get(addr, width), false, val});
     }
 
     void write8 (uint32_t addr, uint32_t val) {
@@ -337,7 +434,7 @@ public:
             if (peripheral_write) peripheral_write(addr, val & 0xFF, 1);
             return;
         }
-        mem[addr & 0xFFFF] = (uint8_t)(val & 0xFF);
+        mem_set(addr, (uint8_t)(val & 0xFF));
     }
 
     void write16(uint32_t addr, uint32_t val) {
@@ -1958,28 +2055,53 @@ public:
 
 PYBIND11_MODULE(_picosim_core, m) {
     m.doc() = "ARMv6-M CPU core (C++)";
+    m.attr("ROM_BASE") = ROM_BASE;     m.attr("ROM_SIZE") = ROM_SIZE;
+    m.attr("FLASH_BASE") = FLASH_BASE; m.attr("FLASH_SIZE") = FLASH_SIZE;
+    m.attr("SRAM_BASE") = SRAM_BASE;   m.attr("SRAM_SIZE") = SRAM_SIZE;
+    m.attr("CODE_SLOTS") = CODE_SLOTS;
 
     py::class_<CPUCore>(m, "CPUCore")
         .def(py::init<>())
 
-        // ── raw memory access (for ELF loading from Python) ───────────────
-        .def("load_memory", [](CPUCore& self, py::bytes data, uint32_t offset) {
+        // ── raw memory access (loading, the debugger) ─────────────────────
+        // Addresses are the RP2040's; a range must lie inside one of ROM,
+        // flash or SRAM.  These never fault on ROM or flash.
+        .def("load_memory", [](CPUCore& self, py::bytes data, uint32_t addr) {
             auto buf = data.cast<std::string_view>();
-            if ((uint64_t)offset + buf.size() > 0x10000)
-                throw std::runtime_error("load_memory: data overflows 64 KB");
-            std::memcpy(self.mem + offset, buf.data(), buf.size());
-        })
+            if (!buf.size()) return;
+            if (!self.in_one_memory(addr, buf.size()))
+                throw std::runtime_error("load_memory: " + hex32(addr) + " + " + std::to_string(buf.size()) +
+                                         " bytes is not inside ROM, flash or SRAM");
+            for (size_t i = 0; i < buf.size(); ++i) self.mem_set(addr + (uint32_t)i, (uint8_t)buf[i]);
+        }, py::arg("data"), py::arg("addr"))
         .def("get_memory", [](CPUCore& self) {
-            return py::bytes(reinterpret_cast<const char*>(self.mem), 0x10000);
-        })
-        .def("get_mem_slice", [](CPUCore& self, uint32_t offset, uint32_t length) {
-            if ((uint64_t)offset + length > 0x10000)
-                throw std::runtime_error("get_mem_slice: out of bounds");
-            return py::bytes(reinterpret_cast<const char*>(self.mem + offset), length);
+            return py::bytes(reinterpret_cast<const char*>(self.sram), SRAM_SIZE);
+        }, "All of SRAM (0x20000000-0x20041FFF): the memory a program changes.")
+        .def("get_flash", [](CPUCore& self) {
+            return py::bytes(reinterpret_cast<const char*>(self.flash.data()), self.flash.size());
+        }, "Flash from 0x10000000 as loaded (the rest reads as erased, 0xFF).")
+        .def("get_mem_slice", [](CPUCore& self, uint32_t addr, uint32_t length) {
+            if (length && !self.in_one_memory(addr, length))
+                throw std::runtime_error("get_mem_slice: " + hex32(addr) + " + " + std::to_string(length) +
+                                         " bytes is not inside ROM, flash or SRAM");
+            std::string out(length, '\0');
+            for (uint32_t i = 0; i < length; ++i) out[i] = (char)self.mem_get(addr + i);
+            return py::bytes(out);
         })
         .def("set_mem_byte", [](CPUCore& self, uint32_t addr, uint8_t val) {
-            self.mem[addr & 0xFFFF] = val;
+            if (mem_kind(addr) == MK_IO)
+                throw std::runtime_error("set_mem_byte: " + hex32(addr) + " is not in ROM, flash or SRAM");
+            self.mem_set(addr, val);
         })
+        .def_static("mem_kind", [](uint32_t addr) {
+            static const char* K[] = {"io", "rom", "flash", "sram"};
+            return std::string(K[mem_kind(addr)]);
+        }, "'rom', 'flash', 'sram' or 'io' (anything else) for an address.")
+        .def_static("code_slot", [](uint32_t addr) -> py::object {
+            uint32_t s = code_slot(addr);
+            return s == NO_SLOT ? py::object(py::none()) : py::object(py::int_(s));
+        }, "The profile slot of a code address (None: not profiled).")
+        .def_static("slot_addr", [](uint32_t slot) { return slot_addr(slot); })
         .def("read8",  [](CPUCore& self, uint32_t a) { return self.read8(a); })
         .def("read16", [](CPUCore& self, uint32_t a) { return self.read16(a); })
         .def("read32", [](CPUCore& self, uint32_t a) { return self.read32(a); })
@@ -2077,24 +2199,30 @@ PYBIND11_MODULE(_picosim_core, m) {
         // ── profiling ──────────────────────────────────────────────────────
         .def("reset_profile", &CPUCore::reset_profile)
         .def("profile", [](const CPUCore& s) {
-            // one dict per address that has executed: totals over all executions
+            // one dict per address that has executed: totals over all executions,
+            // in address order
             py::list out;
-            for (size_t i = 0; i < s.prof.size(); ++i) {
-                const AddrProf& a = s.prof[i];
-                if (!a.execs) continue;
+            auto add = [&](uint32_t addr, const AddrProf& a) {
                 py::dict d;
-                d["addr"] = (uint32_t)(i << 1); d["hw1"] = a.hw1; d["hw2"] = a.hw2;
+                d["addr"] = addr; d["hw1"] = a.hw1; d["hw2"] = a.hw2;
                 d["execs"] = a.execs; d["branched"] = a.branched; d["taken"] = a.taken;
                 d["reads"] = std::vector<uint64_t>(a.reads, a.reads + 4);
                 d["writes"] = std::vector<uint64_t>(a.writes, a.writes + 4);
                 out.append(d);
-            }
+            };
+            auto other = s.prof_other.begin();
+            for (; other != s.prof_other.end() && other->first < FLASH_BASE; ++other)
+                add(other->first, other->second);
+            for (size_t i = 0; i < s.prof.size(); ++i)
+                if (s.prof[i].execs) add(slot_addr((uint32_t)i), s.prof[i]);
+            for (; other != s.prof_other.end(); ++other)
+                add(other->first, other->second);
             return out;
         }, "Per-address execution totals: execs, branched, data reads/writes by region [RAM, SIO, APB, AHB].")
         .def("itrace_enable", [](CPUCore& s, size_t cap) {
             s.itrace_cap = cap; s.itrace.clear(); s.itrace_dropped = 0;
             if (cap) s.itrace.reserve(std::min<size_t>(cap, 1u << 20));
-        }, py::arg("cap"), "Record every completed instruction (address/2 << 1 | taken), up to cap entries; 0 turns it off.")
+        }, py::arg("cap"), "Record every completed instruction (code_slot(address) << 1 | taken, or 0xFFFF), up to cap entries; 0 turns it off.")
         .def("itrace_len", [](const CPUCore& s) { return s.itrace.size(); })
         .def_readonly("itrace_dropped", &CPUCore::itrace_dropped)
         .def("itrace", [](const CPUCore& s, size_t start, size_t n) {

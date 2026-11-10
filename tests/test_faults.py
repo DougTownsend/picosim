@@ -6,7 +6,8 @@ Behaviour at the edges, where the simulator must act like the real Pico
    bit 0 clear, undefined and non-ARMv6-M encodings, unmapped addresses.
    After a fault the PC points back at the instruction that caused it.
 2. The other ARMv6-M instructions: hints, CPS, barriers, MRS / MSR.
-3. Memory safety: accesses near the top of RAM never touch the registers.
+3. Memory: the RP2040's map (ROM, flash, SRAM); stores into ROM or flash
+   stop the program; accesses at the end of SRAM never touch the registers.
 4. GPIO: a pin follows SIO only when its FUNCSEL is 5 (SIO).
 5. The ELF loader shows data in code as data, with exact label addresses.
 6. The GUI backend keeps running whatever a program or a client does.
@@ -22,22 +23,25 @@ import unittest
 from picosim._picosim_core import CPUCore
 from picosim.loader import load_program
 from picosim.cpu import SimulatorError
+from picosim.memmap import USER_BASE as CODE, SRAM_BASE, SRAM_END
 from test_server import start
 
+STACK = SRAM_BASE + 0x8000
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HEADER = ".syntax unified\n.cpu cortex-m0plus\n.thumb\nmain:\n"
 
 
 def core_with(hws, regs=None):
+    """A bare core with `hws` at CODE (flash) and SP in SRAM."""
     c = CPUCore()
-    a = 0x3000
+    a = CODE
     for h in hws:
         c.write16(a, h)
         a += 2
     for r, v in (regs or {}).items():
         c.set_reg(r, v)
-    c.sp = 0x8000
-    c.pc = 0x3000
+    c.sp = STACK
+    c.pc = CODE
     return c
 
 
@@ -69,12 +73,14 @@ class ProgramFile:
 class FaultTest(unittest.TestCase):
     CASES = [
         # (what, encodings, registers, words the message must contain)
-        ("unaligned word store", [0x6001], {0: 0x4002}, "Unaligned"),
-        ("unaligned halfword load", [0x8801], {0: 0x4001}, "Unaligned"),
-        ("unaligned word load at the top of RAM", [0x6801], {0: 0xFFFE}, "Unaligned"),
-        ("BX to an even address", [0x4700], {0: 0x3010}, "bit 0 clear"),
-        ("BLX to an even address", [0x4780], {0: 0x3010}, "bit 0 clear"),
-        ("UDF", [0xDE00], {}, "Undefined instruction 0xDE00 at 0x3000"),
+        ("unaligned word store", [0x6001], {0: SRAM_BASE + 0x4002}, "Unaligned"),
+        ("unaligned halfword load", [0x8801], {0: SRAM_BASE + 0x4001}, "Unaligned"),
+        ("unaligned word load at the top of SRAM", [0x6801], {0: SRAM_END - 2}, "Unaligned"),
+        ("BX to an even address", [0x4700], {0: CODE + 0x10}, "bit 0 clear"),
+        ("BLX to an even address", [0x4780], {0: CODE + 0x10}, "bit 0 clear"),
+        ("UDF", [0xDE00], {}, "Undefined instruction 0xDE00 at 0x10000100"),
+        ("store into flash", [0x6001], {0: CODE + 0x100}, "Write to read-only memory"),
+        ("store into ROM", [0x7001], {0: 0x2FFC}, "Write to read-only memory"),
         ("IT (Thumb-2 only)", [0xBF08], {}, "Undefined"),
         ("0xB8xx is not ADD SP", [0xB802], {}, "Undefined"),
         ("REV with op 2", [0xBA81], {}, "Undefined"),
@@ -94,26 +100,28 @@ class FaultTest(unittest.TestCase):
                         else:
                             c.step()
                     self.assertIn(words, str(cm.exception))
-                    self.assertEqual(c.pc, 0x3000, "the PC points at the faulting instruction")
+                    self.assertEqual(c.pc, CODE, "the PC points at the faulting instruction")
                     self.assertFalse(c.in_insn)
 
     def test_pop_pc_even(self):
         c = core_with([0xBD00])            # POP {PC}
-        c.write32(0x8000, 0x3010)          # bit 0 clear
+        c.write32(STACK, CODE + 0x10)      # bit 0 clear
         with self.assertRaisesRegex(RuntimeError, "POP {PC}.*bit 0 clear"):
             c.step()
 
     def test_not_strict(self):
         """Scratch cores (cycle tables, timing) may turn the checks off."""
-        c = core_with([0x4700], {0: 0x3010})
+        c = core_with([0x4700], {0: CODE + 0x10})
         c.strict = False
         c.step()
-        self.assertEqual(c.pc, 0x3010)
+        self.assertEqual(c.pc, CODE + 0x10)
 
     def test_bus_fault(self):
         for body, words in [("ldr r1, =0x40054028\nldr r0, [r1]\nbx lr", "reads from 0x40054028"),
-                            ("ldr r1, =0x20000000\nstr r0, [r1]\nbx lr", "Pico's SRAM"),
-                            ("ldr r0, =0x20000001\nbx r0", "jumped to 0x20000000")]:
+                            ("ldr r1, =0x21000000\nstr r0, [r1]\nbx lr", "non-striped"),
+                            ("ldr r1, =0x13000000\nldr r0, [r1]\nbx lr", "XIP cache's aliases"),
+                            ("ldr r1, =0x20042000\nldr r0, [r1]\nbx lr", "reads from 0x20042000"),
+                            ("ldr r0, =0x30000001\nbx r0", "jumped to 0x30000000")]:
             with self.subTest(body=body.splitlines()[0]), ProgramFile(body) as path:
                 cpu = load_program(path).cpu
                 with self.assertRaises(SimulatorError) as cm:
@@ -123,7 +131,7 @@ class FaultTest(unittest.TestCase):
 
     def test_error_messages_are_hex(self):
         c = core_with([0xDE00])
-        with self.assertRaisesRegex(RuntimeError, "at 0x3000"):
+        with self.assertRaisesRegex(RuntimeError, "at 0x10000100"):
             c.step()
 
 
@@ -134,7 +142,7 @@ class SystemInstructionTest(unittest.TestCase):
             for cycle in (False, True):
                 with self.subTest(hw=hex(hws[0]), cycle=cycle):
                     c = run_one(hws, {0: 7}, cycle)
-                    self.assertEqual(c.pc, 0x3000 + 2 * len(hws))
+                    self.assertEqual(c.pc, CODE + 2 * len(hws))
                     self.assertEqual(c.regs[0], 7)
 
     def test_cps(self):
@@ -157,8 +165,8 @@ class SystemInstructionTest(unittest.TestCase):
             self.assertEqual(c.regs[0], 0xB0000000)
             c = run_one([0xF381, 0x8800], {1: 0x50000000}, cycle)   # MSR APSR, R1
             self.assertEqual((c.N, c.Z, c.C, c.V), (0, 1, 0, 1))
-            c = run_one([0xF381, 0x8808], {1: 0x4003}, cycle)       # MSR MSP, R1
-            self.assertEqual(c.sp, 0x4000)
+            c = run_one([0xF381, 0x8808], {1: SRAM_BASE + 0x4003}, cycle)   # MSR MSP, R1
+            self.assertEqual(c.sp, SRAM_BASE + 0x4000)
 
     def test_assembled(self):
         """The real assembler's encodings run (NOP is MOV R8, R8 for M0+)."""
@@ -172,20 +180,78 @@ class SystemInstructionTest(unittest.TestCase):
 
 
 class MemorySafetyTest(unittest.TestCase):
-    def test_top_of_ram_wraps(self):
+    def test_end_of_sram_does_not_wrap(self):
+        """A debugger write running past the end of SRAM keeps the bytes
+        inside it and drops the rest: nothing wraps round, no register changes."""
         c = CPUCore()
         c.set_reg(0, 0x12345678)
-        c.write32(0xFFFE, 0xAABBCCDD)
+        c.write32(SRAM_END - 2, 0xAABBCCDD)
         self.assertEqual(c.regs[0], 0x12345678)
-        self.assertEqual(c.read32(0xFFFE), 0xAABBCCDD)
-        self.assertEqual(c.read16(0x0000), 0xAABB)
+        self.assertEqual(c.read16(SRAM_END - 2), 0xCCDD)
+        self.assertEqual(c.read16(SRAM_BASE), 0)
 
     def test_slice_bounds(self):
         c = CPUCore()
-        for addr, n in [(0x3000, 0xFFFFFFFF), (0xFFFF, 2), (0x10000, 1)]:
+        for addr, n in [(CODE, 0xFFFFFFFF), (SRAM_END - 1, 2), (SRAM_END, 1), (0x4000, 1),
+                        (0x3FFF, 2), (0x40014000, 4)]:
             with self.assertRaises(RuntimeError):
                 c.get_mem_slice(addr, n)
-        self.assertEqual(len(c.get_mem_slice(0xFFFF, 1)), 1)
+        self.assertEqual(len(c.get_mem_slice(SRAM_END - 1, 1)), 1)
+        self.assertEqual(c.get_mem_slice(CODE + 0x1000, 4), b'\xff' * 4)    # erased flash
+        with self.assertRaises(RuntimeError):
+            c.set_mem_byte(0x40014000, 1)
+
+    def test_memory_map(self):
+        from picosim import memmap
+        self.assertEqual([(n, hex(a), hex(b)) for n, a, b, _ in memmap.REGIONS],
+                         [('ROM', '0x0', '0x4000'), ('Flash', '0x10000000', '0x10200000'),
+                          ('SRAM', '0x20000000', '0x20042000')])
+        self.assertEqual(memmap.STACK_TOP, 0x20042000)
+        for a, k in [(0, 'rom'), (0x3FFF, 'rom'), (0x4000, 'io'), (0x10000000, 'flash'),
+                     (0x101FFFFF, 'flash'), (0x10200000, 'io'), (0x20041FFF, 'sram'),
+                     (0x20042000, 'io'), (0xD0000000, 'io')]:
+            self.assertEqual(memmap.kind(a), k, hex(a))
+        for a in (0x10000000, 0x10000100, 0x1000FFFE):
+            self.assertEqual(memmap.slot_addr(memmap.code_slot(a)), a)
+        for a in (0, 0x10010000, SRAM_BASE):
+            self.assertIsNone(memmap.code_slot(a))
+        self.assertEqual((memmap.OS_BASE, memmap.OS_END, memmap.USER_BASE, memmap.MAIN_PTR),
+                         (0x10000000, 0x10000100, 0x10000100, 0x100000FC))
+
+    def test_program_layout(self):
+        """The OS in flash's first 256 bytes, then the program's code and
+        constants; variables in SRAM; SP at the top of SRAM; no veneers (a BL
+        from the program reaches putchar directly)."""
+        body = ("ldr r1, =count\nldr r0, [r1]\nadds r0, #1\nstr r0, [r1]\n"
+                "ldr r1, =buf\nstr r0, [r1]\nbx lr\n"
+                ".section .rodata\ntable: .word 7\n.data\ncount: .word 41\n.bss\nbuf: .space 8")
+        with ProgramFile(body) as path:
+            prog = load_program(path)
+        labels = {v: k for k, v in prog.sym_map.items()}
+        self.assertEqual(prog.main_addr, CODE)
+        self.assertFalse(any('veneer' in n for n in prog.sym_map.values()))
+        self.assertTrue(all(0x10000000 <= labels[n] < CODE for n in ('_start', 'putchar', 'getchar')))
+        self.assertEqual(labels['count'], SRAM_BASE)
+        self.assertEqual(labels['buf'], SRAM_BASE + 4)
+        self.assertTrue(CODE < labels['table'] < SRAM_BASE)
+        self.assertEqual(set(prog.sections), {'text', 'data', 'bss'})
+        c = prog.cpu._core
+        self.assertEqual(c.sp, 0x20042000)
+        c.run(1000)
+        self.assertTrue(c.halted)
+        self.assertEqual(c.read32(SRAM_BASE), 42)
+        self.assertEqual(c.read32(SRAM_BASE + 4), 42)
+
+    def test_store_into_code_stops_with_a_clear_message(self):
+        body = "ldr r1, =total\nmovs r0, #5\nstr r0, [r1]\nbx lr\n.align 2\ntotal: .word 0"
+        with ProgramFile(body) as path:
+            cpu = load_program(path).cpu
+            with self.assertRaises(RuntimeError) as cm:     # the core's own faults are RuntimeErrors
+                cpu._core.run(1000)
+        msg = str(cm.exception)
+        for words in ("Write to read-only memory", "flash", ".data", "0x20000000"):
+            self.assertIn(words, msg)
+        self.assertEqual(cpu.pc, CODE + 4, "the PC points at the store")
 
 
 class GpioFuncselTest(unittest.TestCase):
@@ -226,19 +292,19 @@ class DisassemblyTest(unittest.TestCase):
             prog = load_program(path)
         asm, syms = prog.asm_map, prog.sym_map
         labels = {v: k for k, v in syms.items()}
-        self.assertEqual(asm[0x3004].split()[0], '.word')                 # the literal pool
-        self.assertIn('0x12345678', asm[0x3004])
+        self.assertEqual(asm[CODE + 4].split()[0], '.word')               # the literal pool
+        self.assertIn('0x12345678', asm[CODE + 4])
         self.assertEqual(asm[labels['msg']], '.ascii   "Hello\\n\\0"')       # 7 bytes
         self.assertEqual(labels['odd'] % 2, 1)                             # exact, not rounded down
         self.assertEqual(asm[labels['odd']], '.ascii   "GP\\0"')
         self.assertEqual(asm[labels['nums'] + 4], '.word    0xDEADBEEF')
-        self.assertTrue(asm[0x3000].startswith('ldr'))
+        self.assertTrue(asm[CODE].startswith('ldr'))
 
     def test_os_literal_pool(self):
         from picosim.sim import load_elf
         from picosim.loader import build_os_elf
         _, _, asm, _ = load_elf(build_os_elf())
-        self.assertEqual(asm[0x000C], '.word    0x00002FFC')
+        self.assertEqual(asm[0x1000000C], '.word    0x100000FC')
 
 
 class ServerRobustnessTest(unittest.TestCase):
@@ -257,12 +323,12 @@ class ServerRobustnessTest(unittest.TestCase):
             self.assertFalse(st['halted'])
 
     def test_huge_write_and_bad_json(self):
-        with ProgramFile("movs r0, #1\nldr r1, =0x3000\nmovs r2, #0\nsubs r2, #1\nsvc #0\nbx lr") as path:
+        with ProgramFile("movs r0, #1\nldr r1, =0x10000000\nmovs r2, #0\nsubs r2, #1\nsvc #0\nbx lr") as path:
             c = start(path)
             c.until(lambda m: m['type'] == 'state' and m.get('loaded'))
             c.s.sendall(b'[1, 2]\n"text"\nnot json\n{"cmd": "nosuch"}\n')
             c.send(cmd='run', cps=0)
-            m, _ = c.until(lambda m: m['type'] == 'error' and 'past the end of RAM' in m['message'])
+            m, _ = c.until(lambda m: m['type'] == 'error' and 'not all inside' in m['message'])
             c.send(cmd='state')
             c.until(lambda m: m['type'] == 'state')
 
@@ -271,20 +337,20 @@ class ServerRobustnessTest(unittest.TestCase):
             c = start(path)
             m, _ = c.until(lambda m: m['type'] == 'program')
         rows = {r['addr']: r for r in m['listing']}
-        self.assertEqual(rows[0x3004]['raw'], 'CAFEF00D')
+        self.assertEqual(rows[CODE + 4]['raw'], 'CAFEF00D')
 
 
 class InteractivePromptTest(unittest.TestCase):
     def test_bad_input(self):
-        cmds = "s abc\nx zz\nx 0x20000000\nb nolabel\nreg r0 xyz\nreg r99 1\ngpio 99 1\n" \
+        cmds = "s abc\nx zz\nx 0x30000000\nb nolabel\nreg r0 xyz\nreg r99 1\ngpio 99 1\n" \
                "b loop\nr\nx 0xD0000004 1\nfoo\nq\n"
         r = subprocess.run([sys.executable, '-m', 'picosim.sim',
                             os.path.join(ROOT, 'examples', '03_count_loop.s')],
                            input=cmds, capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertNotIn('Traceback', r.stdout + r.stderr)
-        self.assertIn("Breakpoint hit at 0x3004", r.stdout)
-        self.assertIn("Nothing is at address 0x20000000", r.stdout)
+        self.assertIn("Breakpoint hit at 0x10000104", r.stdout)
+        self.assertIn("Nothing is at address 0x30000000", r.stdout)
         self.assertIn("0xD0000004: 0x00000000", r.stdout)
 
 

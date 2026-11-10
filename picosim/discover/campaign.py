@@ -150,14 +150,31 @@ def h(*hws):
 
 
 def release(t, mask):
-    """Take blocks out of reset (RESETS CLR alias) and wait for RESET_DONE."""
+    """Take blocks out of reset (RESETS CLR alias) and wait for RESET_DONE.
+    True if every block came out; see release_ready()."""
+    return release_ready(t, mask) == mask
+
+
+def release_ready(t, mask):
+    """Take blocks out of reset and wait for RESET_DONE; returns the bits of
+    `mask` that came out.  A block that does not come out (its clock is not
+    running: after `reset halt`, clk_peri and clk_adc are off, so UART, SPI
+    and the ADC never finish) is put straight back into reset.  On the
+    RP2040 an access to a block left half-released stalls the bus, and the
+    debug port with it, until the board is power-cycled; a block held in
+    reset just reads as 0."""
     from .safety import check_write
     check_write(0x4000F000, 4, mask, why='release from reset')
     t.rsp.write32(0x4000F000, mask)
+    done = 0
     for _ in range(50):
-        if t.rsp.read32(0x4000C008) & mask == mask:
-            return True
-    return False
+        done = t.rsp.read32(0x4000C008) & mask
+        if done == mask:
+            return mask
+    stuck = mask & ~done
+    check_write(0x4000E000, 4, stuck, why='back into reset (it did not come out)')
+    t.rsp.write32(0x4000E000, stuck)
+    return done
 
 
 IO_PADS = (1 << 5) | (1 << 8)

@@ -67,7 +67,7 @@ func _ready() -> void:
 		"Count — how many clock cycles the component was used (registers and flags: how many reads or writes).\n% of cycles — the same as a share of the clock cycles (in Timeline, of each column's cycles): its utilisation.")
 	code_only = CheckBox.new()
 	code_only.text = "Your code only"
-	code_only.tooltip_text = "Leave out the built-in OS (addresses below 0x3000): its start-up, putchar and getchar"
+	code_only.tooltip_text = "Leave out the built-in OS (the first 256 bytes of flash, 10000000–100000FF): its start-up, putchar and getchar"
 	code_only.focus_mode = Control.FOCUS_NONE
 	code_only.toggled.connect(func(_on): _ask(true))
 	r1.add_child(code_only)
@@ -654,7 +654,7 @@ class HeatGrid extends Control:
 				lbl = HeatTabNum.n(int(d["cols"][j][0]))
 			else:
 				var c: Dictionary = d["cols"][j]
-				lbl = ("line %d" % int(c["line"])) if int(c["line"]) > 0 else "%04X" % int(c["addr"])
+				lbl = ("line %d" % int(c["line"])) if int(c["line"]) > 0 else "%08X" % int(c["addr"])
 				if c.get("os", false):
 					lbl = "OS " + lbl
 			draw_line(Vector2(x, HEAD - 6), Vector2(x, HEAD - 1), dim, 1.0)
@@ -743,7 +743,7 @@ class HeatGrid extends Control:
 			"lines":
 				var c: Dictionary = d["cols"][j]
 				t += "\n%s%s: %s\nran %s times, %s cycles" % ["OS " if c["os"] else "",
-					("line %d" % int(c["line"])) if int(c["line"]) > 0 else "%04X" % int(c["addr"]),
+					("line %d" % int(c["line"])) if int(c["line"]) > 0 else "%08X" % int(c["addr"]),
 					c["text"], HeatTabNum.n(int(c["execs"])), HeatTabNum.n(int(c["cycles"]))]
 		return t
 

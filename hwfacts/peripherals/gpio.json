@@ -1,0 +1,1197 @@
+{
+ "schema": 1,
+ "kind": "peripherals-gpio",
+ "provenance": {
+  "chip": {
+   "chip_id": "0x20002927",
+   "cpuid": "0x410CC601",
+   "rom_version": 3
+  },
+  "date": "2026-11-10 14:18:30",
+  "openocd": "Open On-Chip Debugger 0.12.0",
+  "swd_khz": 5000,
+  "picosim": {
+   "commit": "73db057219678bcfda9b500c1df6b957820ccf51",
+   "dirty": true
+  },
+  "agent": "ddc1370363c94c44fa27ca70211ce320015137ad",
+  "campaign": "G",
+  "run_id": "20261110-141829",
+  "runs": 1,
+  "agreed": null,
+  "target": "openocd",
+  "chip_label": "chip1"
+ },
+ "facts": [
+  {
+   "id": "gpio.pins_surveyed",
+   "value": 26,
+   "source": "measured"
+  },
+  {
+   "id": "gpio.pins_not_following_pulls",
+   "value": [],
+   "source": "measured",
+   "note": "connected to something (a jumper, the board), or a pad that differs"
+  },
+  {
+   "id": "gpio.inover_in_gpio_in",
+   "value": {
+    "2": {
+     "normal (pulled down)": 0,
+     "INOVER invert": 1,
+     "INOVER high": 1,
+     "INOVER low (pulled up)": 0,
+     "normal (pulled up)": 1
+    },
+    "3": {
+     "normal (pulled down)": 0,
+     "INOVER invert": 1,
+     "INOVER high": 1,
+     "INOVER low (pulled up)": 0,
+     "normal (pulled up)": 1
+    }
+   },
+   "source": "measured",
+   "prediction": {
+    "value": "INOVER applies before GPIO_IN",
+    "from": "datasheet \u00a72.19.2"
+   }
+  },
+  {
+   "id": "gpio.status_intr_disagree",
+   "value": [],
+   "source": "measured",
+   "prediction": {
+    "value": "pull-up: LEVEL_HIGH|EDGE_HIGH; pull-down: LEVEL_LOW and both edges; after W1C: LEVEL_LOW",
+    "from": "datasheet \u00a72.19.6 (INTR0-3)"
+   }
+  },
+  {
+   "id": "gpio.overrides_disagree",
+   "value": [],
+   "source": "measured"
+  },
+  {
+   "id": "gpio.pull_rise_k",
+   "value": {
+    "gpio-sync": 20,
+    "gpio-bypass": null
+   },
+   "source": "measured",
+   "unit": "NOPs after the PADS write"
+  },
+  {
+   "id": "gpio.synchroniser_cycles",
+   "value": null,
+   "source": "measured",
+   "unit": "cycles",
+   "prediction": {
+    "value": 2,
+    "from": "datasheet \u00a72.3.1.2 (2-flop synchroniser on GPIO inputs)"
+   }
+  },
+  {
+   "id": "picosim.gpio_inover",
+   "value": "not modelled: gpio.py stores INOVER in CTRL but GPIO_IN ignores it",
+   "source": "not modelled"
+  },
+  {
+   "id": "picosim.gpio_status_intr",
+   "value": "not modelled: IO_BANK0 GPIOn_STATUS and INTR0-3 read 0",
+   "source": "not modelled"
+  },
+  {
+   "id": "picosim.gpio_input_synchroniser",
+   "value": "not modelled: GPIO_IN changes at once (no 2-cycle synchroniser, no pull rise time)",
+   "source": "not modelled"
+  },
+  {
+   "id": "picosim.syscfg",
+   "value": "not modelled (no SYSCFG block)",
+   "source": "not modelled"
+  },
+  {
+   "id": "picosim.pad_keeper",
+   "value": "not modelled: pull-up and pull-down together read as a pull-up",
+   "source": "not modelled"
+  }
+ ],
+ "pulls": {
+  "0": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "1": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "2": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "3": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "4": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "5": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "6": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "7": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "8": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "9": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "10": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "11": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "12": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "13": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "14": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "15": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "16": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "17": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "18": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "19": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "20": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "21": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "22": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "26": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "27": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  },
+  "28": {
+   "pull-up": 1,
+   "pull-down": 0,
+   "none after down": 0,
+   "none after up": 1,
+   "keeper after up": 1,
+   "keeper after down": 0,
+   "pad": "0x56"
+  }
+ },
+ "inover": {
+  "2": {
+   "read": {
+    "normal (pulled down)": 0,
+    "INOVER invert": 1,
+    "INOVER high": 1,
+    "INOVER low (pulled up)": 0,
+    "normal (pulled up)": 1
+   },
+   "predicted": {
+    "normal (pulled down)": 0,
+    "INOVER invert": 1,
+    "INOVER high": 1,
+    "INOVER low (pulled up)": 0,
+    "normal (pulled up)": 1
+   },
+   "picosim": {
+    "normal (pulled down)": 0,
+    "INOVER invert": 0,
+    "INOVER high": 0,
+    "INOVER low (pulled up)": 1,
+    "normal (pulled up)": 1
+   },
+   "picosim_differs": [
+    "INOVER invert",
+    "INOVER high",
+    "INOVER low (pulled up)"
+   ],
+   "differences": []
+  },
+  "3": {
+   "read": {
+    "normal (pulled down)": 0,
+    "INOVER invert": 1,
+    "INOVER high": 1,
+    "INOVER low (pulled up)": 0,
+    "normal (pulled up)": 1
+   },
+   "predicted": {
+    "normal (pulled down)": 0,
+    "INOVER invert": 1,
+    "INOVER high": 1,
+    "INOVER low (pulled up)": 0,
+    "normal (pulled up)": 1
+   },
+   "picosim": {
+    "normal (pulled down)": 0,
+    "INOVER invert": 0,
+    "INOVER high": 0,
+    "INOVER low (pulled up)": 1,
+    "normal (pulled up)": 1
+   },
+   "picosim_differs": [
+    "INOVER invert",
+    "INOVER high",
+    "INOVER low (pulled up)"
+   ],
+   "differences": []
+  }
+ },
+ "debugger": {
+  "0": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "1": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "2": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "3": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "4": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "5": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "6": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "7": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "8": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "9": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "10": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "11": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "12": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "13": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "14": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "15": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "16": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "17": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "18": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "19": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "20": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "21": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "22": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "26": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "27": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  },
+  "28": {
+   "pad": "0x56",
+   "start": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "pull-up": {
+    "infrompad": 1,
+    "intoperi": 1,
+    "intr": 10
+   },
+   "pull-down": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 13
+   },
+   "edges cleared": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "intr": 1
+   },
+   "agrees": true
+  }
+ },
+ "overrides": {
+  "2": {
+   "normal": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "irqfrompad": 0,
+    "irqtoproc": 0,
+    "intr": 1
+   },
+   "inover invert": {
+    "infrompad": 0,
+    "intoperi": 1,
+    "irqfrompad": 0,
+    "irqtoproc": 0,
+    "intr": 1
+   },
+   "inover high": {
+    "infrompad": 0,
+    "intoperi": 1,
+    "irqfrompad": 0,
+    "irqtoproc": 0,
+    "intr": 1
+   },
+   "irqover invert": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "irqfrompad": 0,
+    "irqtoproc": 1,
+    "intr": 2
+   },
+   "irqover high": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "irqfrompad": 0,
+    "irqtoproc": 1,
+    "intr": 2
+   }
+  },
+  "3": {
+   "normal": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "irqfrompad": 0,
+    "irqtoproc": 0,
+    "intr": 1
+   },
+   "inover invert": {
+    "infrompad": 0,
+    "intoperi": 1,
+    "irqfrompad": 0,
+    "irqtoproc": 0,
+    "intr": 1
+   },
+   "inover high": {
+    "infrompad": 0,
+    "intoperi": 1,
+    "irqfrompad": 0,
+    "irqtoproc": 0,
+    "intr": 1
+   },
+   "irqover invert": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "irqfrompad": 0,
+    "irqtoproc": 1,
+    "intr": 2
+   },
+   "irqover high": {
+    "infrompad": 0,
+    "intoperi": 0,
+    "irqfrompad": 0,
+    "irqtoproc": 1,
+    "intr": 2
+   }
+  }
+ },
+ "sync": {
+  "gpio-sync": {
+   "rise_seen_from_k": 20,
+   "fall_seen_from_k": null,
+   "rise": {
+    "0": false,
+    "1": false,
+    "2": false,
+    "3": false,
+    "4": false,
+    "5": false,
+    "6": false,
+    "7": false,
+    "8": false,
+    "9": false,
+    "10": false,
+    "11": false,
+    "12": false,
+    "13": false,
+    "14": false,
+    "15": false,
+    "16": false,
+    "17": false,
+    "18": false,
+    "19": false,
+    "20": true,
+    "21": true,
+    "22": true,
+    "23": true,
+    "24": true
+   },
+   "fall": {
+    "0": false,
+    "1": false,
+    "2": false,
+    "3": false,
+    "4": false,
+    "5": false,
+    "6": false,
+    "7": false,
+    "8": false,
+    "9": false,
+    "10": false,
+    "11": false,
+    "12": false,
+    "13": false,
+    "14": false,
+    "15": false,
+    "16": false,
+    "17": false,
+    "18": false,
+    "19": false,
+    "20": false,
+    "21": false,
+    "22": false,
+    "23": false,
+    "24": false
+   }
+  },
+  "gpio-bypass": {
+   "skipped": "SYSCFG is held in reset after reset halt (RESETS bit 18), and discovery may not release it; flashed_part measures it"
+  }
+ },
+ "drive": {
+  "skipped": "no --pins: no pin is driven"
+ },
+ "syscfg_out_of_reset": false,
+ "picosim": {
+  "divider": "not modelled: picosim/gpio.py covers SIO 0x000-0x03F only (no DIV_* registers)",
+  "interpolators": "not modelled (no INTERP0/1 registers)",
+  "spinlocks": "not modelled (no SPINLOCKn / SPINLOCK_ST)",
+  "fifo": "not modelled (no FIFO_ST/FIFO_RD/FIFO_WR; there is no core 1)",
+  "gpio_inover": "not modelled: gpio.py stores INOVER in CTRL but GPIO_IN ignores it",
+  "gpio_status_intr": "not modelled: IO_BANK0 GPIOn_STATUS and INTR0-3 read 0",
+  "gpio_input_synchroniser": "not modelled: GPIO_IN changes at once (no 2-cycle synchroniser, no pull rise time)",
+  "syscfg": "not modelled (no SYSCFG block)",
+  "pad_keeper": "not modelled: pull-up and pull-down together read as a pull-up",
+  "systick": "modelled in the stand-in (hwtest/standin.py), not in picosim's core"
+ }
+}

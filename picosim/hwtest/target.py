@@ -13,8 +13,9 @@ Three ways to reach one:
 Target.prepare() puts the chip in a known state, the one picosim starts in:
 core 0 halted, IO_BANK0 and PADS_BANK0 freshly reset and released (as the
 Pico SDK leaves them), the SIO's GPIO outputs off, SysTick set to count
-processor clock cycles, and the program's 64 KiB image written to SRAM at
-0x20000000 and read back to check it.
+processor clock cycles, and the program's image (image.py: its code and
+OS, its variables, the stack's part of SRAM) written to SRAM and read back
+to check it.
 
 The debugger cannot reach the SIO (0xD0000000): it sits on each core's
 private I/O port, not on the bus the debug port uses.  So the SIO is set
@@ -30,6 +31,7 @@ import re
 import shutil
 import socket
 import subprocess
+import sys
 import threading
 import time
 
@@ -47,8 +49,8 @@ VC_BITS = (1 << 10) | 1                     # DEMCR VC_HARDERR, VC_CORERESET
 ALL_PINS = (1 << 30) - 1
 POLL_GRACE = 0.3                            # s: OpenOCD polls every 100 ms once polling is on
 SIO = 0xD0000000
-CODE = 0x20002C00                           # scratch code and data in the OS's part of SRAM
-DATA = 0x20002E00
+CODE = 0x2001F000                           # scratch code and data in SRAM Testing keeps for itself
+DATA = 0x2001F200                           # (between image.DATA_LIMIT and image.HW_EXTRA)
 # Thumb code run on the core (the debugger cannot reach the SIO), r0 = SIO:
 SIO_CLEAR = bytes.fromhex('8162' '8161' '00be')      # str r1,[r0,#0x28] (OE_CLR); str r1,[r0,#0x18] (OUT_CLR); bkpt
 SIO_READ = bytes.fromhex('0169' '1160' '016a' '5160' '00be')   # ldr r1,[r0,#0x10]; str r1,[r2]; ldr r1,[r0,#0x20]; str r1,[r2,#4]; bkpt
@@ -82,11 +84,16 @@ def log_dir():
     return d
 
 
-def new_log_path():
+def new_log_path(standin=False):
     """A log file of its own for each connection (two picosim windows, or a
     test run beside the GUI, never write into each other's), keeping the
-    newest LOGS_KEPT."""
+    newest LOGS_KEPT.  The stand-in's go in logs/standin: a test suite opens
+    dozens of stand-in sessions, and pruning them in the same folder deleted
+    a board session's log while it was in use (2026-11-10)."""
     d = log_dir()
+    if standin:
+        d = os.path.join(d, 'standin')
+        os.makedirs(d, exist_ok=True)
     old = sorted(f for f in os.listdir(d) if f.startswith('session-') and f.endswith('.log'))
     for f in old[:max(0, len(old) - LOGS_KEPT + 1)]:
         try:
@@ -102,6 +109,18 @@ def _free_port():
     p = s.getsockname()[1]
     s.close()
     return p
+
+
+def reaper(pid):
+    """A small process that stops process `pid` when this one ends, however
+    it ends.  picosim's GUI stops the server with SIGKILL, which runs no
+    clean-up; an OpenOCD left behind keeps the probe, so nothing else can
+    connect until it is killed by hand.  The reaper waits for its stdin, a
+    pipe only this process holds, to close."""
+    code = ("import os, signal, sys\nsys.stdin.buffer.read()\n"
+            f"try:\n    os.kill({int(pid)}, signal.SIGTERM)\nexcept OSError:\n    pass\n")
+    return subprocess.Popen([sys.executable, '-c', code], stdin=subprocess.PIPE,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 class OpenOCD:
@@ -133,6 +152,10 @@ class OpenOCD:
                                          text=True, errors='replace')
         except OSError as e:
             raise TargetError(f"could not start OpenOCD ({e})")
+        try:
+            self._reaper = reaper(self.proc.pid)       # OpenOCD goes when picosim goes
+        except OSError:
+            self._reaper = None
         threading.Thread(target=self._read_log, daemon=True).start()
         self._wait_ready()
 
@@ -172,6 +195,10 @@ class OpenOCD:
         return (' '.join(hints) + '\n\n' if hints else '') + (text or '(no output)')
 
     def close(self):
+        if getattr(self, '_reaper', None):             # first, so it never signals a reused pid
+            self._reaper.kill()
+            self._reaper.wait()
+            self._reaper = None
         if self.proc and self.proc.poll() is None:
             self.proc.terminate()
             try:
@@ -189,7 +216,7 @@ class Target:
         self.standin = None
         self.rsp = None
         self.args = (host, port, openocd, speed_khz)
-        self.log_path = new_log_path()
+        self.log_path = new_log_path(standin=kind == 'standin')
         try:
             self._log = open(self.log_path, 'w', buffering=1, encoding='utf-8', errors='replace')
         except OSError:
@@ -231,6 +258,45 @@ class Target:
         self.xpsr_n = self.rsp.regnum('xpsr', 16)
         self.primask_n = self.rsp.regnum('primask')
         self.control_n = self.rsp.regnum('control')
+        self._ocd_seen = len(self.ocd.log) if self.ocd else 0
+        self._lockup_seen = self._ocd_seen
+        self.lost = False
+
+    # OpenOCD's words when the core locked up (a fault while taking a fault, e.g.
+    # stacking onto an SP outside memory): it halts the core and clears the lockup
+    LOCKUP = 'clearing lockup'
+
+    def saw_lockup(self):
+        """True if OpenOCD has reported a lockup since the last call.  The
+        DHCSR lockup bit cannot tell afterwards: OpenOCD clears it."""
+        if not self.ocd:
+            return False                    # the stand-in does not model lockup
+        log = self.ocd.log
+        new, self._lockup_seen = log[getattr(self, '_lockup_seen', 0):], len(log)
+        return any(self.LOCKUP in line for line in new)
+
+    # OpenOCD's words when the target's debug port no longer answers
+    LINK_LOST = 'Failed to connect multidrop'
+    LOST_HELP = ("The target Pico stopped answering the debugger (OpenOCD: “Failed to connect multidrop "
+                 "rp2040.dap0”). Its bus is stalled, and only power clears that: unplug the TARGET Pico's "
+                 "USB (not the probe's), plug it back in, press Connect, then Resume.")
+
+    def link_lost(self):
+        """True once OpenOCD has said the target's debug port stopped
+        answering.  OpenOCD then answers every memory read with zeros, not
+        an error, so without this a run would carry on with false values."""
+        if self.ocd and not self.lost:
+            log = self.ocd.log
+            new, self._ocd_seen = log[self._ocd_seen:], len(log)
+            self.lost = any(self.LINK_LOST in line for line in new)
+        if self.standin is not None and self.standin.chip.stalled:
+            self.lost = True                 # the stand-in's model of the same (standin.CLOCKLESS)
+        return self.lost
+
+    def check_link(self):
+        """Raise TargetError if the target's debug port has stopped answering."""
+        if self.link_lost():
+            raise TargetError(self.LOST_HELP)
 
     def reconnect(self):
         """After a lost connection: a new one (and a new OpenOCD if it stopped)."""
@@ -307,13 +373,14 @@ class Target:
         r.write32(SYST_CSR, 0)
         r.write32(SYST_RVR, 0xFFFFFF)
         r.write32(SYST_CVR, 0)
-        r.write_mem(img.OFFSET, hwimg.image)
-        back = r.read_mem(img.OFFSET, len(hwimg.image))
-        if back != hwimg.image:
-            bad = next(i for i in range(len(back)) if back[i] != hwimg.image[i])
-            raise TargetError(f"SRAM did not keep the program: 0x{img.OFFSET + bad:08X} reads "
-                              f"0x{back[bad]:02X}, not 0x{hwimg.image[bad]:02X}. Check the SWD "
-                              "wiring and lower the adapter speed.")
+        for addr, data in hwimg.chunks:
+            r.write_mem(addr, data)
+            back = r.read_mem(addr, len(data))
+            if back != data:
+                bad = next(i for i in range(len(back)) if back[i] != data[i])
+                raise TargetError(f"SRAM did not keep the program: 0x{addr + bad:08X} reads "
+                                  f"0x{back[bad]:02X}, not 0x{data[bad]:02X}. Check the SWD "
+                                  "wiring and lower the adapter speed.")
         self.loaded = hwimg.digest
         # PRIMASK and CONTROL: reset halt has just set them to 0, as picosim starts
         if bench:

@@ -221,13 +221,13 @@ func update_state(st: Dictionary) -> void:
 
 	if history.size() > 0:
 		var a := int(history[0]["insn_addr"])
-		insn_label.text = "%04X:  %s" % [a, _asm_at(a)]
+		insn_label.text = "%08X:  %s" % [a, _asm_at(a)]
 		progress_label.text = ("cycle %d of %d" % [selected + 1, total] if total > 0 else "cycle %d (the total is known after DECODE)" % (selected + 1)) if st["in_insn"] \
-			else "done in %d cycles — next insn at %04X" % [history.size(), int(st["pc"])]
+			else "done in %d cycles — next insn at %08X" % [history.size(), int(st["pc"])]
 		if st.get("fault") != null and not st["in_insn"]:
 			progress_label.text = "CPU fault in cycle %d — see the console" % (history.size() + 1)
 	else:
-		insn_label.text = "%04X:  %s" % [int(st["pc"]), _asm_at(int(st["pc"]))]
+		insn_label.text = "%08X:  %s" % [int(st["pc"]), _asm_at(int(st["pc"]))]
 		progress_label.text = "not started — press Step cycle (F11)"
 		if st.get("fault") != null:
 			progress_label.text = "CPU fault — see the console"

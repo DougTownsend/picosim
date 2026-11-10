@@ -38,6 +38,8 @@ from . import explain
 from . import teaching
 from .cpu import SimulatorError, svc_write_data
 from .pipeline import Pipeline
+from . import memmap
+from .memmap import OS_END, USER_BASE, SRAM_BASE, SRAM_END, in_os
 
 REG_NAMES = ['R0', 'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7',
              'R8', 'R9', 'R10', 'R11', 'R12', 'SP', 'LR', 'PC']
@@ -45,9 +47,8 @@ MAX_SPEED = 0            # cps value meaning "as fast as possible"
 BOOT_MAX = 16            # the OS's start-up is 3 instructions; Skip to main gives up after this many
 FRAME = 1 / 30           # state broadcast interval while running
 IDLE_POLL = 0.02         # select() timeout while nothing is running
-HEX_DEFAULT = (0x3000, 256)
-STACK_SHOWN = 128        # bytes of the stack sent with each state (SP up to the top of RAM)
-RAM_TOP = 0x10000
+HEX_DEFAULT = (USER_BASE, 256)
+STACK_SHOWN = 128        # bytes of the stack sent with each state (SP up to the top of SRAM)
 PICO_VID = 0x2E8A
 MACHINES = ('multicycle', 'm0plus')
 PIPE_SYNC = 256          # lay out the pipeline at least this often at max speed
@@ -255,8 +256,10 @@ class Server:
 
     def mem_hex(self, addr, length):
         c = self.core
-        addr = max(0, min(addr, 0x10000))
-        length = max(0, min(length, 0x10000 - addr))
+        sp = memmap.span(addr, 1)
+        if sp is None:
+            return ''                    # not memory: the Memory tab shows nothing there
+        length = max(0, min(length, sp[1] - addr))
         return c.get_mem_slice(addr, length).hex() if length else ''
 
     def send_state(self):
@@ -355,7 +358,7 @@ class Server:
                 if size:
                     value = int.from_bytes(c.get_mem_slice(addr, size), 'little')
                     raw = f"{value:0{2 * size}X}"
-                    uses_io |= size == 4 and addr >= explain.OS_TOP and value >= 0x40000000
+                    uses_io |= size == 4 and not in_os(addr) and value >= 0x40000000
                 else:
                     n = (addrs[i + 1] if i + 1 < len(addrs) else addr + 16) - addr
                     raw = c.get_mem_slice(addr, min(n, 4)).hex(' ').upper() + ('…' if n > 4 else '')
@@ -369,7 +372,7 @@ class Server:
             listing.append({'addr': addr, 'raw': raw, 'text': text,
                             'shown': symbolic(text, p.sym_map),
                             'label': p.sym_map.get(addr, ''), 'line': line, 'source': tidy_source(src),
-                            'os': addr < explain.OS_TOP})
+                            'os': in_os(addr)})
         self.send({'type': 'program', 'path': p.path, 'main': p.main_addr,
                    'listing': listing, 'settings': prog_settings.describe(p.path),
                    'regions': self.regions(), 'uses_io': uses_io,
@@ -384,7 +387,7 @@ class Server:
         the program's sections, the OS's code, and runs of instruction vs data
         bytes ([start, end, 'insn' | 'lit']) in the code."""
         p = self.prog
-        addrs = sorted(a for a in p.asm_map if a < RAM_TOP)
+        addrs = sorted(p.asm_map)
         runs = []
         for i, a in enumerate(addrs):
             text = p.asm_map[a]
@@ -401,9 +404,11 @@ class Server:
             else:
                 runs.append([a, end, kind])
         secs = {k: list(v) for k, v in p.sections.items()}
-        top = max([v[1] for v in secs.values()] + [0x3000])
-        return {'sections': secs, 'runs': runs, 'program_end': top,
-                'os_code_end': max([a + 2 for a in addrs if a < 0x3000] + [0])}
+        code_end = max([v[1] for k, v in secs.items() if k == 'text'] + [USER_BASE])
+        return {'sections': secs, 'runs': runs, 'program_end': code_end,
+                'data_end': max([v[1] for k, v in secs.items() if k != 'text'] + [SRAM_BASE]),
+                'os_code_end': max([a + 2 for a in addrs if in_os(a)] + [0]),
+                'memories': [{'name': n, 'base': lo, 'end': hi, 'what': w} for n, lo, hi, w in memmap.REGIONS]}
 
     # ── SVC handling for the GUI console ─────────────────────────────────────
 
@@ -435,8 +440,8 @@ class Server:
         c = self.core
         if c.in_insn:
             return c.next_state() == 'SVC_CALL' and (c.datapath['IR'] & 0xFF) == 3
-        if c.pc >= 0x10000:
-            return False           # not RAM: the fetch itself will fault
+        if not memmap.is_memory(c.pc):
+            return False           # not memory: the fetch itself will fault
         return c.read16(c.pc) == 0xDF03
 
     # ── execution primitives ─────────────────────────────────────────────────
@@ -461,7 +466,7 @@ class Server:
         text = ' '.join(self.prog.asm_map.get(insn, '?').split())
         line, src = self.prog.source.get(insn, (0, ''))
         code = ' '.join(src.split('@')[0].split('/*')[0].split()) or text
-        where = f" (line {line})" if line and insn >= 0x3000 else (" (built-in OS)" if insn < 0x3000 else '')
+        where = f" (line {line})" if line and not in_os(insn) else (" (built-in OS)" if in_os(insn) else '')
         note = f"written by {code}{where}"
         reg = ''
         if text.startswith('push'):
@@ -493,7 +498,7 @@ class Server:
                 if sg.startswith('SIZE='):
                     size = {'word': 4, 'halfword': 2, 'byte': 1}.get(sg[5:], 4)
             if 'MEM.EN' in sig and h['phase'] != 'FETCH' and mar is not None:
-                ram = mar + size <= RAM_TOP
+                ram = memmap.span(mar, size) is not None
                 out.append({'addr': mar, 'size': size, 'insn': h['insn_addr'],
                             'kind': 'write' if 'R/W=WRITE' in sig else 'read',
                             # the bytes there now (for a read, what was read)
@@ -506,13 +511,13 @@ class Server:
         return out
 
     def stack_view(self):
-        """The words from SP up to the top of RAM (at most STACK_SHOWN bytes),
+        """The words from SP up to the top of SRAM (at most STACK_SHOWN bytes),
         with what put each one there, if the program wrote it while stepping."""
         c = self.core
         lo = c.sp & ~3
-        if lo >= RAM_TOP or lo < 0x3000:
+        if not SRAM_BASE <= lo < SRAM_END:
             return {'addr': lo, 'data': '', 'notes': {}}
-        n = min(STACK_SHOWN, RAM_TOP - lo)
+        n = min(STACK_SHOWN, SRAM_END - lo)
         data = c.get_mem_slice(lo, n)
         notes = {}
         for a in range(lo, lo + n, 4):
@@ -746,7 +751,7 @@ class Server:
         self.explainer = explain.Explainer(prog)
         self._begin_action(kind='load')
         self.breakpoints &= set(prog.asm_map)
-        self.hexview = (max(prog.main_addr, 0x3000) & ~0xF, HEX_DEFAULT[1])
+        self.hexview = (max(prog.main_addr, USER_BASE) & ~0xF, HEX_DEFAULT[1])
         self.send_program()
         note = ''
         if prog_settings.declared(path):
@@ -805,7 +810,7 @@ class Server:
         self._settle()
         if self.step_over_os and self.machine != 'm0plus':
             call = self.call_at_pc()
-            if call and call[1] < 0x3000:      # bl putchar / bl getchar: one step
+            if call and in_os(call[1]):       # bl putchar / bl getchar: one step
                 return self.cmd_step_over(msg)
         self.running = False
         self._begin_action(kind='insn')
@@ -823,7 +828,7 @@ class Server:
         if not self.step_over_os:
             return
         for _ in range(16):
-            if c.halted or c.in_insn or c.pc >= 0x3000 or self.waiting_input:
+            if c.halted or c.in_insn or not in_os(c.pc) or self.waiting_input:
                 break
             if not self.one_insn(record=True):
                 break
@@ -879,7 +884,7 @@ class Server:
             # with the OS hidden, go back to the last line of the program itself:
             # the next instruction at state T is record seq T + 1
             addr = {r['seq']: r['addr'] for r in c.recent(512)}
-            while t > first and addr.get(t + 1, 0x3000) < 0x3000:
+            while t > first and in_os(addr.get(t + 1, OS_END)):
                 t -= 1
         return (t, 0) if t >= first else None
 
@@ -989,8 +994,8 @@ class Server:
         nc = self.core
         self.changed = {REG_NAMES[i] for i in range(16) if nc.regs[i] != before_regs[i]}
         self.changed |= {f for f in 'NZCV' if getattr(nc, f) != before_flags[f]}
-        after = nc.get_memory()
-        self.mem_changed = {i for i in range(len(after)) if after[i] != before_mem[i]} \
+        after = nc.get_memory()             # SRAM: what a program can change
+        self.mem_changed = {SRAM_BASE + i for i in range(len(after)) if after[i] != before_mem[i]} \
             if after != before_mem else set()
         self.send({'type': 'console_reset',
                    'note': f"[loaded {os.path.basename(self.path)}]\n", 'text': printed})
@@ -1044,7 +1049,7 @@ class Server:
         c = self.core
         main = self.prog.main_addr if self.prog else None
         return bool(c and main and not c.halted and c.steps < BOOT_MAX
-                    and (c.in_insn or c.pc != main) and (c.insn_addr if c.in_insn else c.pc) < explain.OS_TOP)
+                    and (c.in_insn or c.pc != main) and in_os(c.insn_addr if c.in_insn else c.pc))
 
     def cmd_run_to_main(self, msg):
         """Run the OS's start-up to the first instruction of main, for real
@@ -1189,8 +1194,8 @@ class Server:
     def cmd_write_mem(self, msg):
         addr = int(msg['addr'])
         data = bytes.fromhex(msg['data'])
-        if addr < 0 or addr + len(data) > 0x10000:
-            return self.error("write_mem out of range")
+        if not data or memmap.span(addr, len(data)) is None:
+            return self.error(f"write_mem: {memmap.fmt(addr)} is not in ROM, flash or SRAM")
         for i, b in enumerate(data):
             self.core.set_mem_byte(addr + i, b)
         self.journal.append((self._pos(), 'mem', (addr, data)))
@@ -1199,7 +1204,7 @@ class Server:
         self.send_state()
 
     def cmd_view_mem(self, msg):
-        self.hexview = (int(msg['addr']) & 0xFFFF, int(msg.get('len', HEX_DEFAULT[1])))
+        self.hexview = (int(msg['addr']) & 0xFFFFFFFF, int(msg.get('len', HEX_DEFAULT[1])))
         self.send_state()
 
     def cmd_gpio_set(self, msg):
@@ -1358,6 +1363,10 @@ class Server:
         wt = (walkthrough.build_pipeline if pipe else walkthrough.build)(src, limit, keys)
         if msg.get('compact'):
             wt = walkthrough.compact(wt)
+        if self.prog:
+            for st in wt.get('steps', []):          # bl #0x10000120 → bl twice, as the Disassembly shows it
+                if 'text' in st:
+                    st['shown'] = symbolic(st['text'], self.prog.sym_map)
         wt['path'] = self.path
         wt['keys'] = len(keys)
         wt['edited'] = bool(self.journal)        # values changed by hand: the live run may differ
