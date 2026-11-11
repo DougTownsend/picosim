@@ -159,10 +159,30 @@ class OpenOCD:
         threading.Thread(target=self._read_log, daemon=True).start()
         self._wait_ready()
 
+    LOG_RATE = 200            # OpenOCD lines a second written to the session log; the rest are counted
+
     def _read_log(self):
+        """OpenOCD's output: all of it into self.log (saw_lockup and
+        link_lost scan it), and into the session log at most LOG_RATE lines a
+        second.  On 2026-11-10 a probe unplugged mid-run made OpenOCD print
+        ~570,000 connect errors in minutes; they filled the 50 MB session log
+        and everything after them was lost."""
+        t0, n, dropped = time.monotonic(), 0, 0
         for line in self.proc.stdout:
-            self.log.append(line.rstrip())
-            self.write_log('  (openocd) ' + line.rstrip())
+            line = line.rstrip()
+            self.log.append(line)
+            now = time.monotonic()
+            if now - t0 >= 1.0:
+                if dropped:
+                    self.write_log(f'  (openocd) … {dropped} more lines in one second, not written here')
+                t0, n, dropped = now, 0, 0
+            n += 1
+            if n > self.LOG_RATE:
+                dropped += 1
+                continue
+            self.write_log('  (openocd) ' + line)
+        if dropped:
+            self.write_log(f'  (openocd) … {dropped} more lines in one second, not written here')
         self.write_log(f'  (openocd exited with status {self.proc.wait()})')
 
     def _wait_ready(self, timeout=10.0):
@@ -281,22 +301,33 @@ class Target:
                  "rp2040.dap0”). Its bus is stalled, and only power clears that: unplug the TARGET Pico's "
                  "USB (not the probe's), plug it back in, press Connect, then Resume.")
 
+    # OpenOCD's words when the PROBE itself has gone (unplugged, or its BOOTSEL
+    # held: 2026-11-10), after which nothing it answers can be trusted
+    PROBE_LOST = 'No such device (it may have been disconnected)'
+    PROBE_HELP = ("The probe Pico has gone (OpenOCD: “No such device (it may have been disconnected)”): "
+                  "its USB was unplugged, or it was reset or put into BOOTSEL. Plug the PROBE Pico back in "
+                  "without holding any button, wait a few seconds, press Connect, then Resume.")
+
     def link_lost(self):
         """True once OpenOCD has said the target's debug port stopped
-        answering.  OpenOCD then answers every memory read with zeros, not
-        an error, so without this a run would carry on with false values."""
+        answering, or that the probe itself has gone.  OpenOCD then answers
+        memory reads with zeros, not an error, so without this a run would
+        carry on with false values."""
         if self.ocd and not self.lost:
             log = self.ocd.log
             new, self._ocd_seen = log[self._ocd_seen:], len(log)
-            self.lost = any(self.LINK_LOST in line for line in new)
+            if any(self.PROBE_LOST in line for line in new):
+                self.lost = 'probe'
+            elif any(self.LINK_LOST in line for line in new):
+                self.lost = 'target'
         if self.standin is not None and self.standin.chip.stalled:
-            self.lost = True                 # the stand-in's model of the same (standin.CLOCKLESS)
-        return self.lost
+            self.lost = 'target'             # the stand-in's model of the same (standin.CLOCKLESS)
+        return bool(self.lost)
 
     def check_link(self):
         """Raise TargetError if the target's debug port has stopped answering."""
         if self.link_lost():
-            raise TargetError(self.LOST_HELP)
+            raise TargetError(self.PROBE_HELP if self.lost == 'probe' else self.LOST_HELP)
 
     def reconnect(self):
         """After a lost connection: a new one (and a new OpenOCD if it stopped)."""

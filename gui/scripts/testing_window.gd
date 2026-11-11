@@ -62,6 +62,9 @@ var camp_note: RichTextLabel
 var flash_dialog: ConfirmationDialog
 var flash_text: RichTextLabel
 var ask_dialog: ConfirmationDialog
+var fresh_dialog: ConfirmationDialog   # Run on a campaign that has measurements: start again, or resume?
+var btn_fresh_resume: Button
+var _fresh_name := ""
 var btn_flash_backup: Button
 var btn_flash_restore: Button
 
@@ -374,6 +377,21 @@ func _build_dialogs() -> void:
 	ask_dialog.confirmed.connect(func(): Backend.send("hw_discover_answer"))
 	ask_dialog.canceled.connect(func(): Backend.send("hw_discover_stop"))
 	win.add_child(ask_dialog)
+	# Run means --fresh.  On 2026-11-11 a Run of campaign B restarted B1 while
+	# B2's finished run and B3's first 60 batches were waiting for a Resume.
+	fresh_dialog = ConfirmationDialog.new()
+	fresh_dialog.title = "Start this campaign again from the beginning?"
+	fresh_dialog.ok_button_text = "Start again"
+	fresh_dialog.cancel_button_text = "Cancel"
+	fresh_dialog.dialog_autowrap = true
+	fresh_dialog.min_size = Vector2i(600, 240)
+	btn_fresh_resume = fresh_dialog.add_button("Resume instead", true, "resume")
+	fresh_dialog.confirmed.connect(func(): _camp_send_run(_fresh_name, true, false))
+	fresh_dialog.custom_action.connect(func(action):
+		fresh_dialog.hide()
+		if action == "resume":
+			_camp_send_run(_fresh_name, false, false))
+	win.add_child(fresh_dialog)
 
 
 func _apply_palette() -> void:
@@ -1332,7 +1350,31 @@ func _camp_run(fresh: bool) -> void:
 		_flash_fresh = fresh
 		_open_flash_dialog()
 		return
+	var st := str(discover.get(name, {}).get("state", ""))
+	if fresh and (st == "partial" or st == "done"):
+		_open_fresh_dialog(name, st)
+		return
 	_camp_send_run(name, fresh, false)
+
+
+## Run (= --fresh) on a campaign that already has measurements: say what
+## starting again sets aside, and offer Resume for a part-run campaign.
+func _open_fresh_dialog(name: String, st: String) -> void:
+	_fresh_name = name
+	var r: Dictionary = discover.get(name, {})
+	var title := str(r.get("title", name)).split(":")[0]
+	if st == "partial":
+		var where := ""
+		if r.has("total") and int(r.get("total", 0)) > 0:
+			where = " (%s%d of %d batches)" % [(str(r.get("step", "")) + ": ") if str(r.get("step", "")) != "" else "", int(r.get("done", 0)), int(r.get("total", 0))]
+		fresh_dialog.dialog_text = ("%s stopped part-way%s.\n\nStart again runs every one of its stages on the chip from the first batch. " +
+			"What it has measured so far stays on disk, but its facts will come from the new runs only.\n\n" +
+			"Resume carries on where it stopped and keeps those measurements.") % [title, where]
+	else:
+		fresh_dialog.dialog_text = ("%s is done.\n\nStart again measures all of it on the chip once more, " +
+			"and its facts in hwfacts/ are replaced by the new run's. The earlier runs stay on disk.") % title
+	btn_fresh_resume.visible = st == "partial"
+	fresh_dialog.popup_centered(Vector2i(620, 280))
 
 
 func _camp_send_run(name: String, fresh: bool, confirmed: bool) -> void:

@@ -53,16 +53,40 @@ Options every campaign takes:
 
 A campaign that stops part-way (a pulled cable, Ctrl-C, a power cut) loses
 at most one batch: run the same command again and it carries on. It refuses
-to carry on with a different chip or a changed agent.
+to carry on with a different chip or a changed agent. The stages it finished
+keep their facts (campaign B writes `encodings.json` after each stage).
 
 ```bash
 python3 -m picosim.discover status              # every campaign: not run, partial, done
 python3 -m picosim.discover check               # picosim against hwfacts/ (writes hwfacts/report.md)
+python3 -m picosim.discover verify-raw          # every raw capture, in both copies, against its SHA-256
+python3 -m picosim.discover encodings --offline # facts again from the finished runs on disk (no board)
 ```
+
+`--offline` is for after picosim's comparison changes: campaigns B
+(`encodings`), D (`timing`) and the SIO part of G (`peripherals`) compare
+their finished runs on disk with today's picosim and rewrite their facts,
+without touching the board or the raw files. The facts' provenance keeps
+the date they were measured and adds `rebuilt_offline`. A stage with no
+finished run on disk stops it ("needs the board"); the stages before it
+keep their facts.
 
 The Testing window shows the same: a **Hardware facts (Level 5 discovery)**
 group with each campaign's status, its provenance and its differences from
-picosim, with Run, Resume and Stop.
+picosim, with Run, Resume and Stop. **Run starts the campaign again from
+the beginning** (the command line's `--fresh`); on a campaign that is
+partial or done, the window asks first and offers Resume instead. A
+`--repeat` run is only on the command line.
+
+### Where the results go
+
+Every batch's input and results are saved as soon as the batch ends, in
+`~/.cache/picosim/discover/chip1/<campaign>-<stage>/<run>/`, before picosim
+compares anything. Before a batch is saved, each result must name its own
+case (the agent writes the case's id into it); a read-back that went wrong
+is refused, and the batch runs again on resume. When a run finishes or
+stops, its files and their SHA-256 go in `hwfacts/raw_index.json` and are
+copied to `~/picosim-hwfacts-raw/`; `verify-raw` checks both copies.
 
 ## What you'll see
 
@@ -103,6 +127,11 @@ failed check stops the run; it is never just a warning.
 If something hangs, the runner halts the core, records a lockup if DHCSR
 shows one, resets and reloads, restarts OpenOCD, and as a last step asks you
 to unplug the target and plug it back in.
+
+If OpenOCD says the target's debug port has stopped answering ("Failed to
+connect multidrop") or that the probe itself has gone ("No such device"),
+the run stops at once with what to do: after either, OpenOCD answers reads
+with zeros rather than errors, so nothing it returns is kept.
 
 ## Campaign F and the flash
 
@@ -158,8 +187,26 @@ addresses (the sled, scratch window and stack area are all in SRAM); only a
 window picosim does not have, such as the non-striped SRAM alias at
 `0x21000000`, is moved to a free part of SRAM. Things picosim cannot model yet
 (exception frames, lockups, addresses outside its memory) are reported as
-*pending*, never as failures. `tests/test_hwfacts.py` fails only on a
-difference that `hwfacts/known_differences.json` does not explain.
+*pending*, never as failures.
+
+Two things are compared only in part, and `report.md` counts them under
+"Compared in part":
+
+- **Memory the agent never set.** Before each case the agent sets the slot,
+  the sled, the scratch window (when the campaign uses it) and the 32-byte
+  frame just below the case's stack pointer. Anything else, such as the
+  stack area above that frame, holds whatever an earlier case left there,
+  which no replay can know. The replay fills that memory with markers, and
+  a register that loads one is not compared. The rest of the case is.
+- **Stores into ROM.** The chip ignores them. When a student's program does
+  this, picosim stops with a message on purpose, because a store that
+  silently does nothing is hard to find. The replay drops the store as the
+  chip does, so the rest of what the instruction does (writeback, flags,
+  where it ends) is still compared.
+
+`tests/test_hwfacts.py` fails only on a difference that
+`hwfacts/known_differences.json` does not explain. Each entry there gives
+the measured behaviour, the reason and what is still to decide.
 
 ## The stand-in
 

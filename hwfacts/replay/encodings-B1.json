@@ -1,0 +1,13 @@
+{
+ "name": "encodings-B1",
+ "cases": 59386,
+ "fraction": 1.0,
+ "layout": "hi",
+ "scratch_words": 64,
+ "flags": 7,
+ "campaign": "encodings-B1",
+ "run_id": "20261110-145502",
+ "sha256": "91f2bc2c2eb44feb6f4c415100522b2ab68e4bf7d10d9f20b1d4b66f47e81cbe",
+ "timing": false,
+ "full_changes": {}
+}

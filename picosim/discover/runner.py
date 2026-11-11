@@ -51,6 +51,14 @@ QUIET_PER_CASE = 0.002
 QUIET_MAX = 4.0
 
 
+def _is_bkpt(case):
+    """True if the case's first instruction is BKPT #imm8 (0xBExx).  A case
+    whose code is built at run time (a callable, for cases with blobs) is
+    never one: those are not single-encoding cases."""
+    code = case.get('code_bytes', case.get('code'))
+    return isinstance(code, (bytes, bytearray)) and len(code) >= 2 and code[1] == 0xBE
+
+
 class RunError(Exception):
     pass
 
@@ -206,6 +214,22 @@ def picosim_commit():
         return {'commit': None, 'dirty': None}
 
 
+def same_cases(path, cases):
+    """(state, batches) if the run saved at `path` was started with exactly
+    these cases (the campaign generators are deterministic); RunError if not."""
+    with open(os.path.join(path, 'state.json')) as f:
+        state = json.load(f)
+    lay = F.LAYOUTS[state['layout']]
+    cases = list(cases)
+    if state.get('wd_reload'):
+        for c in cases:
+            c['watchdog'] = True
+    batches = plan(cases, lay, [tuple(s) for s in state['sites']], state.get('max_cases'))
+    if [len(b) for b in batches] != state['batch_sizes'] or _digest(batches) != state['cases_digest']:
+        raise RunError("these are not the cases this run was started with (the generator changed?)")
+    return state, batches
+
+
 def chip_identity(target):
     """What says which chip this is: SYSINFO CHIP_ID, the ROM version and
     CPUID, read through the debugger."""
@@ -294,16 +318,7 @@ class Run:
         """Carry on a run.  `cases` must be what the run was started with
         (the campaign generators are deterministic); the digest is checked,
         and so are the chip and the agent."""
-        with open(os.path.join(path, 'state.json')) as f:
-            state = json.load(f)
-        lay = F.LAYOUTS[state['layout']]
-        cases = list(cases)
-        if state.get('wd_reload'):
-            for c in cases:
-                c['watchdog'] = True
-        batches = plan(cases, lay, [tuple(s) for s in state['sites']], state.get('max_cases'))
-        if [len(b) for b in batches] != state['batch_sizes'] or _digest(batches) != state['cases_digest']:
-            raise RunError("these are not the cases this run was started with (the generator changed?)")
+        state, batches = same_cases(path, cases)
         chip = chip_identity(target)
         if chip.get('chip_id') != state['chip'].get('chip_id'):
             raise RunError(f"this run was started on chip {state['chip'].get('chip_id')}, but the board "
@@ -418,6 +433,7 @@ class Run:
         notes = []
         start = 0
         failures = {}
+        bkpts = 0
         while start < len(cases):
             if not self.ready:
                 self.prepare()
@@ -449,6 +465,7 @@ class Run:
                     self.log(f"batch {k}: finished, but its halt was not reported in time")
                 bad = self._integrity(v)
                 if bad:
+                    self._bkpt_summary(k, bkpts)
                     return self._isolate(k, cases, bad)
                 self.integrity_streak = 0
                 notes.append({'ran': len(cases) - start, 'seconds': round(time.monotonic() - t0, 3)})
@@ -472,7 +489,10 @@ class Run:
             else:
                 mark = MARK_HALTED                  # a BKPT or debug event inside the case
             failures[index] = failures.get(index, 0) + 1
-            self.log(f"batch {k} case {case['id']}: {MARK_NAMES[mark]} (try {failures[index]})")
+            if mark == MARK_HALTED and _is_bkpt(cases[index]):
+                bkpts += 1                          # expected: summed up once the batch is done
+            else:
+                self.log(f"batch {k} case {case['id']}: {MARK_NAMES[mark]} (try {failures[index]})")
             if mark != MARK_HALTED:
                 self._recover()
             if failures[index] >= 2 or mark == MARK_HALTED:
@@ -481,7 +501,16 @@ class Run:
                 start = index + 1
             else:
                 start = index
+        self._bkpt_summary(k, bkpts)
         return out, notes, b
+
+    def _bkpt_summary(self, k, bkpts):
+        """One log line for the batch's BKPT cases instead of one per case
+        (2026-11-10: batch 74 holds all 256 BKPT #imm8 encodings)."""
+        if bkpts:
+            self.log(f"batch {k}: {bkpts} BKPT case{'s' if bkpts != 1 else ''} stopped the core for the debugger, "
+                     "as a BKPT does while one is attached (recorded as 'halted'; each needs its own restart, "
+                     "about 0.1 s)")
 
     def _pack(self, cases):
         s = self.state
@@ -598,6 +627,7 @@ class Run:
             full = self._full_scratch(b, out)
             if full:
                 notes.append({'full_changes': full})
+            self._check_ids(k, out, b)
             self._save_batch(k, out, notes, b)
             self.state['done'].append(k)
             self._save_state()
@@ -607,6 +637,23 @@ class Run:
             self.state['throughput'] = getattr(self.t, 'throughput', {})
             self._save_state()
         return self
+
+    def _check_ids(self, k, out, b):
+        """Every result must be there and name its own case: the agent writes
+        the case's id into each result.  A read-back that went wrong (a debug
+        port that died after the agent's variables were read answers zeros,
+        not an error) fails here, and the batch is not saved, so a resume
+        runs it again.  (Every result captured up to 2026-11-11, 614,936 of
+        them, passes this.)"""
+        for i, (raw, c) in enumerate(zip(out, b.records)):
+            if raw is None or len(raw) != F.RESULT_SIZE:
+                raise RunError(f"batch {k}: case {c['id']} has no result; the batch is not saved and runs again on resume")
+            rid = struct.unpack_from('<I', raw, 0)[0]
+            if rid != c['id']:
+                if getattr(self.t, 'check_link', None):
+                    self.t.check_link()
+                raise RunError(f"batch {k}: result {i} reads as case {rid}, not case {c['id']} (the read-back "
+                               "went wrong); the batch is not saved and runs again on resume")
 
     def _save_batch(self, k, out, notes, b):
         stem = os.path.join(self.path, f"batch-{k:04d}")
@@ -668,12 +715,41 @@ def load(path):
 
 BEHAVIOUR_FIELDS = [f for f in F.RESULT if f not in ('systick',)]
 
+# The changed-scratch-word slots.  The agent writes only the first
+# n_changed of them, and none when the window is not checked (B1, B2, B5:
+# HF_NO_SCRATCH): the rest keep whatever an earlier batch left in the result
+# area, which on the chip is power-up SRAM.  They are compared decoded, as
+# 'changed' (2026-11-11: comparing them raw made the two B1 runs on the chip
+# "disagree" on 48,396 of 48,640 cases, every one in an unwritten slot).
+INLINE_FIELDS = ('n_changed', 'off01', 'off23', 'val0', 'val1', 'val2', 'val3')
 
-def compare_runs(path_a, path_b, fields=None):
-    """Cases where two runs of the same cases disagree: [(id, [fields])]."""
-    a, _ = load(path_a)
+
+def behaviour_differs(r, o, fields):
+    """The fields (of `fields`) where results r and o differ, with the
+    inline changed words compared as what the agent wrote ('changed')."""
+    d = [f for f in fields if f not in INLINE_FIELDS and r[f] != o[f]]
+    if any(f in INLINE_FIELDS for f in fields):
+        if (r['n_changed'] != o['n_changed'] or r['changed'] != o['changed']
+                or r.get('changed_full') != o.get('changed_full')):
+            d.append('changed')
+    return d
+
+
+def compare_runs(path_a, path_b, fields=None, unset=None):
+    """Cases where two runs of the same cases disagree: [(id, [fields])].
+
+    A register that loaded memory the agent never set (the stack above the
+    case's frame, an unfilled scratch window) holds an earlier case's
+    leftovers, so it depends on the order the batches ran in, and a repeat
+    runs them in another order.  Such registers (check.unset_fields, from
+    picosim's replay) are not compared; the ids of cases that disagreed only
+    there go in `unset` (a list) if one is given.  (2026-11-11: on the
+    stand-in, 886 of B1's LDR [SP,#imm] cases "disagreed" this way.)"""
+    a, state = load(path_a)
     b, _ = load(path_b)
     fields = fields or BEHAVIOUR_FIELDS
+    lay = F.LAYOUTS[state['layout']]
+    scratch = 0 if state['flags'] & F.HF_NO_SCRATCH else state['scratch_words']
     rb = {c['id']: r for c, r in b}
     out = []
     for c, r in a:
@@ -681,7 +757,13 @@ def compare_runs(path_a, path_b, fields=None):
         if o is None:
             out.append((c['id'], ['missing']))
             continue
-        d = [f for f in fields if r[f] != o[f]]
+        d = behaviour_differs(r, o, fields)
+        if d:
+            from .check import unset_fields                 # here: check imports this module
+            u = unset_fields(c, r, lay, scratch)
+            d = [] if u == 'all' else [f for f in d if f not in u]
+            if not d and unset is not None:
+                unset.append(c['id'])
         if d:
             out.append((c['id'], d))
     return out

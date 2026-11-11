@@ -782,6 +782,116 @@ Found on the board (2026-11-10, campaign C's write masks):
   - Stand-in test runs pruned the board session's log while it was open
     (both in hwtest/logs, newest 20 kept); stand-in logs now go to
     hwtest/logs/standin.
+  - B batch 74 "halting": cases 48640–48895 are the 256 BKPT #imm8
+    encodings, and a BKPT halts the core while a debugger is attached (the
+    measurement is "halted"; 26 s for all 256). The runner now writes one
+    line per batch for them. That line's first version sat inside the
+    batch loop and hung any batch a case stopped early (every lockup or
+    halt): test_discover_agent hung; fixed 2026-11-11, with a test.
+  - After B2's batches the window showed nothing for ~3 min: B compares
+    all 389,584 results with picosim on the computer. It now says so, logs
+    progress every 25,000 cases with time left, and Stop works there.
+- 2026-11-11, test_hwfacts against the real B1/B2 replays (12,318 cases in
+  14 kinds differed; now 40, all known):
+  - 9,720 STR/STRB/STRH/STM cases store into ROM (B1's register values are
+    small). Since Stage 2 picosim stops there on purpose for students, so
+    the replay stopped too and compared nothing else. The core has a
+    switch, `rom_store_stop` (on by default; students see no change); the
+    replay turns it off, drops the store as the chip does, and counts it
+    ("compared in part" in report.md). Everything else these instructions
+    do now matches the chip.
+  - 2,561 cases (LDR [SP,#imm], POP, and the POP after B1's STR r7,[SP])
+    load memory the agent never sets: the PSP area above the case's frame,
+    and the scratch window, which B leaves unfilled (HF_NO_SCRATCH). The
+    chip's values are earlier cases' leftovers (e.g. 0x21000000, a D1
+    site). The replay now fills such SRAM with markers naming their
+    address (`replay.unset_addr`) and lays out the agent's entry frame; a
+    register that loads a marker is not compared, the rest of the case is.
+  - 40 cases are UNPREDICTABLE encodings, where the chip does something
+    definite (known_differences.json, proposals 7 and 8 below): CPS with
+    bits 3:0 not 0010 ignores them (0xB660–F act as CPSIE i, 0xB670–F as
+    CPSID i); POP {} loads PC from [SP], SP unchanged; LDM Rn!,{} loads PC
+    from [Rn], Rn unchanged; STM Rn!,{} adds 4 to Rn; PUSH {} does nothing
+    (as picosim).
+  - known_differences.json entries can now also match the encoding's
+    bytes (`code`), so an entry for POP {} cannot hide another POP's
+    difference.
+
+- 2026-11-11, with no board (checking that what was captured is received,
+  checked, logged and usable):
+  - The two B1 runs on the chip (10 Nov, complete; 11 Nov, 74 of 91
+    batches) agree on all 48,640 cases they share, and D's two runs (14:14
+    and 14:34 on 10 Nov) agree on the cycles of all 18,855 timing cases: the
+    measurements repeat exactly. (D1's 32 and the SIO reads' 17 register
+    differences between the runs are loads of SRAM the cases never set and
+    the divider/interpolator registers' leftovers, as expected.) B3's 60
+    finished batches (39,240 cases), never compared before, all match
+    picosim. Every one of the 614,936 results on disk names its own case.
+  - `compare_runs` (the `--repeat` check) compared the four changed-word
+    slots raw. The agent writes only the first `n_changed`, and none when
+    the scratch window is not checked (B1, B2, B5), so the rest are
+    leftovers: the two B1 runs "disagreed" on 48,396 of 48,640 cases, all
+    in unwritten slots, and B's `--repeat` on the chip would have reported
+    the same. It now compares the decoded `changed` list
+    (`runner.behaviour_differs`). The stand-in starts with zeroed memory,
+    which hid it. A stand-in B1 `--repeat` then showed the second half of
+    the problem: 886 LDR [SP,#imm] cases "disagreed", because they load the
+    stack above their frame, which holds earlier cases' leftovers, and a
+    repeat runs the batches in another order. `compare_runs` now leaves out
+    the registers picosim's replay shows loading never-set memory
+    (`check.unset_fields`) and counts those cases apart
+    (`differ_only_in_unset_memory` in the repeat's verdict): 0 real
+    disagreements, 886 of that kind.
+  - Campaign B wrote `encodings.json` only after all five stages, so B1's
+    and B2's finished results (449,000 cases) had replays but no facts. It
+    now writes the facts after every stage, and a partial status keeps
+    pointing at them. `hwfacts/encodings.json` was rebuilt from the saved
+    runs (`--offline`): B1 59,067 match, 40 differ (all known,
+    UNPREDICTABLE), 23 pending the exception model, 256 BKPTs skipped; B2
+    all 389,584 match.
+  - Only B and D indexed and backed up their raw runs. A's, C's, E's and G's
+    agent runs on the chip had no SHA-256 in `raw_index.json` and no second
+    copy. Every run is now recorded by `Context.stage` (also a part-run),
+    the backup is checked against its SHA-256, and all 44 chip runs were
+    indexed and copied. `python3 -m picosim.discover verify-raw` checks both
+    copies (44 intact).
+  - `--offline` (B, D, G's SIO part) rebuilds facts from finished runs on
+    disk with today's comparison, no board; provenance keeps the measuring
+    date and adds `rebuilt_offline`. D rebuilt this way gave tables and facts
+    identical to the committed ones (so yesterday's re-scoring is
+    reproducible); the committed files were kept.
+  - G's status had lost its facts: a re-run at 14:39 stopped at its first
+    step and wrote "partial" without them, so the window showed G with no
+    facts though sio/gpio/systick.json existed. A partial status now keeps
+    the last facts pointers (restored by hand for G). The window also listed
+    three false differences (a table of 8s against a predicted 8; a table or
+    an empty list against a predicted sentence) and missed SysTick CALIB
+    (0x0000270F, SVD 0x00000000), whose comparison is in the fact's
+    `detail`: `overview._fact_differs` and the `detail.agrees` rule fix
+    both.
+  - G's 48 interpolator differences are explained, and the model was right
+    to be suspected: with the datasheet reading 300 of 348 cases agree; with
+    two changes all 348 do (`interp_model.MEASURED_VARIANT`). A POP writes
+    back the value the bus shows, FORCE_MSB in bits 29:28 included (46
+    cases), though the datasheet says FORCE_MSB has "no effect on the
+    internal 32-bit datapath"; and under BLEND, lane 0 shows no FORCE_MSB
+    (2 cases, the only two that test it: thin evidence). No case differs
+    without a FORCE_MSB set. sio.json was rebuilt offline; its other facts
+    are unchanged.
+  - A probe that disappears (USB unplugged, BOOTSEL held on it) made
+    OpenOCD print about 570,000 "No such device" lines, which filled the 50
+    MB session log (the rest of that session was not logged). OpenOCD's
+    lines are now written at most 200 a second (all still reach the lockup
+    and link checks), and "No such device" stops a run like a lost target,
+    with its own advice.
+  - The window's Run is `--fresh`, with no question asked: the 00:27 B1
+    run on 11 Nov was a Run, which set B2's finished run and B3's 60 batches
+    aside (they were not lost: a Resume uses them). Run on a partial or done
+    campaign now asks, and offers Resume.
+  - Before the next board session (checked against today's code): a Resume
+    of B carries on B1's 11 Nov run (17 batches), reuses B2, carries on B3
+    at batch 60, then runs B4 and B5; the case lists and the agent match
+    every saved run.
 
 Safety additions:
 - The PADS_BANK0 SWCLK/SWD pads and VOLTAGE_SELECT are never written;
@@ -802,10 +912,22 @@ chip's data and your approval, as S19 says):
    the pull's rise time, SYSCFG PROC_IN_SYNC_BYPASS, and the bus keeper
    (pull-up and pull-down together).
 4. SIO blocks picosim does not have: the divider (8-cycle result,
-   DIRTY/READY), the interpolators, the spinlocks and FIFO_ST.
+   DIRTY/READY), the interpolators, the spinlocks and FIFO_ST. The
+   interpolators should follow `interp_model.MEASURED_VARIANT` (G: 348 of
+   348 cases), not the datasheet's reading (300 of 348).
 5. SysTick in picosim's own core (now only in the stand-in), with
    COUNTFLAG cleared by a read, RVR = 0 and the 24-bit masks as G measures
    them.
 6. Whatever D, F and G measure that differs from `timing.py` (Table 81,
    with APB loads 4 and stores 5 already measured): "measured" notes in
    `timing.py` and `docs/cycles.md`, the textbook machine unchanged (R5).
+7. CPS with its should-be bits wrong (0xB660–0xB67F except 0xB662/0xB672):
+   picosim stops with "Undefined instruction … not a Cortex-M0+
+   instruction". The chip runs it as CPSIE/CPSID i (B1, measured). Keep
+   stopping (GNU as never emits these), but say the encoding is
+   UNPREDICTABLE and what the Pico does.
+8. Empty register lists (POP {}, LDM Rn!,{}, STM Rn!,{}): picosim does
+   nothing; the chip loads PC from [SP]/[Rn] (POP, LDM) or adds 4 to Rn
+   (STM). Stop with "UNPREDICTABLE: empty register list" (GNU as rejects
+   an empty list, so only hand-made data reaches it). PUSH {} already
+   matches.

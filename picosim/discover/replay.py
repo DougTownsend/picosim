@@ -11,17 +11,31 @@ alignment (word loads, PC-relative literals).  A register value inside a
 moved window is mapped on the way in; on the way out a chip value and a
 picosim value are the same if they are equal or if the chip's maps to
 picosim's (same()).
+
+Memory the agent never sets before a case (the PSP area above the case's
+frame, a scratch window B leaves unfilled, results, the batch) holds, on
+the chip, whatever earlier cases left there: no replay can know it.  Each
+such SRAM word holds an UNSET marker naming its own address, so a register
+that loads one is seen (unset_addr()) and is not compared (2026-11-11:
+B1's LDR [SP], POP and POP-after-STR cases, 2,558 of them).  The 32-byte
+frame the agent writes below the case's PSP is laid out as the chip's.
+
+A store into ROM is dropped and counted, as the chip does (the ROM ignores
+it), so the rest of what the instruction does is compared.  For students
+picosim stops there instead (core.rom_store_stop, on by default).
 """
 
 import os
 
 from .. import timing
 from .._picosim_core import CPUCore
-from ..memmap import Image, ROM_BASE, ROM_SIZE, span
+from ..memmap import Image, ROM_BASE, ROM_SIZE, SRAM_BASE, SRAM_SIZE, span
 from . import formats as F
 
 SLED_REACH = 0x4000                 # the sled picosim lays out on each side of the slot
 SPARE = 0x20030000                  # where a window picosim does not have is moved
+UNSET_TAG = 0xBAD00000              # an unset SRAM word: UNSET_TAG | its word index in SRAM
+UNSET_MASK = 0xFFF00000
 HWFACTS = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'hwfacts')
 
 
@@ -65,8 +79,31 @@ def rom():
     global _ROM
     if _ROM is None:
         p = os.path.join(HWFACTS, 'rom.bin')
-        _ROM = open(p, 'rb').read()[:ROM_SIZE] if os.path.exists(p) else bytes(ROM_SIZE)
+        if os.path.exists(p):
+            with open(p, 'rb') as f:
+                _ROM = f.read()[:ROM_SIZE]
+        else:
+            _ROM = bytes(ROM_SIZE)
     return _ROM
+
+
+_UNSET = None
+
+
+def unset_image():
+    """All of SRAM as UNSET markers (built once)."""
+    global _UNSET
+    if _UNSET is None:
+        _UNSET = b''.join((UNSET_TAG | i).to_bytes(4, 'little') for i in range(SRAM_SIZE // 4))
+    return _UNSET
+
+
+def unset_addr(v):
+    """The SRAM address an UNSET marker names, or None if v is not one."""
+    if v & UNSET_MASK != UNSET_TAG:
+        return None
+    i = v & ~UNSET_MASK
+    return SRAM_BASE + 4 * i if 4 * i < SRAM_SIZE else None
 
 
 class _Bus(Exception):
@@ -86,6 +123,7 @@ def run(case, lay, scratch_words, max_steps=None, code=None, lenient_bus=False):
     slot = m.to_sim(case['slot'])
     mem = Image()
     mem.write(ROM_BASE, rom())
+    mem.write(SRAM_BASE, unset_image())
     lo, hi = m.sled
     mem.write(lo, F.SLED_HALF.to_bytes(2, 'little') * ((hi - lo) // 2))
     mem.write(slot, code)
@@ -93,8 +131,16 @@ def run(case, lay, scratch_words, max_steps=None, code=None, lenient_bus=False):
     scratch = m.to_sim(lay['SCRATCH'])
     if pat:
         mem.write(scratch, pat)
+    # the frame the agent's exception return popped, still below the PSP
+    # (written last, as the agent does)
+    frame = m.to_sim(case['psp']) - 32
+    if span(frame, 32) is not None:
+        words = [m.to_sim(case[k]) for k in ('r0', 'r1', 'r2', 'r3', 'r12', 'lr', 'slot')]
+        words.append(case['xpsr'] | 0x01000000)
+        mem.write(frame, b''.join(w.to_bytes(4, 'little') for w in words))
     core = CPUCore()
     core.strict = True
+    core.rom_store_stop = False           # the chip's ROM ignores a store: compare the rest
     mem.load_into(core)
 
     def bus(*a):
@@ -152,7 +198,8 @@ def run(case, lay, scratch_words, max_steps=None, code=None, lenient_bus=False):
                 changed.append((4 * i, int.from_bytes(now[4 * i:4 * i + 4], 'little')))
     return {'end': (kind, m.to_hw(pc)), 'regs': regs,
             'flags': (core.N << 3) | (core.Z << 2) | (core.C << 1) | core.V,
-            'changed': changed, 'error': error, 'map': m, 'core': core}
+            'changed': changed, 'error': error, 'map': m, 'core': core,
+            'rom_stores': core.rom_stores_dropped}
 
 
 def _udf_at(core, pc):

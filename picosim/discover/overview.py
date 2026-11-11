@@ -227,6 +227,25 @@ def _same(a, b):
     return norm(a) == norm(b)
 
 
+def _fact_differs(v, want):
+    """Whether a measured fact value differs from its prediction.  A
+    prediction can be a sentence: a list measured against one is a list of
+    things that disagree (empty is agreement), and a table measured against
+    one cannot be compared here (the campaign compares it, row by row).  A
+    table of values all equal to a single predicted value agrees (D's
+    'result_cycles': 8 for CSR, QUOTIENT and REMAINDER, against 8)."""
+    if isinstance(v, bool):
+        return v is False
+    sentence = isinstance(want, str) and not re.fullmatch(r'\s*(0x[0-9A-Fa-f]+|-?\d+)\s*', want)
+    if isinstance(v, list) and sentence:
+        return len(v) > 0
+    if isinstance(v, dict) and sentence:
+        return False
+    if isinstance(v, dict) and not isinstance(want, (dict, list)) and v:
+        return not all(_same(x, want) for x in v.values())
+    return not _same(v, want)
+
+
 def _label(d, path):
     """A short name for a table row that carries differences."""
     if d.get('periph') and d.get('name'):
@@ -243,6 +262,19 @@ def _read_vs(item):
     if not isinstance(rd, dict) or not isinstance(pr, dict):
         return ''
     return '; '.join(f"{k}: chip {rd.get(k)}, model {pr.get(k)}" for k in rd)
+
+
+def _variant_note(item):
+    """For a model difference that one of the model's readings explains
+    (G's interp_differences: 'matches_variant'), say which."""
+    which = item.get('matches_variant') if isinstance(item, dict) else None
+    if not which:
+        return ''
+    if 'MEASURED_VARIANT' in which:
+        return ("explained: the chip does what interp_model.MEASURED_VARIANT says, not the datasheet: "
+                "a POP writes back the value the bus shows (FORCE_MSB in bits 29:28 included); "
+                "under BLEND, lane 0 shows no FORCE_MSB")
+    return 'explained by the model reading ' + ', '.join(map(str, which))
 
 
 def differences(doc):
@@ -275,7 +307,7 @@ def differences(doc):
                             'cases': item.get('cases', item.get('n')),
                             'detail': str(item.get('detail') or (ex or {}).get('detail') or _read_vs(item)
                                           or status),
-                            'known': item.get('known') or '',
+                            'known': item.get('known') or _variant_note(item),
                             'example': ex if ex and ex.get('code') else None,
                             'program': item.get('program') or (ex or {}).get('program') or ''})
                     elif isinstance(item, str):
@@ -291,10 +323,19 @@ def differences(doc):
     walk({k: v for k, v in doc.items() if k not in ('provenance', 'facts')}, '')
     for f in doc.get('facts', []):
         p = f.get('prediction')
+        d = f.get('detail')
+        if f.get('value') is False and isinstance(d, dict) and d.get('agrees') is False:
+            # G's SysTick facts: value 'agrees', the comparison in 'detail'
+            got = {k: v for k, v in d.items() if k not in ('agrees', 'predicted', 'from')}
+            out.append({'what': f['id'], 'kind': 'expected', 'class': '', 'where': 'facts', 'cases': None,
+                        'detail': f"measured {', '.join(f'{k} {v}' for k, v in got.items())}; expected "
+                                  f"{d.get('predicted')} (from {d.get('from', '?')})",
+                        'known': '', 'example': None, 'program': ''})
+            continue
         if not isinstance(p, dict) or 'value' not in p:
             continue
         v = f.get('value')
-        bad = (v is False) if isinstance(v, bool) else not _same(v, p['value'])
+        bad = _fact_differs(v, p['value'])
         if bad and v is not None:
             out.append({'what': f['id'], 'kind': 'expected', 'class': '', 'where': 'facts', 'cases': None,
                         'detail': f"measured {v}; expected {p['value']} (from {p.get('from', '?')})",

@@ -6,7 +6,10 @@ import re
 import unittest
 
 from picosim import teaching
-from tests.test_friction import EX, ROOT, server
+try:
+    from tests.test_friction import EX, ROOT, server
+except ImportError:                     # run from inside tests/
+    from test_friction import EX, ROOT, server
 
 GUI = os.path.join(ROOT, 'gui', 'scripts')
 

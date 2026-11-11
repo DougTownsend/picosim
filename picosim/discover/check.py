@@ -21,6 +21,12 @@ cannot model yet are 'pending', never failures: exception details (stacked
 xPSR, EXC_RETURN, lockups, interrupts) until it has an exception model, and
 addresses outside its memory map (ROM, flash, SRAM and the I/O it simulates).
 
+Two things are compared only in part, and counted as notes in report.md:
+a register that loaded memory the agent never set (the chip's value is
+whatever an earlier case left; replay.unset_addr), and a store into ROM,
+which the replay drops as the chip does (for students picosim stops there
+on purpose, Stage 2).
+
 hwfacts/known_differences.json lists differences that are understood, each
 with a reason and a to-do; anything else is new, and tests/test_hwfacts.py
 fails on it.
@@ -39,6 +45,9 @@ from .replay import HWFACTS
 
 CLASSES = ('faults', 'decoder', 'flags', 'memory', 'timing')
 PENDING = ('pending: exception model', 'pending: Stage 2')
+NOT_COMPARED = 'not compared: memory the agent never set'
+NOTE_UNSET = 'loaded memory the agent never set (those registers not compared)'
+NOTE_ROM = 'stored into ROM (dropped, as on the chip; for students picosim stops there on purpose)'
 
 
 def name_of(code):
@@ -58,8 +67,10 @@ def hw_state(c, r):
     return regs + [sp, r['f_lr'], r['f_pc']], r['f_xpsr'] >> 28
 
 
-def compare(c, r, lay, scratch_words, overhead=None):
-    """(status, class, detail): status 'match', 'differs' or a PENDING."""
+def compare(c, r, lay, scratch_words, overhead=None, notes=None):
+    """(status, class, detail): status 'match', 'differs', a PENDING,
+    NOT_COMPARED or 'skipped'.  `notes` (a list) gets NOTE_UNSET/NOTE_ROM."""
+    notes = [] if notes is None else notes
     hw_end = ending(c, r, lay)
     kind = hw_end[0]
     if kind in MARK_NAMES.values():
@@ -73,6 +84,11 @@ def compare(c, r, lay, scratch_words, overhead=None):
         return _compare_timing(c, r, lay, overhead, scratch_words)
     sim = replay.run(c, lay, scratch_words, max_steps=64 if kind == 'watchdog' else None)
     m = sim['map']
+    if sim['rom_stores']:
+        notes.append(NOTE_ROM)
+    if sim['end'][0] == 'fault' and _names_unset(sim['error']):
+        # picosim branched to (or through) a word the agent never set
+        return NOT_COMPARED, 'faults', f"picosim: {sim['error']}"
     if kind == 'watchdog':
         if sim['end'][0] == 'running':
             return 'match', None, ''
@@ -88,8 +104,11 @@ def compare(c, r, lay, scratch_words, overhead=None):
         return 'differs', 'faults', f"the chip {hw_text}; picosim {_end_text(sim)}"
     regs, flags = hw_state(c, r)
     names = [f'r{i}' for i in range(13)] + ['sp', 'lr']
+    unset = [n for n, s in zip(names, sim['regs']) if replay.unset_addr(s) is not None]
+    if unset:
+        notes.append(NOTE_UNSET)
     bad = [f"{n}: chip 0x{h:08X}, picosim 0x{s:08X}" for n, h, s in zip(names, regs, sim['regs'])
-           if not m.same(s, h)]
+           if n not in unset and not m.same(s, h)]
     if bad:
         return 'differs', 'decoder', '; '.join(bad)
     if flags != sim['flags']:
@@ -108,10 +127,40 @@ def compare(c, r, lay, scratch_words, overhead=None):
         if r['overflow'] and r.get('changed_full') is None:
             ok = len(sim_ch) > F.MAX_INLINE and [o for o, _ in sim_ch[:4]] == [o for o, _ in hw_ch]
         else:
-            ok = len(sim_ch) == len(hw_ch) and all(o1 == o2 and m.same(v2, v1) for (o1, v1), (o2, v2) in zip(hw_ch, sim_ch))
+            ok = len(sim_ch) == len(hw_ch) and all(
+                o1 == o2 and (m.same(v2, v1) or replay.unset_addr(v2) is not None)   # a stored unset word
+                for (o1, v1), (o2, v2) in zip(hw_ch, sim_ch))
         if not ok:
             return 'differs', 'memory', f"scratch changes: chip {_ch(hw_ch, r['overflow'])}, picosim {_ch(sim_ch, False)}"
     return 'match', None, ''
+
+
+# the result fields that hold R0-R12 and LR after a case (hw_state's order)
+_REG_FIELDS = ['f_r0', 'f_r1', 'f_r2', 'f_r3'] + [f'r{i}' for i in range(4, 12)] + ['f_r12', 'sp', 'f_lr']
+
+
+def unset_fields(c, r, lay, scratch_words):
+    """The result fields of case c whose value comes from memory the agent
+    never set (picosim's replay loads an UNSET marker into them): earlier
+    cases' leftovers, which depend on the order the cases ran in.  'all' if
+    the case went through such memory (branched to a word never set).  Only
+    non-timing cases that fell through, faulted or branched are replayed."""
+    if c['kind'] == F.KINDS['timing'] or ending(c, r, lay)[0] in MARK_NAMES.values():
+        return set()
+    try:
+        sim = replay.run(c, lay, scratch_words)
+    except Exception:                                   # noqa: BLE001 - not explainable: compare all
+        return set()
+    if sim['end'][0] == 'fault' and _names_unset(sim['error']):
+        return 'all'
+    if sim['end'][0] == 'sled' and replay.unset_addr(sim['end'][1]) is not None:
+        return 'all'
+    return {f for f, v in zip(_REG_FIELDS, sim['regs']) if replay.unset_addr(v) is not None and f != 'sp'}
+
+
+def _names_unset(text):
+    """True if an error message quotes an UNSET marker as an address."""
+    return any(replay.unset_addr(int(x, 16)) is not None for x in re.findall(r'0x([0-9A-Fa-f]{8})', text or ''))
 
 
 def _ch(ch, more):
@@ -172,13 +221,19 @@ def known():
         return json.load(f)['known']
 
 
-def is_known(cls, name, detail, table):
+def is_known(cls, name, detail, table, code=''):
+    """The known_differences entry that explains a difference, or None.
+    An entry matches by class, a regex on the name, and optionally regexes
+    on the detail and on `code` (the case's first instruction's bytes, in
+    hex as stored: '00bc' is 0xBC00)."""
     for k in table:
         if k.get('class') not in (None, cls):
             continue
         if not re.search(k.get('name', '.*'), name):
             continue
         if 'detail' in k and not re.search(k['detail'], detail):
+            continue
+        if 'code' in k and not re.search(k['code'], code):
             continue
         return k
     return None
@@ -191,6 +246,7 @@ class Result:
         self.counts = Counter()
         self.groups = OrderedDict()     # (status, class, name) -> {'n': , 'example': }
         self.new = []                   # differences not in the known list
+        self.notes = Counter()          # NOTE_UNSET, NOTE_ROM: compared only in part
 
     def add(self, status, cls, name, detail, c, r, known_entry):
         self.counts[status] += 1
@@ -212,14 +268,23 @@ def _example(c, r, detail):
             'psp': f"0x{c['psp']:08X}", 'primask': c['primask'], 'detail': detail}
 
 
-def check_records(records, lay, scratch_words, result=None, table=None):
+def check_records(records, lay, scratch_words, result=None, table=None, progress=None, every=25000):
+    """Every record run through picosim and compared.  `progress(done,
+    total)` is called every `every` records (it may raise to stop)."""
     result = result or Result()
     table = known() if table is None else table
     ov = overheads(records)
-    for c, r in records:
-        status, cls, detail = compare(c, r, lay, scratch_words, ov.get(c.get('batch', 0), ov.get('run')))
-        name = name_of(c['code_bytes'][2:] if c['kind'] == F.KINDS['timing'] else c['code_bytes'])
-        k = is_known(cls, name, detail, table) if status == 'differs' else None
+    total = len(records)
+    for i, (c, r) in enumerate(records):
+        if progress and i and i % every == 0:
+            progress(i, total)
+        notes = []
+        status, cls, detail = compare(c, r, lay, scratch_words, ov.get(c.get('batch', 0), ov.get('run')), notes)
+        result.notes.update(notes)
+        first = c['code_bytes'][2:] if c['kind'] == F.KINDS['timing'] else c['code_bytes']
+        name = name_of(first)
+        code = first[:4 if len(first) >= 4 and v6m.is_prefix32(int.from_bytes(first[:2], 'little')) else 2].hex()
+        k = is_known(cls, name, detail, table, code) if status == 'differs' else None
         result.add(status, cls, name, detail, c, r, k)
     return result
 
@@ -250,10 +315,13 @@ def report(result, title="picosim against the RP2040", sources=()):
     lines = [f"# {title}", "",
              f"{sum(c.values())} cases: {c['match']} match, {c['differs']} differ "
              f"({len(result.new)} kinds not yet known), "
-             + ', '.join(f"{c[p]} {p}" for p in PENDING) + f", {c['skipped']} skipped.", ""]
+             + ', '.join(f"{c[p]} {p}" for p in PENDING) + f", {c[NOT_COMPARED]} {NOT_COMPARED}, "
+             f"{c['skipped']} skipped.", ""]
+    if result.notes:
+        lines += ["Compared in part: " + '; '.join(f"{n} cases {what}" for what, n in sorted(result.notes.items())) + ".", ""]
     if sources:
         lines += ["Sources: " + ', '.join(os.path.basename(s) for s in sources), ""]
-    for status in ('differs',) + PENDING:
+    for status in ('differs',) + PENDING + (NOT_COMPARED,):
         rows = [(k, g) for k, g in result.groups.items() if k[0] == status]
         if not rows:
             continue
@@ -266,6 +334,6 @@ def report(result, title="picosim against the RP2040", sources=()):
             for (st, cl, name), g in sorted(sub, key=lambda x: -x[1]['n']):
                 e = g['example']
                 lines.append(f"| {name} | {g['n']} | `{e['code']}` r0–r3 {', '.join(e['regs'][:4])} NZCV {e['nzcv']} "
-                             f"| {e['detail']} | {g['known'] or '**new**'} |")
+                             f"| {e['detail']} | {g['known'] or ('**new**' if st == 'differs' else 'not compared yet')} |")
             lines.append("")
     return '\n'.join(lines) + '\n'

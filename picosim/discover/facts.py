@@ -28,6 +28,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import time
 
 from . import formats as F
@@ -49,6 +50,12 @@ def root(target_kind):
         return cache_dir('hwfacts-standin')
     os.makedirs(HWFACTS, exist_ok=True)
     return HWFACTS
+
+
+def raw_backup_dir():
+    """The second copy of the chip's raw captures (decision D4), outside the
+    cache.  PICOSIM_RAW_BACKUP moves it (the tests use a temporary folder)."""
+    return os.environ.get('PICOSIM_RAW_BACKUP') or os.path.expanduser('~/picosim-hwfacts-raw')
 
 
 def provenance(state, runs=1, agreed=None, openocd=None, swd_khz=None, extra=None):
@@ -143,18 +150,38 @@ def record_raw(run_path, target_kind):
     them to ~/picosim-hwfacts-raw/ (decision D4: kept out of git, twice)."""
     import shutil
     idx_path = os.path.join(root(target_kind), 'raw_index.json')
-    idx = json.load(open(idx_path)) if os.path.exists(idx_path) else {}
+    idx = {}
+    if os.path.exists(idx_path):
+        with open(idx_path) as f:
+            idx = json.load(f)
     files = {}
     for n in sorted(os.listdir(run_path)):
         if n.startswith('batch-') or n == 'state.json':
             files[n] = sha256_file(os.path.join(run_path, n))
-    key = os.path.relpath(run_path, cache_dir())
-    idx[key] = {'files': files, 'recorded': time.strftime('%Y-%m-%d %H:%M:%S')}
-    if target_kind != 'standin':
-        dst = os.path.join(os.path.expanduser('~/picosim-hwfacts-raw'), key)
+    # <label>/<campaign>-<stage>/<run id>: where the run sits under the cache
+    key = '/'.join(os.path.normpath(os.path.abspath(run_path)).split(os.sep)[-3:])
+    in_cache = os.path.realpath(run_path).startswith(os.path.realpath(cache_dir()) + os.sep)
+    entry = {'files': files, 'recorded': time.strftime('%Y-%m-%d %H:%M:%S')}
+    try:
+        with open(os.path.join(run_path, 'state.json')) as f:
+            st = json.load(f)
+        entry.update(finished=len(st['done']) == st['n_batches'], batches_done=len(st['done']),
+                     batches=st['n_batches'], cases=st['n_cases'])
+    except (OSError, ValueError, KeyError):
+        pass
+    old = idx.get(key)
+    if old and old.get('files') == files and old.get('finished') == entry.get('finished'):
+        entry['recorded'] = old['recorded']          # nothing new: keep the date it was first recorded
+    idx[key] = entry
+    if target_kind != 'standin' and in_cache:      # a run elsewhere (a test's temp folder) is not backed up
+        dst = os.path.join(raw_backup_dir(), key)
         os.makedirs(dst, exist_ok=True)
-        for n in files:
-            shutil.copy2(os.path.join(run_path, n), os.path.join(dst, n))
+        for n, sha in files.items():
+            d = os.path.join(dst, n)
+            if not (os.path.exists(d) and sha256_file(d) == sha):
+                shutil.copy2(os.path.join(run_path, n), d)
+            if sha256_file(d) != sha:
+                raise FactsError(f"the backup copy {d} does not match the capture it was copied from")
     with open(idx_path + '.tmp', 'w') as f:
         json.dump(idx, f, indent=1)
     os.replace(idx_path + '.tmp', idx_path)
@@ -217,3 +244,48 @@ def read_replay(path_json):
             r['changed_full'] = [tuple(x) for x in meta['full_changes'][str(c['id'])]]
         out.append((c, r))
     return out, meta
+
+
+# ── checking the raw captures ──────────────────────────────────────────────
+
+def verify_raw(target_kind='openocd'):
+    """Check every run raw_index.json lists against its two copies (the cache
+    and raw_backup_dir()), and list chip runs in the cache that the index
+    does not have.  Returns {'ok': n, 'problems': [text], 'unindexed': [key]}."""
+    idx_path = os.path.join(root(target_kind), 'raw_index.json')
+    idx = {}
+    if os.path.exists(idx_path):
+        with open(idx_path) as f:
+            idx = json.load(f)
+    ok, problems = 0, []
+    for key, e in sorted(idx.items()):
+        bad = []
+        for where, base in (('cache', cache_dir()), ('backup', raw_backup_dir())):
+            if where == 'backup' and target_kind == 'standin':
+                continue
+            for n, sha in e['files'].items():
+                p = os.path.join(base, key, n)
+                if not os.path.exists(p):
+                    bad.append(f"{where}: {n} missing")
+                elif sha256_file(p) != sha:
+                    bad.append(f"{where}: {n} differs from its recorded SHA-256")
+        if bad:
+            problems.append(f"{key}: " + '; '.join(bad[:4]) + (f" (+{len(bad) - 4} more)" if len(bad) > 4 else ''))
+        else:
+            ok += 1
+    unindexed = []
+    for label in sorted(os.listdir(cache_dir())):
+        if not re.fullmatch(r'chip\d+', label):
+            continue
+        for camp in sorted(os.listdir(cache_dir(label))):
+            d = os.path.join(cache_dir(label), camp)
+            if not os.path.isdir(d):
+                continue
+            for rid in sorted(os.listdir(d)):
+                st = os.path.join(d, rid, 'state.json')
+                if not os.path.exists(st) or f"{label}/{camp}/{rid}" in idx:
+                    continue
+                with open(st) as f:
+                    if json.load(f).get('done'):
+                        unindexed.append(f"{label}/{camp}/{rid}")
+    return {'ok': ok, 'problems': problems, 'unindexed': unindexed}

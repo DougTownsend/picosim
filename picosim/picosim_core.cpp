@@ -157,6 +157,12 @@ public:
     // on BX/BLX/POP to an address with bit 0 clear (both are HardFaults on
     // the Pico).  Scratch cores that only measure cycles turn it off.
     bool     strict = true;
+    // rom_store_stop: an instruction's store into ROM stops picosim with a
+    // teaching message (a real Pico ignores it, which hides the mistake).
+    // Off, the store is dropped as on the chip and counted: Level 5's replay
+    // turns it off to compare the rest of what such an instruction does.
+    bool     rom_store_stop = true;
+    uint64_t rom_stores_dropped = 0;
     // System registers that live outside the datapath (MRS / MSR / CPS).
     uint32_t PRIMASK = 0, CONTROL = 0, PSP = 0;
 
@@ -362,10 +368,12 @@ public:
     // store on the RP2040: the ROM ignores it (measured on a Pico), and a
     // store into the flash window does not reach the flash chip.  picosim
     // stops there, so the program's mistake is seen where it happens.
-    void write_fault(uint32_t addr) const {
-        if (!count_data) return;                       // the loader or the debugger
+    // Returns true if the store is to be dropped (ROM, rom_store_stop off).
+    bool write_fault(uint32_t addr) {
+        if (!count_data) return false;                 // the loader or the debugger
         int k = mem_kind(addr);
-        if (k != MK_ROM && k != MK_FLASH) return;
+        if (k != MK_ROM && k != MK_FLASH) return false;
+        if (k == MK_ROM && !rom_store_stop) { ++rom_stores_dropped; return true; }
         std::string where = k == MK_ROM
             ? "the Pico's boot ROM (0x00000000-0x00003FFF). It is read-only: the Pico ignores "
               "the store, so the value would silently not change"
@@ -419,17 +427,20 @@ public:
         return ram_get(addr, 4);
     }
 
-    void log_write(uint32_t addr, int width, uint32_t val) {
+    // Checks and records a store; true if it is to be dropped (see write_fault).
+    bool log_write(uint32_t addr, int width, uint32_t val) {
         if (width > 1) check_align(addr, width, true);
-        write_fault(addr);
+        bool drop = write_fault(addr);
         note_access(addr, true);
-        if (!mem_log) return;
-        if (is_peripheral(addr)) { mem_log->push_back({addr, width, 0, true, val}); return; }
-        mem_log->push_back({addr, width, ram_get(addr, width), false, val});
+        if (mem_log) {
+            if (is_peripheral(addr)) mem_log->push_back({addr, width, 0, true, val});
+            else mem_log->push_back({addr, width, ram_get(addr, width), false, val});
+        }
+        return drop;
     }
 
     void write8 (uint32_t addr, uint32_t val) {
-        log_write(addr, 1, val & 0xFF);
+        if (log_write(addr, 1, val & 0xFF)) return;
         if (is_peripheral(addr)) {
             if (peripheral_write) peripheral_write(addr, val & 0xFF, 1);
             return;
@@ -438,7 +449,7 @@ public:
     }
 
     void write16(uint32_t addr, uint32_t val) {
-        log_write(addr, 2, val & 0xFFFF);
+        if (log_write(addr, 2, val & 0xFFFF)) return;
         if (is_peripheral(addr)) {
             if (peripheral_write) peripheral_write(addr, val & 0xFFFF, 2);
             return;
@@ -447,7 +458,7 @@ public:
     }
 
     void write32(uint32_t addr, uint32_t val) {
-        log_write(addr, 4, val);
+        if (log_write(addr, 4, val)) return;
         if (is_peripheral(addr)) {
             if (peripheral_write) peripheral_write(addr, val, 4);
             return;
@@ -2141,6 +2152,10 @@ PYBIND11_MODULE(_picosim_core, m) {
         .def_readwrite("trace",  &CPUCore::trace)
         .def_readwrite("strict", &CPUCore::strict,
              "Fault on unaligned accesses and non-Thumb branch targets, as the Pico does")
+        .def_readwrite("rom_store_stop", &CPUCore::rom_store_stop,
+             "Stop on an instruction's store into ROM (default, for students); off, drop it as the Pico does")
+        .def_readwrite("rom_stores_dropped", &CPUCore::rom_stores_dropped,
+             "ROM stores dropped while rom_store_stop was off")
         .def_property_readonly("access", [](const CPUCore& s) {
             return s.fetching ? "fetch" : s.count_data ? "data" : "debug";
         }, "What is reading memory right now: an instruction 'fetch', an instruction's 'data' access, or 'debug' (the API)")

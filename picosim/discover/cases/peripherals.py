@@ -1052,7 +1052,8 @@ def analyse_spin(cases, recs):
 def analyse_interp(cases, recs):
     by = _by_id(recs)
     rows, examples, extras = [], [], []
-    stats = {'cases': 0, 'match': 0, 'differ': 0, 'did_not_run': 0, 'variants': {}}
+    stats = {'cases': 0, 'match': 0, 'differ': 0, 'did_not_run': 0, 'variants': {},
+             'differ_from_measured_variant': 0}
     ex_diffs = 0
     for case in cases:
         if case['id'] not in by or not case['part'].startswith('interp'):
@@ -1067,6 +1068,9 @@ def analyse_interp(cases, recs):
             got = {name: reg(r, n) for name, n in INTERP_FIELDS}
             want = interp_predict(case['interp'], case['cfg'], case['pop'])
             bad = [k for k in want if got[k] != want[k]]
+            wm = interp_predict(case['interp'], case['cfg'], case['pop'], M.MEASURED_VARIANT)
+            measured_ok = all(got[k] == wm[k] for k in wm)
+            stats['differ_from_measured_variant'] += not measured_ok
             if 'published' in case:
                 pub = [k for k, v in case['published'].items() if got[k] != v]
                 examples.append({'example': case['example'], 'published': {k: _x(v) for k, v in case['published'].items()},
@@ -1082,6 +1086,8 @@ def analyse_interp(cases, recs):
                     w2 = interp_predict(case['interp'], case['cfg'], case['pop'], {key: alt})
                     if all(got[k] == w2[k] for k in w2):
                         which.append(f"{key}={alt}")
+            if measured_ok:
+                which.append('MEASURED_VARIANT')
             for w in which:
                 stats['variants'][w] = stats['variants'].get(w, 0) + 1
             rows.append({'id': case['id'], 'interp': case['interp'], 'cfg': [_x(v) for v in case['cfg']],
@@ -1289,30 +1295,11 @@ NOT_MODELLED = {
 }
 
 
-def run(ctx):
+def sio_facts(ctx, cases, recs, states):
+    """peripherals/sio.json from the 'sio' and 'div-timing' stages: the
+    divider, the spinlocks, FIFO_ST and the interpolators, each against
+    interp_model.  Returns (path, differences)."""
     from .. import facts as FX
-    t = ctx.t
-    ctx.status(NAME, 'partial', step='debugger')
-    t.reset_halt()
-    t.vector_catch('none')
-    release(t, IO_PADS)
-    done = _dr(t, RESET_DONE)
-    syscfg_ready = done is not None and bool(done >> SYSCFG_RESET_BIT & 1)
-    run_bypass = syscfg_ready or ctx.kind == 'standin'          # the stand-in has no SYSCFG: its cases fault
-    pad_rows, overrides = gpio_debugger(t, ctx.pins)
-    recs, states = {}, {}
-    plan = stages(ctx.pins, run_bypass)
-    for name, cases, kw in plan:
-        ctx.status(NAME, 'partial', step=name)
-        recs[name], states[name] = ctx.stage(NAME, name, cases, on_prepare=_hook, **STAGE_KW, **kw)
-    cases = {name: cs for name, cs, _ in plan}
-    ctx.status(NAME, 'partial', step='debugger COUNTFLAG')
-    try:
-        dbg_cf = debugger_countflag(t, ctx.pins, ctx.log)
-    except Exception as e:                                         # noqa: BLE001 - recorded, not fatal
-        dbg_cf = {'error': str(e)[:200]}
-
-    # SIO
     div_rows, div_diffs = analyse_div(cases['sio'], recs['sio'])
     dirty, dirty_diffs = analyse_div_dirty(cases['sio'], recs['sio'])
     timing, timing_raw = analyse_div_timing(cases['div-timing'], recs['div-timing'])
@@ -1337,16 +1324,66 @@ def run(ctx):
           FX.fact('sio.interp.cases', istats['cases']),
           FX.fact('sio.interp.differences', istats['differ']),
           FX.fact('sio.interp.variants_matched', istats['variants']),
+          FX.fact('sio.interp.differences_from_measured_variant', istats['differ_from_measured_variant'],
+                  source='derived', variant=M.MEASURED_VARIANT,
+                  note='interp_model.MEASURED_VARIANT: a POP writes back the value the bus shows (FORCE_MSB '
+                       'included); under BLEND lane 0 shows no FORCE_MSB'),
           FX.fact('sio.interp.datasheet_examples_disagree', ex_diffs),
           FX.fact('sio.interp.extras_disagree', extra_bad)]
     for k, v in NOT_MODELLED.items():
         if k in ('divider', 'interpolators', 'spinlocks', 'fifo'):
             fs.append(FX.fact(f"picosim.sio.{k}", v, source='not modelled'))
     prov = ctx.provenance(states.get('sio'), campaign='G')
-    paths = [ctx.write_facts('peripherals/sio.json', 'peripherals-sio', prov, fs,
+    path = ctx.write_facts('peripherals/sio.json', 'peripherals-sio', prov, fs,
                              divider=div_rows, divider_timing=timing_raw, divider_dirty=dirty,
                              spinlocks=locks, fifo=fifo, interp_summary=istats, interp_differences=irows,
-                             interp_examples=examples, interp_extras=extras, picosim=NOT_MODELLED)]
+                             interp_examples=examples, interp_extras=extras, picosim=NOT_MODELLED)
+    return path, sio_diffs
+
+
+
+def run_offline(ctx):
+    """--offline: sio.json again from the saved 'sio' and 'div-timing' runs
+    (its models changed: interp_model.MEASURED_VARIANT).  The rest of G reads
+    the chip through the debugger, so it needs the board; its files and its
+    status are left as they are."""
+    want = {name: (cs, kw) for name, cs, kw in stages(ctx.pins, True) if name in ('sio', 'div-timing')}
+    recs, states = {}, {}
+    for name, (cs, kw) in want.items():
+        recs[name], states[name] = ctx.stage(NAME, name, cs, on_prepare=_hook, **STAGE_KW, **kw)
+    want = {name: cs for name, (cs, _) in want.items()}
+    path, n = sio_facts(ctx, want, recs, states)
+    ctx.log(f"peripherals (offline): {n} SIO differences from the datasheet models; GPIO and SysTick need the board")
+    return [path]
+
+
+def run(ctx):
+    from .. import facts as FX
+    if ctx.offline:
+        return run_offline(ctx)
+    t = ctx.t
+    ctx.status(NAME, 'partial', step='debugger')
+    t.reset_halt()
+    t.vector_catch('none')
+    release(t, IO_PADS)
+    done = _dr(t, RESET_DONE)
+    syscfg_ready = done is not None and bool(done >> SYSCFG_RESET_BIT & 1)
+    run_bypass = syscfg_ready or ctx.kind == 'standin'          # the stand-in has no SYSCFG: its cases fault
+    pad_rows, overrides = gpio_debugger(t, ctx.pins)
+    recs, states = {}, {}
+    plan = stages(ctx.pins, run_bypass)
+    for name, cases, kw in plan:
+        ctx.status(NAME, 'partial', step=name)
+        recs[name], states[name] = ctx.stage(NAME, name, cases, on_prepare=_hook, **STAGE_KW, **kw)
+    cases = {name: cs for name, cs, _ in plan}
+    ctx.status(NAME, 'partial', step='debugger COUNTFLAG')
+    try:
+        dbg_cf = debugger_countflag(t, ctx.pins, ctx.log)
+    except Exception as e:                                         # noqa: BLE001 - recorded, not fatal
+        dbg_cf = {'error': str(e)[:200]}
+
+    p, sio_diffs = sio_facts(ctx, cases, recs, states)
+    paths = [p]
 
     # GPIO
     pulls, inover, inover_diffs, odd = analyse_gpio(cases['gpio'], recs['gpio'])

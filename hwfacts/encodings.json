@@ -1,0 +1,392 @@
+{
+ "schema": 1,
+ "kind": "encodings",
+ "provenance": {
+  "chip": {
+   "chip_id": "0x20002927",
+   "cpuid": "0x410CC601",
+   "rom_version": 3
+  },
+  "date": "2026-11-10 14:58:13",
+  "openocd": "Open On-Chip Debugger 0.12.0",
+  "swd_khz": 5000,
+  "picosim": {
+   "commit": "96776657416f811f5b4647b2c70bcb76b0c15088",
+   "dirty": true
+  },
+  "agent": "ddc1370363c94c44fa27ca70211ce320015137ad",
+  "campaign": "B",
+  "run_id": "20261110-145502",
+  "runs": 1,
+  "agreed": null,
+  "target": "openocd",
+  "chip_label": "chip1",
+  "rebuilt_offline": {
+   "date": "2026-11-11 17:43:38",
+   "picosim": {
+    "commit": "96776657416f811f5b4647b2c70bcb76b0c15088",
+    "dirty": true
+   },
+   "note": "measured on the date above; compared with picosim again from the saved raw records, with no board"
+  },
+  "stages_done": [
+   "B1",
+   "B2"
+  ]
+ },
+ "facts": [
+  {
+   "id": "encodings.v6m_defined_16bit",
+   "value": 57072,
+   "source": "derived",
+   "note": "from v6m.py (the ARM ARM)"
+  },
+  {
+   "id": "encodings.never_run",
+   "value": {
+    "0x44ED": "ADD SP,SP",
+    "0x44FD": "ADD SP,PC",
+    "0x46EF": "MOV PC,SP",
+    "0x46FD": "MOV SP,PC",
+    "0x4768": "BX SP",
+    "0x47E8": "BLX SP"
+   },
+   "source": "derived",
+   "note": "a branch to SP, or an SP no input can keep valid: they would lock the core up"
+  },
+  {
+   "id": "encodings.B1.endings",
+   "value": {
+    "fell-through": 52232,
+    "sled": 4278,
+    "elsewhere": 23,
+    "fault": 2336,
+    "halted": 256,
+    "watchdog": 5,
+    "svc": 256
+   },
+   "source": "measured"
+  }
+ ],
+ "stages": {
+  "B1": {
+   "cases": 59386,
+   "endings": {
+    "fell-through": 52232,
+    "sled": 4278,
+    "elsewhere": 23,
+    "fault": 2336,
+    "halted": 256,
+    "watchdog": 5,
+    "svc": 256
+   },
+   "check": {
+    "match": 59067,
+    "pending: exception model": 23,
+    "differs": 40,
+    "skipped": 256
+   },
+   "compared_in_part": {
+    "stored into ROM (dropped, as on the chip; for students picosim stops there on purpose)": 9720,
+    "loaded memory the agent never set (those registers not compared)": 2558
+   },
+   "repeat": null,
+   "differences": [
+    {
+     "status": "pending: exception model",
+     "class": "faults",
+     "encoding": "ADD PC,SP,PC",
+     "cases": 1,
+     "example": {
+      "code": "ef44",
+      "name": "ADD PC,SP,PC",
+      "id": 17647,
+      "regs": [
+       "0x00000EB0",
+       "0x00000F38",
+       "0x00000AF8",
+       "0x000008E8",
+       "0x000004C8",
+       "0x00000F58",
+       "0x000006D0",
+       "0x00000B3C",
+       "0x000008F8",
+       "0x00000FF4",
+       "0x00000FC0",
+       "0x00000028",
+       "0x000006BC"
+      ],
+      "nzcv": "1011",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "a HardFault at 0x40054F04"
+     },
+     "known": null
+    },
+    {
+     "status": "pending: exception model",
+     "class": "faults",
+     "encoding": "ADD PC,PC",
+     "cases": 1,
+     "example": {
+      "code": "ff44",
+      "name": "ADD PC,PC",
+      "id": 17663,
+      "regs": [
+       "0x000008F8",
+       "0x000001A8",
+       "0x00000724",
+       "0x00000508",
+       "0x00000E24",
+       "0x0000044C",
+       "0x00000374",
+       "0x0000085C",
+       "0x00000898",
+       "0x000009DC",
+       "0x00000800",
+       "0x00000304",
+       "0x000005A4"
+      ],
+      "nzcv": "0101",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "a HardFault at 0x40028008"
+     },
+     "known": null
+    },
+    {
+     "status": "pending: exception model",
+     "class": "faults",
+     "encoding": "BX Rm",
+     "cases": 7,
+     "example": {
+      "code": "6947",
+      "name": "BX Rm",
+      "id": 18281,
+      "regs": [
+       "0x00000E40",
+       "0x00000ED0",
+       "0x00000314",
+       "0x00000934",
+       "0x00000C38",
+       "0x000001F8",
+       "0x000006D4",
+       "0x000008B8",
+       "0x00000F70",
+       "0x00000DC0",
+       "0x00000394",
+       "0x00000550",
+       "0x0000048C"
+      ],
+      "nzcv": "1000",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "a HardFault at 0x20040F00"
+     },
+     "known": null
+    },
+    {
+     "status": "pending: exception model",
+     "class": "faults",
+     "encoding": "BLX Rm",
+     "cases": 7,
+     "example": {
+      "code": "e947",
+      "name": "BLX Rm",
+      "id": 18409,
+      "regs": [
+       "0x00000088",
+       "0x00000AE4",
+       "0x000007C4",
+       "0x00000280",
+       "0x00000310",
+       "0x000006F0",
+       "0x00000F28",
+       "0x0000065C",
+       "0x000001F8",
+       "0x00000344",
+       "0x0000005C",
+       "0x00000B64",
+       "0x000006DC"
+      ],
+      "nzcv": "1011",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "a HardFault at 0x20040F00"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "CPS (should-be bits wrong)",
+     "cases": 30,
+     "example": {
+      "code": "60b6",
+      "name": "CPS (should-be bits wrong)",
+      "id": 46688,
+      "regs": [
+       "0x0000071C",
+       "0x00000890",
+       "0x00000BE4",
+       "0x000005E0",
+       "0x00000054",
+       "0x00000578",
+       "0x00000764",
+       "0x0000012C",
+       "0x0000058C",
+       "0x00000084",
+       "0x00000E3C",
+       "0x00000C24",
+       "0x0000002C"
+      ],
+      "nzcv": "0101",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip runs it and falls through; picosim stops with an error at 0x20014000: Undefined instruction 0xB660 at 0x20014000: this is not a Cortex-M0+ (ARMv6-M) instruction, so the Pico would stop with a HardFault. If it is data, keep it out of the path the program runs through."
+     },
+     "known": "UNPREDICTABLE encoding: CPS with its should-be bits 3:0 not 0010. The RP2040 ignores bits 3:0: 0xB660-0xB66F act as CPSIE i and 0xB670-0xB67F as CPSID i (PRIMASK read back, all 32 forms). picosim stops with 'Undefined instruction ... not a Cortex-M0+ instruction'."
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "POP {list}",
+     "cases": 1,
+     "example": {
+      "code": "00bc",
+      "name": "POP {list}",
+      "id": 48128,
+      "regs": [
+       "0x00000C88",
+       "0x0000087C",
+       "0x00000AD8",
+       "0x000001B8",
+       "0x000005A8",
+       "0x000003AC",
+       "0x000005D0",
+       "0x00000C90",
+       "0x00000400",
+       "0x0000025C",
+       "0x00000F10",
+       "0x00000644",
+       "0x00000B54"
+      ],
+      "nzcv": "0111",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip branches to 0x20017466; picosim runs it and falls through"
+     },
+     "known": "UNPREDICTABLE encoding: POP {} (0xBC00, empty register list). The RP2040 loads PC from [SP] and leaves SP unchanged (it branched to the word at SP). picosim does nothing and falls through."
+    },
+    {
+     "status": "differs",
+     "class": "decoder",
+     "encoding": "STM Rn!,{list}",
+     "cases": 8,
+     "example": {
+      "code": "00c0",
+      "name": "STM Rn!,{list}",
+      "id": 49152,
+      "regs": [
+       "0x00000590",
+       "0x0000035C",
+       "0x00000638",
+       "0x00000A74",
+       "0x000009B8",
+       "0x00000538",
+       "0x00000E4C",
+       "0x00000330",
+       "0x00000BD8",
+       "0x00000694",
+       "0x00000B60",
+       "0x00000C5C",
+       "0x000003A8"
+      ],
+      "nzcv": "1100",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "r0: chip 0x00000594, picosim 0x00000590"
+     },
+     "known": "UNPREDICTABLE encoding: STM Rn!,{} (0xC000-0xC700, empty register list). The RP2040 adds 4 to Rn (it stores one word; B's cases aim it at ROM, so what it stores is not seen). picosim leaves Rn unchanged."
+    },
+    {
+     "status": "pending: exception model",
+     "class": "faults",
+     "encoding": "LDM Rn{!},{list}",
+     "cases": 7,
+     "example": {
+      "code": "00c8",
+      "name": "LDM Rn{!},{list}",
+      "id": 51200,
+      "regs": [
+       "0x00002D58",
+       "0x000006F8",
+       "0x00000388",
+       "0x000006C8",
+       "0x000006A0",
+       "0x00000050",
+       "0x00000D88",
+       "0x00000F80",
+       "0x00000004",
+       "0x000002F8",
+       "0x00000DEC",
+       "0x0000056C",
+       "0x00000BE8"
+      ],
+      "nzcv": "0100",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "a HardFault at 0x3401D400"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "LDM Rn{!},{list}",
+     "cases": 1,
+     "example": {
+      "code": "00ca",
+      "name": "LDM Rn{!},{list}",
+      "id": 51712,
+      "regs": [
+       "0x00000C78",
+       "0x000007A4",
+       "0x00000B5C",
+       "0x00000EF4",
+       "0x00000F44",
+       "0x00000028",
+       "0x00000FE4",
+       "0x00000190",
+       "0x00000548",
+       "0x00000018",
+       "0x0000011C",
+       "0x00000C3C",
+       "0x0000057C"
+      ],
+      "nzcv": "1001",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip branches to 0x200139D8; picosim runs it and falls through"
+     },
+     "known": "UNPREDICTABLE encoding: LDM Rn!,{} (0xC800-0xCF00, empty register list). The RP2040 loads PC from [Rn] (7 of 8 then HardFault on the ROM word they load; 0xCA00 runs boot-ROM code and lands in the sled), Rn unchanged. picosim does nothing and falls through."
+    }
+   ]
+  },
+  "B2": {
+   "cases": 389584,
+   "endings": {
+    "fell-through": 388560,
+    "fault": 1024
+   },
+   "check": {
+    "match": 389584
+   },
+   "compared_in_part": {
+    "loaded memory the agent never set (those registers not compared)": 28
+   },
+   "repeat": null,
+   "differences": []
+  }
+ }
+}

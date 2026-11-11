@@ -97,6 +97,24 @@ class AgentTest(unittest.TestCase):
         self.assertEqual(got[3][1]['f_r0'], 2)
         self.assertEqual(R.ending(*got[3], LAY)[0], 'fell-through')
 
+    def test_bkpt_cases_halt_and_are_summed_up_once(self):
+        """A BKPT halts the core while a debugger is attached: each such case
+        is recorded 'halted' and the batch goes on, with one log line for
+        all of them (2026-11-10, batch 74).  The first version of that line
+        sat inside the batch loop and hung every batch that stopped early."""
+        logged = []
+        cases = [R.make_case(1, h(0x2001)),
+                 R.make_case(2, h(0xBE00)),                                 # bkpt #0
+                 R.make_case(3, h(0xBE07)),                                 # bkpt #7
+                 R.make_case(4, h(0x2004))]
+        got = by_id(self.run_cases(cases, 'bkpt', log=logged.append))
+        self.assertEqual(R.ending(*got[2], LAY)[0], 'halted')
+        self.assertEqual(R.ending(*got[3], LAY)[0], 'halted')
+        self.assertEqual(got[4][1]['f_r0'], 4)
+        self.assertEqual(R.ending(*got[4], LAY)[0], 'fell-through')
+        self.assertEqual(sum('2 BKPT cases stopped the core' in l for l in logged), 1, logged)
+        self.assertFalse(any('halted (try' in l for l in logged), logged)
+
     def test_watchdog_ends_an_endless_loop(self):
         cases = [R.make_case(1, h(0xE7FE)), R.make_case(2, h(0x2003))]       # b .
         got = by_id(self.run_cases(cases, 'watchdog', wd_reload=3000))
@@ -235,6 +253,26 @@ class FormatTest(unittest.TestCase):
         r = F.unpack_result(F.pack_words(F.RESULT, vals))
         self.assertTrue(r['overflow'])
         self.assertEqual([o for o, _ in r['changed']], [4, 8, 0x10, 0xFFC])
+
+    def test_unwritten_changed_slots_are_not_compared(self):
+        """The agent writes only the first n_changed inline slots, and none
+        when the scratch window is not checked; the rest hold leftovers
+        (power-up SRAM on the chip).  Two runs must not "disagree" there."""
+        def res(n, vals, off01=0, r0=1):
+            v = {f: 0 for f in F.RESULT}
+            v.update(f_r0=r0, n_changed=n, off01=off01,
+                     val0=vals[0], val1=vals[1], val2=vals[2], val3=vals[3])
+            return F.unpack_result(F.pack_words(F.RESULT, v))
+        a = res(F.NOT_CHECKED, (0x8A5FC81E, 1, 2, 3))
+        b = res(F.NOT_CHECKED, (0x82DFC81E, 9, 9, 9))
+        self.assertEqual(R.behaviour_differs(a, b, R.BEHAVIOUR_FIELDS), [])
+        a = res(1, (0x11, 0xDEAD, 0, 0), off01=0x4)
+        b = res(1, (0x11, 0xBEEF, 7, 7), off01=0x4)
+        self.assertEqual(R.behaviour_differs(a, b, R.BEHAVIOUR_FIELDS), [])
+        b = res(1, (0x12, 0xBEEF, 7, 7), off01=0x4)                 # a written slot differs
+        self.assertEqual(R.behaviour_differs(a, b, R.BEHAVIOUR_FIELDS), ['changed'])
+        b = res(1, (0x11, 0, 0, 0), off01=0x4, r0=2)
+        self.assertEqual(R.behaviour_differs(a, b, R.BEHAVIOUR_FIELDS), ['f_r0'])
 
 
 if __name__ == '__main__':

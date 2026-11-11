@@ -24,6 +24,17 @@ hwtests/b04_io_timing.s; see docs/hardware-testing.md):
     cycles: a load takes 4 (APB_LOAD_EXTRA = 2) and a store 5
     (APB_STORE_EXTRA = 3).
 
+Checked against the chip (Level 5 discovery, campaign D, chip1, 2026-11-10;
+hwfacts/timing.json, replayed by tests/test_hwfacts.py): every one of the
+92 instruction forms D times (ALU; loads from ROM; loads and stores to
+striped SRAM, SRAM4/5, non-striped SRAM, the stack, APB, the SIO and the
+PPB; branches; MRS/MSR/barriers/hints), run from all four SRAM code sites at both
+alignments, and all 1,600 ordered pairs, took exactly the m0plus cycles
+below: 0 differences, and the pairs add up (no interaction effects).  Not
+covered by D: code fetched from flash through XIP (campaign F) and
+exception entry/return (D4, in hwfacts/exceptions.json: entry 12 cycles
+after the trigger, SVC 13; picosim has no exceptions until Stage 4).
+
 Not modelled, and reported instead of guessed:
   * SVC and BKPT: their cost depends on exception entry/return and debug
     configuration (Table 81 note e); picosim also runs SVC calls directly.

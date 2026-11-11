@@ -241,12 +241,31 @@ def dry_cases(ctx):
     return [(s, GENERATORS[s](), stage_kw(s, 'openocd')) for s in _stages(ctx)]
 
 
+def _check_progress(ctx, stage, n, keep=None):
+    """Say what B does after a stage's batches: run every result through
+    picosim (B2's 389,584 take minutes, and the window used to show
+    nothing: 2026-11-10).  Stop works here too."""
+    import time
+    ctx.status(NAME, 'partial', step=f"{stage}: comparing {n:,} results with picosim", **(keep or {}))
+    ctx.log(f"{stage}: all its batches ran on the chip; comparing {n:,} results with picosim "
+            "(on this computer; the board is idle) ...")
+    t0 = time.monotonic()
+
+    def progress(done, total):
+        if ctx.stop_flag is not None and ctx.stop_flag.is_set():
+            raise R.RunError(f"stopped by request while comparing {stage}'s results")
+        rate = done / max(time.monotonic() - t0, 1e-6)
+        ctx.log(f"{stage}: compared {done:,} of {total:,} ({int((total - done) / rate) + 1} s left)")
+    return progress
+
+
 def run(ctx):
     from .. import facts as FX
     from .. import check
-    summary, state0, diffs = {}, None, 0
+    summary, state0, diffs, path = {}, None, 0, None
     for s in _stages(ctx):
-        ctx.status(NAME, 'partial', step=s)
+        # keep pointing at the facts of the stages already in, should this one stop
+        ctx.status(NAME, 'partial', step=s, **({'facts': path, 'differences': diffs} if path else {}))
         cases = GENERATORS[s]()
         if ctx.label != 'chip1' and s != 'B1':
             rng = random.Random(f"H|{s}")         # campaign H: a 10 % sample on the second chip
@@ -259,16 +278,28 @@ def run(ctx):
         for c, r in recs:
             k = R.ending(c, r, LAY)[0]
             ends[k] = ends.get(k, 0) + 1
-        res = check.check_records(recs, LAY, SCRATCH_WORDS[s])
+        res = check.check_records(recs, LAY, SCRATCH_WORDS[s], progress=_check_progress(ctx, s, len(recs),
+                                                     {'facts': path, 'differences': diffs} if path else None))
         diffs += res.counts['differs']
         summary[s] = {'cases': len(recs), 'endings': ends, 'check': dict(res.counts),
+                      'compared_in_part': dict(res.notes),     # check.NOTE_UNSET / NOTE_ROM: not differences
                       'repeat': state.get('repeat'),
                       'differences': [{'status': k[0], 'class': k[1], 'encoding': k[2], 'cases': g['n'],
                                        'example': g['example'], 'known': g['known']}
-                                      for k, g in res.groups.items()]}
+                                      for k, g in res.groups.items() if k[0] != check.NOT_COMPARED]}
         FX.write_replay(f"encodings-{s}" + ('' if ctx.label == 'chip1' else f"-{ctx.label}"), recs, state, ctx.kind,
                         fraction=1.0 if s == 'B1' else 0.05, seed=1)
-        FX.record_raw(_run_path(ctx, s), ctx.kind)
+        path = _write_facts(ctx, summary, state0, diffs)
+    return path or _write_facts(ctx, summary, state0, diffs)
+
+
+def _write_facts(ctx, summary, state0, diffs):
+    """encodings.json from the stages finished so far.  Called after each
+    stage, so a run that stops in a later stage (a pulled cable, Stop, a
+    power cut) still leaves the finished stages' facts: on 2026-11-10 B1 and
+    B2 finished on the chip and B3 stopped, and no encodings.json was
+    written at all.  The status stays 'partial' until every stage is in."""
+    from .. import facts as FX
     defined = sum(1 for hw in range(0x10000) if not v6m.is_prefix32(hw)
                   and v6m.classify(hw) not in ('undefined', 'udf'))
     fs = [FX.fact('encodings.v6m_defined_16bit', defined, source='derived', note='from v6m.py (the ARM ARM)'),
@@ -277,8 +308,9 @@ def run(ctx):
     if 'B1' in summary:
         fs.append(FX.fact('encodings.B1.endings', summary['B1']['endings']))
     prov = ctx.provenance(state0, campaign='B')
-    path = ctx.write_facts('encodings.json', 'encodings', prov, fs, stages=summary)
     whole = set(summary) >= set(STAGES) and not ctx.limit
+    prov['stages_done'] = sorted(summary)
+    path = ctx.write_facts('encodings.json', 'encodings', prov, fs, stages=summary)
     ctx.status(NAME, 'done' if whole else 'partial', step=None if whole else _part(ctx, summary),
                facts=path, differences=diffs)
     return path
@@ -287,9 +319,3 @@ def run(ctx):
 def _part(ctx, ran):
     return f"only {','.join(ran) or 'none'}" + (f", {ctx.limit} cases each" if ctx.limit else '')
 
-
-def _run_path(ctx, stage):
-    import os
-    base = os.path.join(ctx.root, f"{NAME}-{stage}")
-    runs = sorted(d for d in os.listdir(base) if not d.endswith('-repeat'))
-    return os.path.join(base, runs[-1])

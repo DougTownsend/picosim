@@ -3,8 +3,10 @@ Level 5 discovery from the command line (docs/level5-discovery.md).
 
     python3 -m picosim.discover <campaign> [--target openocd|gdb|standin] [--fresh] [--repeat]
                                            [--pins N,N] [--dry-run] [--limit N] [--chip-label L]
+    python3 -m picosim.discover encodings|timing|peripherals --offline   (facts again from the saved runs, no board)
     python3 -m picosim.discover check [--standin] [--run DIR] [--report FILE]
     python3 -m picosim.discover status [--standin]
+    python3 -m picosim.discover verify-raw            (the raw captures against raw_index.json, both copies)
     python3 -m picosim.discover backup-flash | restore-flash
     python3 -m picosim.discover compare-chips [--a chip1] [--b chip2]
 
@@ -28,7 +30,7 @@ def parser():
     ap = argparse.ArgumentParser(prog='python3 -m picosim.discover',
                                  description="Measure the real RP2040 for picosim's Level 5")
     ap.add_argument('command', choices=list(ORDER) + ['check', 'status', 'backup-flash', 'restore-flash',
-                                                      'compare-chips'])
+                                                      'compare-chips', 'verify-raw'])
     ap.add_argument('--target', choices=('openocd', 'gdb', 'standin'), default='openocd')
     ap.add_argument('--gdb', default='127.0.0.1:3333', help="host:port of a running GDB server (--target gdb)")
     ap.add_argument('--speed', type=int, default=5000, help="SWD clock in kHz")
@@ -49,6 +51,9 @@ def parser():
     ap.add_argument('--a', default='chip1')
     ap.add_argument('--b', default='chip2')
     ap.add_argument('--yes', action='store_true', help="flashed: don't ask before writing the flash")
+    ap.add_argument('--offline', action='store_true',
+                    help="encodings, timing, peripherals (SIO part): no board; rebuild the facts from the finished runs on disk "
+                         "(after picosim's comparison changed)")
     return ap
 
 
@@ -65,6 +70,8 @@ def main(argv=None):
         return cmd_check(a)
     if a.command == 'status':
         return cmd_status(a)
+    if a.command == 'verify-raw':
+        return cmd_verify_raw(a)
     if a.command == 'compare-chips':
         from .compare import compare_chips
         print(compare_chips(a.a, a.b, 'standin' if a.standin else 'openocd'))
@@ -88,6 +95,8 @@ def main(argv=None):
     if a.target != 'standin':
         flashguard.require_no_pending_restore()
     m = module(a.command)
+    if a.offline:
+        return cmd_offline(a)
     if a.dry_run:
         ctx = Context(None, a)
         n = 0
@@ -127,6 +136,32 @@ def run_campaign(a, t, log=print, progress=None, stop_flag=None, ask=None):
     return module(a.command).run(ctx)
 
 
+OFFLINE = ('encodings', 'timing', 'peripherals')   # from their raw records (peripherals: the SIO part only)
+
+
+def cmd_offline(a):
+    """Rebuild a campaign's facts from its finished runs on disk, comparing
+    them with today's picosim.  The board is never touched and the raw
+    records are not changed; the facts' provenance says it was rebuilt."""
+    from .campaign import Context, OfflineTarget, recorded_openocd
+    from .runner import RunError
+    if a.command not in OFFLINE:
+        print(f"--offline: {a.command} reads the chip through the debugger, so it needs the board "
+              f"(--offline works for {', '.join(OFFLINE)})")
+        return 2
+    if a.target == 'standin' or a.fresh or a.dry_run:
+        print("--offline rebuilds the chip's facts from disk; it does not go with --target standin, --fresh or --dry-run")
+        return 2
+    t = OfflineTarget(recorded_openocd())
+    print(t.description, flush=True)
+    try:
+        module(a.command).run(Context(t, a, log=lambda s: print(s, flush=True)))
+    except RunError as e:
+        print(f"stopped: {e}")
+        return 1
+    return 0
+
+
 def cmd_check(a):
     from . import check
     from .replay import HWFACTS
@@ -143,6 +178,19 @@ def cmd_check(a):
     c = res.counts
     print(f"{sum(c.values())} cases: {c['match']} match, {c['differs']} differ, {len(res.new)} kinds new")
     return 1 if res.new else 0
+
+
+def cmd_verify_raw(a):
+    """Every raw capture raw_index.json lists, in the cache and in its
+    backup copy, against its recorded SHA-256; and chip runs not indexed."""
+    from .facts import verify_raw, raw_backup_dir
+    r = verify_raw('standin' if a.standin else 'openocd')
+    print(f"{r['ok']} runs intact in the cache and in {raw_backup_dir()}")
+    for p in r['problems']:
+        print(f"  PROBLEM {p}")
+    for k in r['unindexed']:
+        print(f"  not indexed (no SHA-256, no backup): {k}")
+    return 1 if r['problems'] or r['unindexed'] else 0
 
 
 def cmd_status(a):

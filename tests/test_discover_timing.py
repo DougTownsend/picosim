@@ -14,7 +14,10 @@ from picosim.discover import runner as R
 from picosim.discover import safety as S
 from picosim.discover.cases import timing as D
 
-from tests.test_discover_peripherals import audit_writes, check_audit
+try:
+    from tests.test_discover_peripherals import audit_writes, check_audit
+except ImportError:                     # run from inside tests/
+    from test_discover_peripherals import audit_writes, check_audit
 
 try:
     from picosim.hwtest.standin import available

@@ -45,6 +45,20 @@ campaign can say which reading the chip follows:
     add_width   32 (default: ACCUMx_ADD adds the whole word) or 24 (only
                 bits 23:0, the field the SVD declares) or -24 (bits 23:0
                 sign-extended)
+    force_writeback
+                'internal' (default: the datasheet, "FORCE_MSB ... No effect
+                on the internal 32-bit datapath", so a POP writes back the
+                result without it) or 'bus' (a POP writes back the value the
+                bus shows, FORCE_MSB included)
+    blend_force 'shown' (default: lane 0's FORCE_MSB is ORed in under BLEND
+                too) or 'none' (under BLEND, lane 0 shows no FORCE_MSB)
+
+MEASURED_VARIANT is what chip1 does (campaign G, 2026-11-10): with it all
+348 interpolator cases agree with the chip; with the datasheet reading 48
+differ, every one with a FORCE_MSB set.  46 need force_writeback='bus'
+(ACCUM after a POP has bits 29:28 set, e.g. ACCUM1 0x3000000B, and later
+PEEKs follow from it); 2, both INTERP0 with BLEND and lane 0's FORCE_MSB
+set, also need blend_force='none' (only those 2 cases test it).
 
 The divider (div_model): unsigned results are p // q and p % q; signed
 results truncate toward zero, the remainder taking the dividend's sign.
@@ -78,8 +92,11 @@ OVERF0, OVERF1, OVERF = 1 << 23, 1 << 24, 1 << 25
 # writable bits (sio.h *_BITS without the read-only OVERF flags)
 CTRL_WRITABLE = {(0, 0): 0x003FFFFF, (0, 1): 0x001FFFFF, (1, 0): 0x005FFFFF, (1, 1): 0x001FFFFF}
 
-DEFAULT_VARIANT = {'shift': 'logical', 'blend_lane0': 'alpha', 'overf': 'lane', 'add_width': 32}
-ALTERNATIVES = {'shift': ('rotate',), 'blend_lane0': ('sm0',), 'overf': ('accum',), 'add_width': (24, -24)}
+DEFAULT_VARIANT = {'shift': 'logical', 'blend_lane0': 'alpha', 'overf': 'lane', 'add_width': 32,
+                   'force_writeback': 'internal', 'blend_force': 'shown'}
+ALTERNATIVES = {'shift': ('rotate',), 'blend_lane0': ('sm0',), 'overf': ('accum',), 'add_width': (24, -24),
+                'force_writeback': ('bus',), 'blend_force': ('none',)}
+MEASURED_VARIANT = {'force_writeback': 'bus', 'blend_force': 'none'}     # chip1, campaign G (see above)
 
 
 def s32(v):
@@ -178,6 +195,8 @@ class Interp:
         return {'lane0': r0 & M32, 'lane1': r1 & M32, 'full': full & M32, 'sm0': sm0, 'sm1': sm1}
 
     def _shown(self, lane, value):
+        if lane == 0 and self.num == 0 and self.ctrl[0] & BLEND and self.v['blend_force'] == 'none':
+            return value
         return value | ((self.ctrl[lane] >> FORCE_MSB) & 3) << 28
 
     def ctrl_read(self, lane):
@@ -196,8 +215,9 @@ class Interp:
         r = self.results()
         out = {'lane0': self._shown(0, r['lane0']), 'lane1': self._shown(1, r['lane1']), 'full': r['full']}
         c0, c1 = self.ctrl
-        self.accum = [r['lane1'] if c0 & CROSS_RESULT else r['lane0'],
-                      r['lane0'] if c1 & CROSS_RESULT else r['lane1']]
+        back = (out['lane0'], out['lane1']) if self.v['force_writeback'] == 'bus' else (r['lane0'], r['lane1'])
+        self.accum = [back[1] if c0 & CROSS_RESULT else back[0],
+                      back[0] if c1 & CROSS_RESULT else back[1]]
         return out
 
     def read(self, off):

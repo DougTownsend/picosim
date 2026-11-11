@@ -8,7 +8,10 @@ import time
 import unittest
 
 from picosim.server import IDLE_POLL
-from tests.test_friction import server, drive, EX
+try:
+    from tests.test_friction import server, drive, EX
+except ImportError:                     # run from inside tests/
+    from test_friction import server, drive, EX
 
 EXAMPLES = ['01_hello.s', '02_add.s', '03_count_loop.s', '04_memory.s', '05_blink_led.s',
             '07_function.s', '08_button_led.s']

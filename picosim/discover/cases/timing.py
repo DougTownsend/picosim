@@ -1360,13 +1360,6 @@ def _hook(t):
     release(t, IO_PADS)                                     # APB loads and stores reach IO_BANK0, PADS_BANK0
 
 
-def _run_path(ctx, stage):
-    import os
-    base = os.path.join(ctx.root, f"{NAME}-{stage}")
-    runs = sorted(d for d in os.listdir(base) if not d.endswith('-repeat'))
-    return os.path.join(base, runs[-1])
-
-
 def _replay_d1(ctx, recs, state, entries):
     """Run 0 of D1, one file per code site and alignment (each with its own
     calibration first, which `check` takes as the overhead)."""
@@ -1427,7 +1420,6 @@ def run(ctx):
                             [(c, r) for c, r in recs if c['id'] // ID_RUN == 0], state, ctx.kind)
         timing_facts += fs
         diffs += n
-        FX.record_raw(_run_path(ctx, s), ctx.kind)
         ctx.log(f"{s}: {len(rows)} rows, {n} differ from picosim's prediction")
     if 'D5' in stages:
         ctx.status(NAME, 'partial', step='D5')
@@ -1452,7 +1444,6 @@ def run(ctx):
                                         sum(1 for x in cmp_rows if x['polling_off'] is not None and not x['same']),
                                         source='derived', of=len(cmp_rows),
                                         note='forms whose cycles with OpenOCD polling on differ from D1 (polling off)'))
-            FX.record_raw(_run_path(ctx, 'D5'), ctx.kind)
     paths = {}
     if timing_facts:
         prov = ctx.provenance(state0, campaign='D', runs_per_case=RUNS)
@@ -1474,7 +1465,6 @@ def run(ctx):
             extra = {'standin_guesses': {'entry': standin.ENTRY_CYCLES, 'exit': standin.EXIT_CYCLES}} \
                 if ctx.kind == 'standin' else {}
             paths['exceptions'] = ctx.write_facts('exceptions.json', 'exceptions', prov, fs, scenarios=table, **extra)
-            FX.record_raw(_run_path(ctx, 'D4'), ctx.kind)
     whole = set(stages) >= set(STAGES) and not ctx.limit
     part = f"only {','.join(stages)}" + (f", {ctx.limit} cases each" if ctx.limit else '')
     ctx.status(NAME, 'done' if whole else 'partial', step=None if whole else part,

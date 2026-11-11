@@ -20,7 +20,15 @@
   "runs": 1,
   "agreed": null,
   "target": "openocd",
-  "chip_label": "chip1"
+  "chip_label": "chip1",
+  "rebuilt_offline": {
+   "date": "2026-11-11 17:45:20",
+   "picosim": {
+    "commit": "96776657416f811f5b4647b2c70bcb76b0c15088",
+    "dirty": true
+   },
+   "note": "measured on the date above; compared with picosim again from the saved raw records, with no board"
+  }
  },
  "facts": [
   {
@@ -256,8 +264,22 @@
   },
   {
    "id": "sio.interp.variants_matched",
-   "value": {},
+   "value": {
+    "force_writeback=bus": 46,
+    "MEASURED_VARIANT": 48,
+    "blend_force=none": 2
+   },
    "source": "measured"
+  },
+  {
+   "id": "sio.interp.differences_from_measured_variant",
+   "value": 0,
+   "source": "derived",
+   "variant": {
+    "force_writeback": "bus",
+    "blend_force": "none"
+   },
+   "note": "interp_model.MEASURED_VARIANT: a POP writes back the value the bus shows (FORCE_MSB included); under BLEND lane 0 shows no FORCE_MSB"
   },
   {
    "id": "sio.interp.datasheet_examples_disagree",
@@ -6607,7 +6629,12 @@
   "match": 300,
   "differ": 48,
   "did_not_run": 0,
-  "variants": {}
+  "variants": {
+   "force_writeback=bus": 46,
+   "MEASURED_VARIANT": 48,
+   "blend_force=none": 2
+  },
+  "differ_from_measured_variant": 0
  },
  "interp_differences": [
   {
@@ -6632,7 +6659,10 @@
    "predicted": {
     "accum1_after": "0x0000000B"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 423,
@@ -6659,7 +6689,10 @@
     "accum0_after": "0x0000060B",
     "peek1_after": "0x000059D4"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 430,
@@ -6686,7 +6719,10 @@
     "accum0_after": "0x00000310",
     "peek0_after": "0x30000310"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 435,
@@ -6716,7 +6752,10 @@
     "pop": "0x30000000",
     "peek0_after": "0x30000000"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "blend_force=none",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 436,
@@ -6743,7 +6782,10 @@
     "accum0_after": "0xC78D869C",
     "peek0_after": "0xEA70F89C"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 445,
@@ -6767,7 +6809,10 @@
    "predicted": {
     "accum0_after": "0x00003A51"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 449,
@@ -6797,7 +6842,10 @@
     "accum1_after": "0x00026079",
     "peek1_after": "0x0000000D"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 453,
@@ -6827,7 +6875,10 @@
     "accum1_after": "0x00001CE4",
     "peek1_after": "0xB225B7EA"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 456,
@@ -6854,7 +6905,10 @@
     "accum0_after": "0x0516492A",
     "peek0_after": "0x1515812A"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 467,
@@ -6881,7 +6935,10 @@
     "accum1_after": "0xE0C9E236",
     "peek1_after": "0xF0C9E266"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 494,
@@ -6905,7 +6962,10 @@
    "predicted": {
     "accum0_after": "0x00000003"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 498,
@@ -6932,7 +6992,10 @@
     "accum0_after": "0x8202B429",
     "peek0_after": "0x92027829"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 499,
@@ -6959,7 +7022,10 @@
     "accum1_after": "0x00001CFD",
     "peek1_after": "0xFFFFFFFD"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 506,
@@ -6983,7 +7049,10 @@
    "predicted": {
     "accum1_after": "0x4D205719"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 517,
@@ -7010,7 +7079,10 @@
     "accum0_after": "0x00000021",
     "peek0_after": "0x1000001D"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 522,
@@ -7034,7 +7106,10 @@
    "predicted": {
     "accum0_after": "0x00000110"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 526,
@@ -7061,7 +7136,10 @@
     "accum1_after": "0x11E50633",
     "peek0_after": "0x23CA0A78"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 530,
@@ -7085,7 +7163,10 @@
    "predicted": {
     "accum1_after": "0x0000022D"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 535,
@@ -7109,7 +7190,10 @@
    "predicted": {
     "accum1_after": "0xA643727D"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 540,
@@ -7136,7 +7220,10 @@
     "peek0": "0x20000000",
     "peek0_after": "0x20000000"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "blend_force=none",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 541,
@@ -7163,7 +7250,10 @@
     "accum1_after": "0x000C0016",
     "peek1_after": "0x10000016"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 551,
@@ -7187,7 +7277,10 @@
    "predicted": {
     "accum0_after": "0x00001DD3"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 552,
@@ -7211,7 +7304,10 @@
    "predicted": {
     "accum1_after": "0x0000001D"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 561,
@@ -7238,7 +7334,10 @@
     "accum0_after": "0x00803560",
     "accum1_after": "0x00803560"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 579,
@@ -7262,7 +7361,10 @@
    "predicted": {
     "accum0_after": "0x0F7FFFF4"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 585,
@@ -7286,7 +7388,10 @@
    "predicted": {
     "accum1_after": "0x247AAE51"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 588,
@@ -7316,7 +7421,10 @@
     "accum1_after": "0x00000000",
     "peek1_after": "0xF3FC3BC9"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 597,
@@ -7343,7 +7451,10 @@
     "accum0_after": "0x000002CB",
     "peek0_after": "0x2000000B"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 601,
@@ -7367,7 +7478,10 @@
    "predicted": {
     "accum1_after": "0x00003D86"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 619,
@@ -7394,7 +7508,10 @@
     "accum0_after": "0x0BEDC6C6",
     "peek0_after": "0x37DB6F65"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 622,
@@ -7418,7 +7535,10 @@
    "predicted": {
     "accum0_after": "0xAA036674"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 637,
@@ -7442,7 +7562,10 @@
    "predicted": {
     "accum1_after": "0x00002F9E"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 638,
@@ -7466,7 +7589,10 @@
    "predicted": {
     "accum1_after": "0x5081A3A2"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 640,
@@ -7496,7 +7622,10 @@
     "accum1_after": "0x0000006F",
     "peek1_after": "0xFFFFFE4A"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 641,
@@ -7520,7 +7649,10 @@
    "predicted": {
     "accum0_after": "0xA7684316"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 645,
@@ -7544,7 +7676,10 @@
    "predicted": {
     "accum1_after": "0x00002D6D"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 651,
@@ -7574,7 +7709,10 @@
     "accum1_after": "0x2D8498F0",
     "peek1_after": "0x3D8418F0"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 652,
@@ -7601,7 +7739,10 @@
     "accum1_after": "0x911BF446",
     "peek1_after": "0xB11BEF46"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 660,
@@ -7625,7 +7766,10 @@
    "predicted": {
     "accum1_after": "0xC33FA62E"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 662,
@@ -7652,7 +7796,10 @@
     "accum0_after": "0x0000007E",
     "peek0_after": "0x1000007E"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 666,
@@ -7679,7 +7826,10 @@
     "accum0_after": "0x00005310",
     "peek1_after": "0x04142140"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 668,
@@ -7706,7 +7856,10 @@
     "accum1_after": "0x00000000",
     "peek1_after": "0x30000000"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 669,
@@ -7730,7 +7883,10 @@
    "predicted": {
     "accum0_after": "0x80FDFB06"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 678,
@@ -7754,7 +7910,10 @@
    "predicted": {
     "accum1_after": "0x59DE66A4"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 698,
@@ -7778,7 +7937,10 @@
    "predicted": {
     "accum0_after": "0x00000032"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 704,
@@ -7802,7 +7964,10 @@
    "predicted": {
     "accum1_after": "0x54DD4099"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 705,
@@ -7829,7 +7994,10 @@
     "accum0_after": "0xAA10A571",
     "peek0_after": "0xBA1B4671"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   },
   {
    "id": 714,
@@ -7853,7 +8021,10 @@
    "predicted": {
     "accum0_after": "0x1CA4C1EE"
    },
-   "matches_variant": []
+   "matches_variant": [
+    "force_writeback=bus",
+    "MEASURED_VARIANT"
+   ]
   }
  ],
  "interp_examples": [

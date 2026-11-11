@@ -20,7 +20,7 @@ taken for a measurement.
 | `peripherals/*.json` | G | SIO divider, interpolators, spinlocks, GPIO, SysTick (TIMER and UART from F) |
 | `chip_differences.json` | H | chip1 against chip2 |
 | `replay/*.bin.gz` + `.json` | B, D | The raw records `check` replays with no board (all of B1, 5 % of B2–B5) |
-| `raw_index.json` | all | SHA-256 of every raw capture file (kept in `~/.cache/picosim/discover/` and `~/picosim-hwfacts-raw/`) |
+| `raw_index.json` | all | Every agent run on the chip (finished or not): its files' SHA-256, batches done (kept in `~/.cache/picosim/discover/` and `~/picosim-hwfacts-raw/`; `python3 -m picosim.discover verify-raw` checks both) |
 | `known_differences.json` | — | Differences that are understood, each with a reason and a to-do |
 | `report.md` | — | The last `python3 -m picosim.discover check` |
 
@@ -31,3 +31,10 @@ how many runs there were and whether they agreed.
 
 `tests/test_hwfacts.py` replays `replay/` in picosim on every test run and
 fails on any difference not in `known_differences.json`.
+
+A facts file whose provenance has `rebuilt_offline` was compared with
+picosim again from the saved raw records (`--offline`, no board), after the
+comparison changed; its `date` is still when it was measured.
+`tests/test_hwfacts_integrity.py` checks that every file here passes the
+schema, that all of them come from one real chip, and that every replay
+matches its SHA-256 and names an indexed run.
