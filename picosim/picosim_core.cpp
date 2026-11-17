@@ -221,6 +221,42 @@ public:
         if (c[r] < 255) c[r]++;
     }
 
+    // ── live RP2040 cycle count (timing.py's m0plus machine) ─────────────────
+    // m0_set_table() (from timing.install) hands over one code per 16-bit
+    // encoding and the 32-bit rows: code = rule << 8 | n, rule 0 = no time
+    // (SVC, BKPT), 1 = n cycles, 2 = load/store (2, 1 to the SIO, plus the
+    // measured APB extras), 3 = multiply, 4 = B<cond> (1, 2 if taken).
+    // finish_rec() adds each completed instruction's cycles to m0_cycles.
+    bool     m0_ready = false;
+    uint64_t m0_cycles = 0;           // RP2040 cycles of the completed instructions
+    uint64_t m0_untimed = 0;          // completed instructions with no time (SVC, BKPT)
+    int      m0_last = -1;            // the last instruction's cycles (-1: untimed)
+    std::vector<uint16_t> m0_narrow;
+    std::vector<std::vector<uint32_t>> m0_wide;
+    int      m0_apb_load_extra = 0, m0_apb_store_extra = 0, m0_mul = 1;
+
+    uint16_t m0_code(uint16_t hw1, uint16_t hw2, bool wide) const {
+        if (!wide) return m0_narrow[hw1];
+        for (const auto& w : m0_wide)
+            if ((hw1 & w[0]) == w[1] && (hw2 & w[2]) == w[3]) return (uint16_t)w[4];
+        return 0;
+    }
+
+    // The cycles of the instruction in cur_rec, or -1 when it has no time.
+    int m0_insn_cycles(uint16_t hw1, uint16_t hw2, bool wide) const {
+        uint16_t code = m0_code(hw1, hw2, wide);
+        int n = code & 0xFF;
+        switch (code >> 8) {
+            case 1: return n;
+            case 2: return 2 - (cur_rec.reads[RG_SIO] + cur_rec.writes[RG_SIO])
+                          + m0_apb_load_extra * cur_rec.reads[RG_APB]
+                          + m0_apb_store_extra * cur_rec.writes[RG_APB];
+            case 3: return m0_mul;
+            case 4: return 1 + (cur_rec.cond_taken ? 1 : 0);
+            default: return -1;
+        }
+    }
+
     void begin_rec() {
         cur_rec = InsnRec{};
         cur_rec.addr = _insn_addr;
@@ -232,6 +268,11 @@ public:
         cur_rec.hw1 = hw1;
         cur_rec.hw2 = wide ? hw2 : 0;
         cur_rec.branched = regs[15] != _insn_addr + (wide ? 4u : 2u);
+        if (m0_ready) {
+            m0_last = m0_insn_cycles(hw1, hw2, wide);
+            if (m0_last < 0) m0_untimed++;
+            else m0_cycles += (uint64_t)m0_last;
+        }
         recent[recent_n % RECENT] = cur_rec;
         recent_n++;
         uint32_t slot = code_slot(_insn_addr);
@@ -2205,6 +2246,26 @@ PYBIND11_MODULE(_picosim_core, m) {
         .def_property_readonly("cycle_index", [](const CPUCore& s) { return s.in_insn ? (int)s.upc : 0; })
         .def_property_readonly("insn_total", [](const CPUCore& s) { return s.insn_total; })
         .def_readwrite("cycles", &CPUCore::cycles)
+        // ── live RP2040 cycle count (picosim/timing.py install) ───────────
+        .def("m0_set_table", [](CPUCore& s, const std::vector<uint16_t>& narrow,
+                                const std::vector<std::vector<uint32_t>>& wide,
+                                int load_extra, int store_extra, int mul) {
+            if (narrow.size() != 0x10000) throw std::invalid_argument("m0_set_table: 65536 codes expected");
+            for (const auto& w : wide)
+                if (w.size() != 5) throw std::invalid_argument("m0_set_table: wide rows are [m1, v1, m2, v2, code]");
+            s.m0_narrow = narrow; s.m0_wide = wide;
+            s.m0_apb_load_extra = load_extra; s.m0_apb_store_extra = store_extra; s.m0_mul = mul;
+            s.m0_ready = true;
+        }, "Turn on the live RP2040 cycle count (timing.install calls this)")
+        .def_readwrite("m0_cycles", &CPUCore::m0_cycles,
+             "RP2040 (Cortex-M0+) cycles of the instructions completed so far (timing.py's m0plus rules)")
+        .def_readwrite("m0_untimed", &CPUCore::m0_untimed,
+             "Completed instructions with no RP2040 time (SVC, BKPT)")
+        .def_readonly("m0_last", &CPUCore::m0_last, "The last completed instruction's RP2040 cycles (-1: untimed)")
+        .def_readonly("m0_ready", &CPUCore::m0_ready)
+        .def("m0_code", [](const CPUCore& s, uint16_t hw1, uint16_t hw2) {
+            return s.m0_code(hw1, hw2, CPUCore::is_32bit_thumb(hw1));
+        }, "The timing code the core uses for an encoding (rule << 8 | n)")
         .def_property_readonly("datapath", [](const CPUCore& s) {
             py::dict d;
             d["MAR"] = s.MAR; d["MDR"] = s.MDR; d["IR"] = s.IR; d["IR2"] = s.IR2;

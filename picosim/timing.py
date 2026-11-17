@@ -70,6 +70,19 @@ def is_wide(hw1):
     return (hw1 >> 11) in (0x1D, 0x1E, 0x1F)
 
 
+# The 32-bit rows of Table 81, as data: (hw1 mask, hw1 value, hw2 mask, hw2
+# value, row).  pico_row() and the core's live counter (m0_table) both read
+# this list, so they cannot disagree.
+WIDE_ROWS = (
+    (0xF800, 0xF000, 0xD000, 0xD000, ('call/return', 'BL <label>', 'fixed', 3, True)),
+    (0xFFFF, 0xF3BF, 0xFFF0, 0x8F40, ('system', 'DSB', 'fixed', 3, False)),
+    (0xFFFF, 0xF3BF, 0xFFF0, 0x8F50, ('system', 'DMB', 'fixed', 3, False)),
+    (0xFFFF, 0xF3BF, 0xFFF0, 0x8F60, ('system', 'ISB', 'fixed', 3, False)),
+    (0xFFFF, 0xF3EF, 0xF000, 0x8000, ('system', 'MRS Rd, <specreg>', 'fixed', 3, False)),
+    (0xFFF0, 0xF380, 0xFF00, 0x8800, ('system', 'MSR <specreg>, Rn', 'fixed', 3, False)),
+)
+
+
 @lru_cache(maxsize=None)
 def pico_row(hw1, hw2=0):
     """Classify an encoding by its row in RP2040 datasheet Table 81.
@@ -84,14 +97,9 @@ def pico_row(hw1, hw2=0):
       pc_write the instruction always writes the PC (so a pipeline refills)
     """
     if is_wide(hw1):
-        if (hw1 & 0xF800) == 0xF000 and (hw2 & 0xD000) == 0xD000:
-            return ('call/return', 'BL <label>', 'fixed', 3, True)
-        if hw1 == 0xF3BF and (hw2 & 0xFF00) == 0x8F00 and 4 <= (hw2 >> 4) & 0xF <= 6:
-            return ('system', ('DSB', 'DMB', 'ISB')[((hw2 >> 4) & 0xF) - 4], 'fixed', 3, False)
-        if hw1 == 0xF3EF and (hw2 & 0xF000) == 0x8000:
-            return ('system', 'MRS Rd, <specreg>', 'fixed', 3, False)
-        if (hw1 & 0xFFF0) == 0xF380 and (hw2 & 0xFF00) == 0x8800:
-            return ('system', 'MSR <specreg>, Rn', 'fixed', 3, False)
+        for m1, v1, m2, v2, row in WIDE_ROWS:
+            if (hw1 & m1) == v1 and (hw2 & m2) == v2:
+                return row
         return ('not ARMv6-M', 'not a Cortex-M0+ instruction', None, 0, False)
     top5, top4 = hw1 >> 11, hw1 >> 12
     top6, top7, top8 = hw1 >> 10, hw1 >> 9, hw1 >> 8
@@ -251,6 +259,39 @@ def cycles(machine, hw1, hw2, e, mul_cycles=1, wait=0):
     if machine == 'pipe3':
         t += refills(hw1, hw2, e)     # one more stage to refill per taken branch
     return t
+
+
+# ── the core's live RP2040 cycle counter ────────────────────────────────────
+# CPUCore.m0_cycles counts the m0plus cycles of every instruction as it
+# completes, with exactly the rules of cycles() above: install() hands the
+# core this module's table (one code per 16-bit encoding, the 32-bit rows of
+# WIDE_ROWS) and the measured APB extras.  A code is rule << 8 | n.
+# Instructions with no time (SVC, BKPT) add nothing and are counted in
+# CPUCore.m0_untimed instead.  Like Table 81, it assumes zero wait states:
+# code fetched from flash through the XIP cache is counted as if it hit.
+
+RULE_CODES = {None: 0, 'fixed': 1, 'ldst': 2, 'mul': 3, 'bcond': 4}
+
+
+def _code(row):
+    group, name, rule, n, pc_write = row
+    return RULE_CODES[rule] << 8 | (n & 0xFF)
+
+
+@lru_cache(maxsize=None)
+def m0_table():
+    """(narrow, wide): the codes for every 16-bit encoding (0 for the first
+    halfword of a 32-bit one), and [m1, v1, m2, v2, code] per WIDE_ROWS row."""
+    narrow = tuple(0 if is_wide(h) else _code(pico_row(h)) for h in range(0x10000))
+    wide = tuple((m1, v1, m2, v2, _code(row)) for m1, v1, m2, v2, row in WIDE_ROWS)
+    return narrow, wide
+
+
+def install(core, mul_cycles=1):
+    """Turn on core.m0_cycles (the RP2040 model's live cycle count)."""
+    narrow, wide = m0_table()
+    core.m0_set_table(list(narrow), [list(w) for w in wide],
+                      APB_LOAD_EXTRA, APB_STORE_EXTRA, mul_cycles)
 
 
 def refills(hw1, hw2, e):
