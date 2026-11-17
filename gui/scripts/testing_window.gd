@@ -58,6 +58,7 @@ var btn_camp_run: Button
 var btn_camp_resume: Button
 var btn_camp_stop: Button
 var btn_camp_flash: Button
+var repeat_check: CheckBox            # --repeat: each stage a second time, batches reordered, and compared
 var camp_note: RichTextLabel
 var flash_dialog: ConfirmationDialog
 var flash_text: RichTextLabel
@@ -340,6 +341,12 @@ func _build_campaign_bar() -> Control:
 	btn_camp_flash = _button("Flash backup…", "Campaign F writes the board's flash: see the backup and restore steps, back the flash up, or put it back", _open_flash_dialog)
 	for b in [btn_camp_run, btn_camp_resume, btn_camp_stop, btn_camp_flash]:
 		camp_bar.add_child(b)
+	repeat_check = CheckBox.new()
+	repeat_check.text = "Run twice"
+	repeat_check.tooltip_text = ("Run and Resume run each stage a second time with its batches in another order, " +
+		"and compare the two (the command line's --repeat). Twice the board time; the facts say whether the runs agreed.")
+	repeat_check.focus_mode = Control.FOCUS_NONE
+	camp_bar.add_child(repeat_check)
 	camp_note = _rich()
 	camp_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	camp_note.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -1339,6 +1346,8 @@ func _update_campaign_controls() -> void:
 	btn_camp_resume.disabled = not can or r.get("state", "") != "partial"
 	btn_camp_stop.disabled = not busy or camp_running == ""
 	btn_camp_flash.visible = name == "flashed" or flash.get("pending_restore", false)
+	repeat_check.visible = r.get("agent_based", false) and name != "flashed" and name != "fuzz"
+	repeat_check.disabled = busy
 	btn_camp_run.tooltip_text = "Run this campaign from the start (the command line's --fresh) on the chip you are connected to." if connected else "Connect to a chip (or the stand-in) first."
 
 
@@ -1382,7 +1391,10 @@ func _camp_send_run(name: String, fresh: bool, confirmed: bool) -> void:
 		fresh = _flash_fresh
 	camp_msg.erase(name)
 	_camp_note("Starting…", "accent")
-	Backend.send("hw_discover_run", {"campaign": name, "fresh": fresh, "confirmed": confirmed})
+	var extra := []
+	if repeat_check.visible and repeat_check.button_pressed:
+		extra.append("--repeat")
+	Backend.send("hw_discover_run", {"campaign": name, "fresh": fresh, "confirmed": confirmed, "extra": extra})
 	status["busy"] = true
 	_update_controls()
 

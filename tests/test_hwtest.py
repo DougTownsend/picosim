@@ -234,6 +234,7 @@ class StandInTest(unittest.TestCase):
         def corrupt(chip, pc):
             # every pin but the test's reads high on this "board"
             chip.gpio._ext = [True if i not in (21, 22) else None for i in range(30)]
+            chip.gpio._update()                  # what set_external does after each pin
         self._sabotage(corrupt)
         L = Lockstep(self.t, src)
         s = L.run()

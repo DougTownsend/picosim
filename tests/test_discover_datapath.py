@@ -364,6 +364,67 @@ class RepeatUnsetMemoryTest(unittest.TestCase):
             shutil.rmtree(tmp)
 
 
+class PreflightTest(unittest.TestCase):
+    """preflight says what a Resume will do with the runs on disk, the way
+    Context.stage decides, and finds an OpenOCD left running."""
+
+    def setUp(self):
+        from picosim.discover.build import agent
+        self.tmp = tempfile.mkdtemp()
+        self.cases = [R.make_case(i, h(0x1888 + i % 7), regs=[i, 2 * i]) for i in range(10)]
+        lay = F.LAYOUTS['hi']
+        self.sites = [(lay['SLED'], lay['SLED'] + lay['SLED_SIZE'])]
+        self.batches = R.plan([dict(c) for c in self.cases], lay, self.sites, 4)
+        self.sha = agent('hi').sha1
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def run_dir(self, rid, done, digest=None, agent=None):
+        path = os.path.join(self.tmp, 'x-S1', rid)
+        os.makedirs(path)
+        with open(os.path.join(path, 'state.json'), 'w') as f:
+            json.dump({'layout': 'hi', 'sites': [list(x) for x in self.sites], 'max_cases': 4,
+                       'batch_sizes': [len(b) for b in self.batches],
+                       'cases_digest': digest or R._digest(self.batches), 'agent': agent or self.sha,
+                       'done': list(range(done)), 'n_batches': len(self.batches), 'n_cases': 10}, f)
+
+    def plan(self):
+        from picosim.discover.preflight import stage_plan
+        return stage_plan(os.path.join(self.tmp, 'x-S1'), self.cases)
+
+    def test_not_run(self):
+        self.assertEqual(self.plan()[0], 'not run')
+
+    def test_reuse_a_finished_run(self):
+        self.run_dir('20260101-000000', 3)
+        self.assertEqual(self.plan()[0], 'reuse')
+
+    def test_resume_the_newest_unfinished_run(self):
+        self.run_dir('20260101-000000', 3)
+        self.run_dir('20260102-000000', 1)
+        v, text = self.plan()
+        self.assertEqual(v, 'resume')
+        self.assertIn('20260102-000000 at batch 2 of 3', text)
+
+    def test_changed_cases_or_agent_start_new(self):
+        self.run_dir('20260101-000000', 2, digest='0' * 40)
+        self.run_dir('20260102-000000', 1, agent='f' * 40)
+        v, text = self.plan()
+        self.assertEqual(v, 'new')
+        self.assertIn('cases changed', text)
+        self.assertIn('agent changed', text)
+
+    def test_openocd_left_running(self):
+        from picosim.discover import preflight as P
+        ps = ("  73314 Thu Nov  5 15:44:40 2026     /opt/homebrew/bin/openocd -c set USE_CORE 0\n"
+              "  500 Wed Nov 11 18:00:00 2026     /usr/bin/python3 -m picosim.server\n")
+        with mock.patch.object(P.subprocess, 'run', return_value=SimpleNamespace(stdout=ps)):
+            procs = P.openocd_processes()
+        self.assertEqual([p[0] for p in procs], [73314])
+        self.assertEqual(procs[0][1], 'Thu Nov 5 15:44:40 2026')
+
+
 class WindowComparisonTest(unittest.TestCase):
     """What the Testing window lists as a difference (overview.differences)."""
 

@@ -102,13 +102,14 @@ class FakePicotool:
     def __call__(self, args, timeout):
         self.calls.append(list(args))
         if args[0] == 'save':
-            assert args[1] == '--all' and args[3:] == ['-t', 'bin'], args
+            assert args[1:4] == ['--range', '0x10000000', f'0x{0x10000000 + len(self.ocd.flash):08x}'] \
+                and args[5:] == ['-t', 'bin'], args
             data = bytes(self.ocd.flash)
             if self.corrupt_saves and self.corrupt_saves.pop(0):
                 data = _corrupt(data)
-            with open(args[2], 'wb') as f:
+            with open(args[4], 'wb') as f:
                 f.write(data)
-            return 0, f"Saving file: [==============================]  100%\nWrote {len(data)} bytes to {args[2]}\n"
+            return 0, f"Saving file: [==============================]  100%\nWrote {len(data)} bytes to {args[4]}\n"
         if args[:2] == ['info', '-d']:
             if self.uid is None:
                 return 0, "Device Information\n type:                   RP2040\n"

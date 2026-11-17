@@ -14,7 +14,8 @@ Backup (FlashGuard.backup(), before anything is written):
      it must be the RP2040's flash at 0x10000000 and exactly 2 MiB.
   2. Backup A over SWD: `flash read_bank 0 <file>`, the whole chip.
   3. Backup B over USB, an independent path: you put the TARGET Pico in
-     BOOTSEL mode, then `picotool save --all <file> -t bin` (the boot ROM
+     BOOTSEL mode, then `picotool save --range 0x10000000 0x10200000 <file>
+     -t bin` (the boot ROM
      reads the chip).
   4. A and B must have the same SHA-256.  If not, both are read once more;
      if they still differ, stop: nothing is written.
@@ -78,6 +79,7 @@ import sys
 import time
 from dataclasses import dataclass
 
+FLASH_XIP_BASE = 0x10000000           # the flash as the core and picotool address it
 FLASH_SIZE = 0x200000                 # 2 MiB: the Pico and Pico W's W25Q16
 XIP_BASE = 0x10000000
 
@@ -554,7 +556,13 @@ class FlashGuard:
     def _picotool_save(self, path, what):
         if os.path.exists(path):
             os.remove(path)            # scratch file in the work folder
-        self._picotool(['save', '--all', os.path.abspath(path), '-t', 'bin'], f"saving the flash ({what})")
+        # An explicit range, not --all: picotool 2.x on a board whose flash it
+        # cannot size ("Cannot determine the flash size", 2026-11-12) refuses
+        # --all.  The size is the one identify() checked through OpenOCD; the
+        # length check below still refuses anything short.
+        end = FLASH_XIP_BASE + self.expected_size
+        self._picotool(['save', '--range', f'0x{FLASH_XIP_BASE:08x}', f'0x{end:08x}',
+                        os.path.abspath(path), '-t', 'bin'], f"saving the flash ({what})")
         if not os.path.exists(path):
             raise FlashGuardError(f"picotool reported success but wrote no file ({what}).")
         data = _read(path)
