@@ -7,16 +7,16 @@
    "cpuid": "0x410CC601",
    "rom_version": 3
   },
-  "date": "2026-11-10 14:17:36",
+  "date": "2026-11-12 15:52:46",
   "openocd": "Open On-Chip Debugger 0.12.0",
   "swd_khz": 5000,
   "picosim": {
-   "commit": "73db057219678bcfda9b500c1df6b957820ccf51",
+   "commit": "06a9f61f3461da1f688d92dfa9fb72869b1616ec",
    "dirty": true
   },
   "agent": "ddc1370363c94c44fa27ca70211ce320015137ad",
   "campaign": "E",
-  "run_id": "20261110-141730",
+  "run_id": "20261112-155239",
   "runs": 1,
   "agreed": null,
   "target": "openocd",
@@ -25,7 +25,7 @@
  "facts": [
   {
    "id": "fuzz.blocks",
-   "value": 1000,
+   "value": 86000,
    "source": "measured"
   },
   {
@@ -35,5 +35,5 @@
   }
  ],
  "differences": [],
- "rounds": 1
+ "rounds": 86
 }

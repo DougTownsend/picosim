@@ -888,6 +888,19 @@ Found on the board (2026-11-10, campaign C's write masks):
     run on 11 Nov was a Run, which set B2's finished run and B3's 60 batches
     aside (they were not lost: a Resume uses them). Run on a partial or done
     campaign now asks, and offers Resume.
+  - `python3 -m picosim.discover preflight` (no board) now does the
+    checks below every time: an OpenOCD already running (it found the one
+    from 5 Nov, pid 73314), a pending flash restore, openocd/picotool,
+    `verify-raw`, and for every stage what a Resume will do (reuse, resume
+    at batch n, or a new run because the cases or agent changed). The
+    window has **Run twice** (`--repeat`) beside Run and Resume.
+  - Stand-in runs with today's code: B5 in full (131,902 cases, 19 MRS/MSR
+    differences: MSP/PSP = proposal 1, should-be bits and reserved SYSm,
+    Unicorn quirks) and a 4,314-case sample of B4 (BX/BLX to an even
+    address = proposal 2; Unicorn faults ADD PC,PC at the instruction where
+    the chip branched). Both ran, saved and compared end to end. B3 in full
+    takes about 6 h on the stand-in (its 4 KB window is refilled per case),
+    so the chip's 39,240 B3 cases stand for it.
   - Before the next board session (checked against today's code): a Resume
     of B carries on B1's 11 Nov run (17 batches), reuses B2, carries on B3
     at batch 60, then runs B4 and B5; the case lists and the agent match
@@ -905,29 +918,66 @@ Proposed for S19 (nothing changed in picosim yet; each waits for the
 chip's data and your approval, as S19 says):
 1. picosim has one SP: MSR MSP changes the SP in use. The chip has MSP and
    PSP (Thread mode on PSP when CONTROL.SPSEL = 1).
+   **Decided 2026-11-12: build in Stage 4, with exception entry and return**
+   (the stacking, EXC_RETURN and Handler-on-MSP rules are what PSP is for;
+   Stage 5 then makes it per core). Until then B5's MSP/PSP cases stay
+   known differences.
 2. picosim faults at a BX/BLX/POP to an even address, at the branch; the
    chip completes the branch and faults (INVSTATE) at the target.
+   **Decided 2026-11-12: match the chip as closely as possible, built
+   after campaign B finishes; explain it in the guide** (B4 is these cases; rebuilding the core mid-run replaces the
+   loaded module). The branch completes and picosim stops at the target;
+   the message still names the bad branch (line, register, value).
+   Stage 4 turns the stop into a real HardFault entry.
 3. GPIO details picosim does not model: INOVER (invert/force) in GPIO_IN,
    IO_BANK0 GPIOn_STATUS and INTR0–3, the 2-cycle input synchroniser and
    the pull's rise time, SYSCFG PROC_IN_SYNC_BYPASS, and the bus keeper
    (pull-up and pull-down together).
+   **Decided 2026-11-12: implement as much as possible**, interactive and easy
+   to learn from: INOVER, STATUS, INTR0–3 (the flags now, so programs can
+   poll edges; the interrupt itself in Stage 4), the synchroniser and
+   bypass, the pull's rise time (measured, with a note that it depends on
+   the board), and the bus keeper. Where depth must be prioritised, go deep
+   on one or two and show the rest more simply.
+   **Built 2026-11-12 (picosim/gpio.py, tests/test_gpio_fidelity.py):**
+   INOVER, STATUS, INTR0–3 and the PROC0/PROC1/DORMANT INTE/INTF/INTS,
+   the pad's IE and OD bits, SWCLK/SWD pads and VOLTAGE_SELECT read back,
+   SYSCFG stored, the floating pin and the bus keeper holding the last
+   level; every G table (pulls, INOVER, STATUS/INTR through the debugger,
+   the overrides) reproduced from hwfacts/peripherals/gpio.json. Found in
+   G's data: INTR follows IRQOVER(INFROMPAD), not INOVER.
+   **Pull and synchroniser timing:** the model runs on the core's new live
+   RP2040 cycle count (CPUCore.m0_cycles, from timing.py's own table,
+   checked against all 3,658 D replay cases: 0 differences). Its numbers
+   (gpio.PULL_RISE_CYCLES, PULL_FALL_CYCLES, SYNC_CYCLES) wait for
+   campaign F: G's gpio-sync ran at the reset clock (ROSC, unmeasured), so
+   its 20 NOPs cannot be turned into cycles at 125 MHz. F's pull sweep was
+   widened (0–8000 cycles coarse, then 1-cycle steps around each edge, 3
+   repeats, interrupts masked; `wait_cycles` checked exact by
+   tests/test_pull_latency_code.py).
 4. SIO blocks picosim does not have: the divider (8-cycle result,
    DIRTY/READY), the interpolators, the spinlocks and FIFO_ST. The
    interpolators should follow `interp_model.MEASURED_VARIANT` (G: 348 of
    348 cases), not the datasheet's reading (300 of 348).
+   **Decided 2026-11-12: Stage 4.**
 5. SysTick in picosim's own core (now only in the stand-in), with
    COUNTFLAG cleared by a read, RVR = 0 and the 24-bit masks as G measures
    them.
+   **Decided 2026-11-12: Stage 4.**
 6. Whatever D, F and G measure that differs from `timing.py` (Table 81,
    with APB loads 4 and stores 5 already measured): "measured" notes in
    `timing.py` and `docs/cycles.md`, the textbook machine unchanged (R5).
+   **Decided 2026-11-12: yes; every note must say exactly what was
+   measured, from where to where.**
 7. CPS with its should-be bits wrong (0xB660–0xB67F except 0xB662/0xB672):
    picosim stops with "Undefined instruction … not a Cortex-M0+
    instruction". The chip runs it as CPSIE/CPSID i (B1, measured). Keep
    stopping (GNU as never emits these), but say the encoding is
    UNPREDICTABLE and what the Pico does.
+   **Decided 2026-11-12: yes.**
 8. Empty register lists (POP {}, LDM Rn!,{}, STM Rn!,{}): picosim does
    nothing; the chip loads PC from [SP]/[Rn] (POP, LDM) or adds 4 to Rn
    (STM). Stop with "UNPREDICTABLE: empty register list" (GNU as rejects
    an empty list, so only hand-made data reaches it). PUSH {} already
    matches.
+   **Decided 2026-11-12: yes.**
