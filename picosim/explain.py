@@ -313,13 +313,11 @@ class Explainer:
         c.regs = list(core.regs)
         c.N, c.Z, c.C, c.V = core.N, core.Z, core.C, core.V
         c.PRIMASK, c.CONTROL, c.PSP = core.PRIMASK, core.CONTROL, core.PSP
+        c.m0_cycles = core.m0_cycles          # the copy's GPIO runs on the same time
         c.halted = False
         g = sp.cpu.gpio
         if g is not None and gpio is not None:
-            for k in ('_oe', '_out', '_pue', '_pde', '_resets', '_resets_done'):
-                setattr(g, k, getattr(gpio, k))
-            g._ext = list(gpio._ext)
-            g._ctrl = list(gpio._ctrl)
+            g.copy_from(gpio)
         out = []
         keys = list(keys)
 

@@ -199,6 +199,8 @@ def _build_cpu(memory, os_entry, asm_map, sym_map, trace=False):
     from .gpio import GPIO
     cpu = CPU(Memory(memory), os_entry, asm_map, sym_map, trace=trace)
     gpio = GPIO()
+    core = cpu._core
+    gpio.clock = lambda: core.m0_cycles    # pulls and the synchroniser run on RP2040 time
     cpu.add_peripheral(gpio)
     cpu.gpio = gpio
     return cpu

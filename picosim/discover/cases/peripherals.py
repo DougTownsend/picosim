@@ -237,6 +237,17 @@ class Code:
         name = f"_delay{len(self.hw)}"
         return self.movs(reg, n).label(name).subs_i(reg, 1).bne(name)
 
+    def wait_cycles(self, reg, d):
+        """Exactly d cycles (code and literal in SRAM, zero wait states; the
+        RP2040 timing campaign D confirmed): d NOPs below 5, else
+        ldr reg, =q (2) + q x (subs; bne) (3q - 1: the last bne is not
+        taken) + 0-2 NOPs, q = (d - 1) // 3."""
+        if d < 5:
+            return self.nop(d)
+        q, r = divmod(d - 1, 3)
+        name = f"_wait{len(self.hw)}"
+        return self.ldr_lit(reg, q).label(name).subs_i(reg, 1).bne(name).nop(r)
+
     def ldr_lit(self, rt, value):
         self.known[rt] = value & M32
         self.fix.append((len(self.hw), 'lit', rt, value & M32))
@@ -1286,11 +1297,11 @@ NOT_MODELLED = {
     'interpolators': 'not modelled (no INTERP0/1 registers)',
     'spinlocks': 'not modelled (no SPINLOCKn / SPINLOCK_ST)',
     'fifo': 'not modelled (no FIFO_ST/FIFO_RD/FIFO_WR; there is no core 1)',
-    'gpio_inover': 'not modelled: gpio.py stores INOVER in CTRL but GPIO_IN ignores it',
-    'gpio_status_intr': 'not modelled: IO_BANK0 GPIOn_STATUS and INTR0-3 read 0',
+    'gpio_inover': 'modelled: INOVER applies before GPIO_IN (gpio.py)',
+    'gpio_status_intr': 'modelled: STATUS, INTR0-3 and PROCn/DORMANT INTE/INTF/INTS (gpio.py); no interrupt reaches the core yet (Stage 4)',
     'gpio_input_synchroniser': 'not modelled: GPIO_IN changes at once (no 2-cycle synchroniser, no pull rise time)',
-    'syscfg': 'not modelled (no SYSCFG block)',
-    'pad_keeper': 'not modelled: pull-up and pull-down together read as a pull-up',
+    'syscfg': 'stored (gpio.py): PROC_IN_SYNC_BYPASS has no effect until the synchroniser is modelled',
+    'pad_keeper': 'modelled: pull-up and pull-down together hold the last level; a floating pin holds it too (gpio.py)',
     'systick': 'modelled in the stand-in (hwtest/standin.py), not in picosim\'s core',
 }
 
@@ -1425,7 +1436,8 @@ def run(ctx):
           FX.fact('gpio.synchroniser_cycles', sync_diff, unit='cycles',
                   prediction={'value': 2, 'from': 'datasheet §2.3.1.2 (2-flop synchroniser on GPIO inputs)'})]
     for k in ('gpio_inover', 'gpio_status_intr', 'gpio_input_synchroniser', 'syscfg', 'pad_keeper'):
-        fs.append(FX.fact(f"picosim.{k}", NOT_MODELLED[k], source='not modelled'))
+        fs.append(FX.fact(f"picosim.{k}", NOT_MODELLED[k],
+                          source='derived' if NOT_MODELLED[k].startswith(('modelled', 'stored')) else 'not modelled'))
     prov = ctx.provenance(states.get('gpio'), campaign='G')
     paths.append(ctx.write_facts('peripherals/gpio.json', 'peripherals-gpio', prov, fs, pulls=pulls,
                                  inover=inover, debugger=pad_rows, overrides=overrides, sync=sync, drive=drive,
@@ -1458,7 +1470,15 @@ U_DR, U_RSR, U_FR, U_IBRD, U_FBRD, U_LCR_H, U_CR, U_IFLS, U_IMSC, U_RIS, U_ICR =
 BAUDS = (('fast', 1, 0), ('115200 at 125 MHz', 67, 52))          # (name, IBRD, FBRD)
 TICKS = 1000
 ALARM_REPEATS = 16
-FLASHED_SYNC_K = range(0, 64)
+# The pull-change latency at the firmware's clocks (125 MHz): D = the cycles
+# waited between the PADS store and the GPIO_IN load.  A coarse sweep finds
+# each edge, then every D around it is run FLASHED_SYNC_REPEATS times.  At
+# reset clocks (campaign G's gpio-sync, ROSC) a rise took 20 NOPs, which at
+# 125 MHz is some hundreds of cycles, hence the range.
+FLASHED_SYNC_COARSE = range(0, 8001, 32)
+FLASHED_SYNC_FINE = 40                     # D from first_coarse - FINE to first_coarse + 2
+FLASHED_SYNC_REPEATS = 3
+FLASHED_SYNC_SETTLE = 250000               # cycles (2 ms at 125 MHz) between the rise and the fall
 
 
 def flashed_part(ctx, target, clocks=None):
@@ -1790,15 +1810,38 @@ def _flashed_uart(ctx, t, m, ratio):
     return res
 
 
+def pull_latency_code(d):
+    """The routine _flashed_gpio runs: pull-up, wait d cycles, read GPIO_IN
+    (r4); settle; pull-down, wait d cycles, read GPIO_IN (r5).
+    r0 = SIO, r1 = the pad, r2 = PAD_UP, r3 = PAD_DOWN.  From the start of
+    each STR to the start of its LDR: 5 (an APB store) + d cycles."""
+    c = Code(declare=False)
+    c.str(2, 1).wait_cycles(7, d).ldr(4, 0, GPIO_IN).wait_cycles(7, FLASHED_SYNC_SETTLE)
+    c.str(3, 1).wait_cycles(7, d).ldr(5, 0, GPIO_IN).wait_cycles(7, FLASHED_SYNC_SETTLE)
+    return c.bkpt(Mini.DONE).assemble()
+
+
 def _flashed_gpio(ctx, t, m, ratio):
-    """The pull-change latency on SYNC_PIN with the synchroniser on and
-    bypassed (SYSCFG is out of reset in the flashed state)."""
+    """The pull-change latency on SYNC_PIN at the firmware's clocks, with
+    the synchroniser on and bypassed (SYSCFG is out of reset in the flashed
+    state), to the cycle: see pull_latency_code."""
     pins = ctx.pins
     pad = pad_addr(SYNC_PIN)
     orig_pad, orig_bypass = _dr(t, pad), _dr(t, SYSCFG_BYPASS)
     if orig_pad is None:
         return {'error': 'PADS_BANK0 is not readable'}
     res, bad = {}, []
+
+    def once(d, rise, fall, ends):
+        _dw(t, pad, PAD_DOWN, pins)
+        r = m.call(pull_latency_code(d), {0: SIO, 1: pad, 2: PAD_UP, 3: PAD_DOWN}, timeout=2.0)
+        ends[r['end']] = ends.get(r['end'], 0) + 1
+        if r['end'] == 'done':
+            up = bool(r['regs'][4] >> SYNC_PIN & 1)
+            down = not r['regs'][5] >> SYNC_PIN & 1
+            rise[d] = up if rise.get(d, up) == up else None      # None: the repeats disagreed
+            fall[d] = down if fall.get(d, down) == down else None
+
     try:
         for bypass in (False, True):
             if bypass:
@@ -1806,27 +1849,35 @@ def _flashed_gpio(ctx, t, m, ratio):
                     res['bypass'] = {'value': None, 'error': 'SYSCFG is not readable'}
                     break
                 _dw(t, SYSCFG_BYPASS, orig_bypass | 1 << SYNC_PIN, pins)
-            rise, fall, ends = {}, {}, {}
-            for k in FLASHED_SYNC_K:
-                _dw(t, pad, PAD_DOWN, pins)
-                c = Code(declare=False)
-                c.str(2, 1).nop(k).ldr(4, 0, GPIO_IN).delay(7, 250).str(3, 1).nop(k).ldr(5, 0, GPIO_IN)
-                c.delay(7, 250).bkpt(Mini.DONE)
-                r = m.call(c.assemble(), {0: SIO, 1: pad, 2: PAD_UP, 3: PAD_DOWN}, timeout=1.0)
-                ends[r['end']] = ends.get(r['end'], 0) + 1
-                if r['end'] == 'done':
-                    rise[k] = bool(r['regs'][4] >> SYNC_PIN & 1)
-                    fall[k] = not r['regs'][5] >> SYNC_PIN & 1
+            ends, rise_c, fall_c = {}, {}, {}
+            for d in FLASHED_SYNC_COARSE:
+                once(d, rise_c, fall_c, ends)
+            rise, fall, edges = {}, {}, {}
+            for name, coarse in (('rise', rise_c), ('fall', fall_c)):
+                edges[name] = first_from(coarse)
+            fine = set()
+            for e in edges.values():
+                if e is not None:
+                    fine.update(range(max(0, e - FLASHED_SYNC_FINE), e + 3))
+            for _ in range(FLASHED_SYNC_REPEATS):
+                for d in sorted(fine):
+                    once(d, rise, fall, ends)
+            value = {'rise_seen_from_d': first_from(rise) if rise else edges['rise'],
+                     'fall_seen_from_d': first_from(fall) if fall else edges['fall'],
+                     'coarse_rise_from_d': edges['rise'], 'coarse_fall_from_d': edges['fall'],
+                     'unsteady_d': sorted(set(d for d, v in list(rise.items()) + list(fall.items()) if v is None)),
+                     'store_to_load_cycles': '5 + d', 'clock_ratio': ratio}
             res['bypass' if bypass else 'synchronised'] = {
-                'value': {'rise_seen_from_k': first_from(rise), 'fall_seen_from_k': first_from(fall)},
-                'ends': ends, 'rise': rise, 'fall': fall}
+                'value': value, 'ends': ends, 'rise': rise, 'fall': fall,
+                'coarse_rise': rise_c, 'coarse_fall': fall_c}
         a = res.get('synchronised', {}).get('value', {}) or {}
         b = res.get('bypass', {}).get('value', {}) or {}
-        if a.get('rise_seen_from_k') is not None and b.get('rise_seen_from_k') is not None:
-            d = a['rise_seen_from_k'] - b['rise_seen_from_k']
-            res['synchroniser_cycles'] = {'value': d, 'predicted': 2}
-            if d != 2:
-                bad.append('synchroniser cycles')
+        for edge in ('rise', 'fall'):
+            ka, kb = a.get(f'{edge}_seen_from_d'), b.get(f'{edge}_seen_from_d')
+            if ka is not None and kb is not None:
+                res[f'synchroniser_cycles_{edge}'] = {'value': ka - kb, 'predicted': 2}
+                if ka - kb != 2:
+                    bad.append(f'synchroniser cycles ({edge})')
     finally:
         try:
             _dw(t, pad, orig_pad, pins)
