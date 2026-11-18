@@ -312,13 +312,30 @@ class GPIO(MemoryBlock):
         """GPIO_IN's bit: INTOPERI through the processor's synchroniser."""
         return self._in_to_peri(i, now - SYNC_CYCLES if self._synced(i) else now)
 
+    def _fold(self, i, now):
+        """Fold pin i's changes that can no longer be looked at into _base.
+        Nothing looks further back than the synchroniser (GPIO_IN sees the
+        level SYNC_CYCLES ago; STATUS, INTR and the board view see it now)
+        and time only goes forward, so a change at or before
+        now - SYNC_CYCLES - 1 is history: the level at every time anything
+        will ask about is the same with it folded.  The one rule for both
+        _advance and _update, so a long run that never reads a GPIO
+        register keeps only the changes still on their way (PERF-01)."""
+        h = self._hist[i]
+        cut = now - SYNC_CYCLES - 1
+        n = 0
+        while n < len(h) and h[n][0] <= cut:
+            n += 1
+        if n:
+            self._base[i] = h[n - 1][1]
+            del h[:n]
+
     def _advance(self, now):
         """Latch the INTR edges of every change up to `now`, and fold the
         history that can no longer be looked at into _base."""
         for i in list(self._moving):
             h = self._hist[i]
-            while h and h[0][0] <= now - SYNC_CYCLES - 1:
-                self._base[i] = h.pop(0)[1]
+            self._fold(i, now)
             self._latch(i, now)
             if not h:
                 # Settled: GPIO_IN's cached bit was computed while the pin
@@ -337,6 +354,8 @@ class GPIO(MemoryBlock):
         now = self.clock()
         for i in range(NUM_PINS):
             h = self._hist[i]
+            if h:
+                self._fold(i, now)                   # keeps the history bounded (see _fold)
             self._latch(i, now)                      # what happened before this change
             level, delay = self._target(i)
             if h and h[-1][0] > now:                 # a change still on its way ...

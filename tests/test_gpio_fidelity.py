@@ -307,3 +307,85 @@ class PullTimingTest(unittest.TestCase):
         p = self.g.pin_states()[2]
         self.assertTrue(p['moving'])
         self.assertEqual(p['level'], 0)
+
+
+class LongRunTest(unittest.TestCase):
+    """PERF-01: a long run that only writes GPIO registers keeps only the
+    changes still on their way (gpio.py _fold), and what a program sees is
+    the same run in one batch or an instruction at a time."""
+
+    PROGRAM = """
+        .syntax unified
+        .cpu cortex-m0plus
+        .thumb
+main:
+        push    {r4, r5, r6, r7, lr}
+        ldr     r0, =0x40014004 + 8 * 15    @ GP15 CTRL: SIO
+        movs    r1, #5
+        str     r1, [r0]
+        ldr     r0, =0xD0000024             @ GPIO_OE_SET
+        ldr     r1, =1 << 15
+        str     r1, [r0]
+        ldr     r6, =results
+        movs    r7, #0
+loop:
+        ldr     r0, =0x4001C00C             @ GP2's pad: pull-up, then pull-down
+        movs    r1, #0x5A
+        str     r1, [r0]
+        mov     r3, r7                      @ wait r7 % 64 rounds
+        lsls    r3, r3, #26
+        lsrs    r3, r3, #26
+1:      subs    r3, #1
+        bpl     1b
+        ldr     r2, =0xD0000004
+        ldr     r4, [r2]                    @ GPIO_IN: has the rise arrived yet?
+        movs    r1, #0x56
+        str     r1, [r0]
+        ldr     r2, =0x400140F0
+        ldr     r5, [r2]                    @ INTR0: GP2's level and edges
+        str     r1, [r2]                    @ clear GP2's edges (0x56: bits 4 and 6 among others)
+        ldr     r2, =0xD000001C             @ GPIO_OUT_XOR: flip GP15
+        ldr     r1, =1 << 15
+        str     r1, [r2]
+        str     r4, [r6]
+        str     r5, [r6, #4]
+        adds    r6, #8
+        adds    r7, #1
+        cmp     r7, #150
+        bne     loop
+blink:
+        str     r1, [r2]                    @ then only writes, for a long time
+        b       blink
+        .data
+results: .space 8 * 150
+"""
+
+    def load(self):
+        import tempfile
+        from picosim.loader import load_program
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        path = os.path.join(d.name, 'long.s')
+        with open(path, 'w') as f:
+            f.write(self.PROGRAM)
+        return load_program(path)
+
+    def test_batched_and_stepped_runs_see_the_same(self):
+        prog = self.load()
+        a, b = prog.clone(), prog.clone()
+        a.cpu._core.run(40000)
+        for _ in range(40000):
+            b.cpu._core.step()
+        ca, cb = a.cpu._core, b.cpu._core
+        self.assertEqual(ca.m0_cycles, cb.m0_cycles)
+        self.assertEqual(ca.get_memory(), cb.get_memory())
+        seen = {ca.read32(0x20000000 + 8 * i) >> 2 & 1 for i in range(150)}
+        self.assertEqual(seen, {0, 1}, "some reads come before the rise, some after")
+        self.assertEqual(a.cpu.gpio.pin_states(), b.cpu.gpio.pin_states())
+
+    def test_history_stays_short(self):
+        prog = self.load()
+        c, g = prog.cpu._core, prog.cpu.gpio
+        for _ in range(20):
+            c.run(5000)                          # no GPIO reads in the blink loop
+            self.assertLessEqual(sum(len(h) for h in g._hist), 2)

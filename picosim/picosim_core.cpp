@@ -4,7 +4,8 @@
  * Exposes a CPUCore class to Python via pybind11.
  * Memory is the RP2040's: ROM at 0x00000000, XIP flash at 0x10000000
  * (picosim's OS, then the program's code and constants) and SRAM at
- * 0x20000000-0x20041FFF (its data and stack) live in C++; every other address is
+ * 0x20000000-0x20041FFF (its data and stack, also seen bank by bank at
+ * 0x21000000-0x2103FFFF) live in C++; every other address is
  * dispatched to Python callbacks for GPIO etc.
  * SVC syscalls are also dispatched to a Python callback.
  */
@@ -60,14 +61,40 @@ static const uint32_t FLASH_BASE = 0x10000000u, FLASH_SIZE = 0x200000u;  // 2 MB
 static const uint32_t SRAM_BASE  = 0x20000000u, SRAM_SIZE  = 0x42000u;   // 264 KB: data and the stack
 static const uint8_t  FLASH_ERASED = 0xFF;      // flash past the program reads as erased
 
-enum MemKind { MK_IO = 0, MK_ROM = 1, MK_FLASH = 2, MK_SRAM = 3 };
+// SRAM0-3, the four 64 KB banks, are word-striped at 0x20000000-0x2003FFFF
+// (RP2040 datasheet 2.6.2, Table 9): striped address A is bank (A >> 2) & 3,
+// word (A - 0x20000000) >> 4 of that bank.  The same banks are also seen
+// one after another, without striping, at 0x21000000 + bank * 0x10000 (the
+// SDK's SRAM0_BASE-SRAM3_BASE).  Measured on a Pico (hwfacts/memory_map.json,
+// "sram"): tags written there read back through the striped window by that
+// rule; 0x21040000 (past SRAM3) faults.  SRAM4 and SRAM5 (0x20040000,
+// 0x20041000) are not striped and have no second view.  picosim keeps one
+// copy of SRAM, in striped order, and maps the non-striped view onto it.
+static const uint32_t SRAM_NS_BASE = 0x21000000u, SRAM_NS_SIZE = 0x40000u;
+
+enum MemKind { MK_IO = 0, MK_ROM = 1, MK_FLASH = 2, MK_SRAM = 3, MK_SRAM_NS = 4 };
 
 static int mem_kind(uint32_t addr) {
     if (addr - ROM_BASE < ROM_SIZE) return MK_ROM;
     if (addr - FLASH_BASE < FLASH_SIZE) return MK_FLASH;
     if (addr - SRAM_BASE < SRAM_SIZE) return MK_SRAM;
+    if (addr - SRAM_NS_BASE < SRAM_NS_SIZE) return MK_SRAM_NS;
     return MK_IO;
 }
+
+// Where a byte of the non-striped view is in the striped SRAM: bank b's
+// word w (0x21000000 + b * 0x10000 + w * 4) is striped word w * 4 + b.
+static inline uint32_t ns_sram_offset(uint32_t addr) {
+    uint32_t o = addr - SRAM_NS_BASE;
+    return ((o & 0xFFFCu) << 2) | ((o >> 14) & 0xCu) | (o & 3u);
+}
+
+// Exceptions that stop the program, by what the stop means (picosim/cpu.py
+// stop_reason): HardwareFault, where the Pico would take a HardFault too;
+// TeachingStop, where the Pico would go on but picosim stops to show the
+// mistake (a store into ROM or flash).  Python sees both as RuntimeError.
+struct HardwareFault : std::runtime_error { using std::runtime_error::runtime_error; };
+struct TeachingStop  : std::runtime_error { using std::runtime_error::runtime_error; };
 
 // ── performance profiling ────────────────────────────────────────────────────
 // Data accesses (not instruction fetches) are classified by where they go on
@@ -374,6 +401,7 @@ public:
         switch (mem_kind(a)) {
         case MK_ROM:   return rom[a - ROM_BASE];
         case MK_SRAM:  return sram[a - SRAM_BASE];
+        case MK_SRAM_NS: return sram[ns_sram_offset(a)];
         case MK_FLASH: { uint32_t o = a - FLASH_BASE; return o < flash.size() ? flash[o] : FLASH_ERASED; }
         default:       return 0;
         }
@@ -383,6 +411,7 @@ public:
         switch (mem_kind(a)) {
         case MK_ROM:  rom[a - ROM_BASE] = v; break;
         case MK_SRAM: sram[a - SRAM_BASE] = v; break;
+        case MK_SRAM_NS: sram[ns_sram_offset(a)] = v; break;
         case MK_FLASH: {
             uint32_t o = a - FLASH_BASE;
             if (o >= flash.size()) flash.resize(o + 1, FLASH_ERASED);
@@ -393,12 +422,12 @@ public:
         }
     }
 
-    // [addr, addr + n) lies inside one of ROM, flash or SRAM.
+    // [addr, addr + n) lies inside one of ROM, flash, SRAM or SRAM's non-striped view.
     static bool in_one_memory(uint32_t addr, uint64_t n) {
         int k = mem_kind(addr);
         if (k == MK_IO || !n) return k != MK_IO;
-        uint64_t base = k == MK_ROM ? ROM_BASE : k == MK_FLASH ? FLASH_BASE : SRAM_BASE;
-        uint64_t size = k == MK_ROM ? ROM_SIZE : k == MK_FLASH ? FLASH_SIZE : SRAM_SIZE;
+        uint64_t base = k == MK_ROM ? ROM_BASE : k == MK_FLASH ? FLASH_BASE : k == MK_SRAM ? SRAM_BASE : SRAM_NS_BASE;
+        uint64_t size = k == MK_ROM ? ROM_SIZE : k == MK_FLASH ? FLASH_SIZE : k == MK_SRAM ? SRAM_SIZE : SRAM_NS_SIZE;
         return (uint64_t)addr + n <= base + size;
     }
 
@@ -427,7 +456,7 @@ public:
               "the store, so the value would silently not change"
             : "flash (0x10000000 and up), where the program's code and constants are. A store "
               "cannot write the Pico's flash, so the value would not be kept";
-        throw std::runtime_error(
+        throw TeachingStop(
             "Write to read-only memory: the instruction at " + hexs(_insn_addr) + " stores to " +
             hex32(addr) + ", in " + where + ". Put variables the program changes in .data "
             "(or .bss), which picosim places in SRAM at 0x20000000, as the Pico SDK does.");
@@ -438,7 +467,7 @@ public:
     void check_align(uint32_t addr, int width, bool write) const {
         if (!strict || !count_data || !(addr & (uint32_t)(width - 1))) return;
         const char* what = width == 4 ? "word (4 bytes)" : "halfword (2 bytes)";
-        throw std::runtime_error(
+        throw HardwareFault(
             "Unaligned access by the instruction at " + hexs(_insn_addr) + ": it " +
             (write ? "stores a " : "loads a ") + what + (write ? " to " : " from ") + hexs(addr) +
             ", which is not a multiple of " + std::to_string(width) + ". The Cortex-M0+ only does "
@@ -547,7 +576,7 @@ public:
     void invstate_stop() {
         if (invstate_pending && regs[15] == invstate_pc) {
             _insn_addr = regs[15];
-            throw std::runtime_error(invstate_msg);
+            throw HardwareFault(invstate_msg);
         }
         invstate_pending = false;
     }
@@ -692,7 +721,7 @@ public:
             uint16_t hw2 = fetch16();
             IR2 = hw2;
             uint32_t word = ((uint32_t)hw1 << 16) | hw2;
-            if (strict && !is_v6m32(hw1, hw2)) { regs[15] = _insn_addr; throw std::runtime_error(undefined_msg(word, true)); }
+            if (strict && !is_v6m32(hw1, hw2)) { regs[15] = _insn_addr; throw HardwareFault(undefined_msg(word, true)); }
             cycles += insn_cycle_count(hw1, hw2);
             count_data = true;
             try { exec32(_insn_addr, word); } catch (...) { count_data = false; regs[15] = _insn_addr; throw; }
@@ -867,7 +896,7 @@ public:
             } else if (op == 2) { // MOV high reg
                 reg_write(rdn, reg_read(rm));
             } else {              // BX / BLX
-                if (rm == 15 && strict) throw std::runtime_error(bx_pc_msg(dn));
+                if (rm == 15 && strict) throw HardwareFault(bx_pc_msg(dn));
                 uint32_t target = reg_read(rm);
                 uint32_t ret = regs[15] | 1;   // BLX: pc already advanced
                 bx_write_pc(target, std::string(dn ? "BLX " : "BX ") + REGN[rm] + " (= " + hexs(target) + ")");
@@ -994,7 +1023,7 @@ public:
                 uint32_t r = (((v >> 8) & 0xFF) | ((v & 0xFF) << 8));
                 reg_write(rd, u32((int32_t)(int16_t)(r & 0xFFFF)));
             } else {
-                throw std::runtime_error(undefined_msg(hw, false));
+                throw HardwareFault(undefined_msg(hw, false));
             }
             return;
         }
@@ -1091,7 +1120,7 @@ public:
         if (top4 == 0b1101) {
             int cond = (hw >> 8) & 0xF;
             if (cond == 0xF) { exec_svc(hw & 0xFF); return; }
-            if (cond == 0xE) throw std::runtime_error(undefined_msg(hw, false));
+            if (cond == 0xE) throw HardwareFault(undefined_msg(hw, false));
             int32_t offset = sign_extend(hw & 0xFF, 8) * 2;
             if (check_cond(cond)) {
                 cur_rec.cond_taken = true;
@@ -1108,7 +1137,7 @@ public:
         }
 
         (void)addr;
-        throw std::runtime_error(undefined_msg(hw, false));
+        throw HardwareFault(undefined_msg(hw, false));
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -1314,7 +1343,7 @@ public:
         }
 
         (void)addr;
-        throw std::runtime_error(undefined_msg(word, true));
+        throw HardwareFault(undefined_msg(word, true));
     }
 
     // ── system instructions (ARMv6-M's other 32-bit encodings) ─────────────
@@ -1742,7 +1771,7 @@ public:
         bool wide = is_32bit_thumb((uint16_t)IR);
         uint32_t word = (IR << 16) | IR2;
         if (wide && strict && !is_v6m32((uint16_t)IR, (uint16_t)IR2))
-            throw std::runtime_error(undefined_msg(word, true));
+            throw HardwareFault(undefined_msg(word, true));
         Plan p = wide ? classify32(word) : classify16((uint16_t)IR);
         switch (p.kind) {
         case K_NOP:   build_nop(ci, wide, word); break;
@@ -1781,7 +1810,7 @@ public:
             break;
         case K_UDF:
         default:
-            throw std::runtime_error(undefined_msg(wide ? word : IR, wide));
+            throw HardwareFault(undefined_msg(wide ? word : IR, wide));
         }
         if ((int)uops.size() != insn_total)
             throw std::logic_error("cycle plan mismatch at " + hexs(_insn_addr));
@@ -2012,7 +2041,7 @@ public:
 
     void build_bx(CycleInfo& ci, bool link) {
         int rm = (IR >> 3) & 0xF;
-        if (rm == 15 && strict) throw std::runtime_error(bx_pc_msg(link));
+        if (rm == 15 && strict) throw HardwareFault(bx_pc_msg(link));
         ci.signals = {std::string("SR1=") + REGN[rm]};
         ci.desc = std::string("Decode: ") + (link ? "BLX" : "BX") + " " + REGN[rm] + "; indirect branch";
         add("FETCH_OPERANDS", "FETCH OPERANDS", [this, rm](CycleInfo& c) {
@@ -2233,6 +2262,9 @@ PYBIND11_MODULE(_picosim_core, m) {
     m.attr("ROM_BASE") = ROM_BASE;     m.attr("ROM_SIZE") = ROM_SIZE;
     m.attr("FLASH_BASE") = FLASH_BASE; m.attr("FLASH_SIZE") = FLASH_SIZE;
     m.attr("SRAM_BASE") = SRAM_BASE;   m.attr("SRAM_SIZE") = SRAM_SIZE;
+    m.attr("SRAM_NS_BASE") = SRAM_NS_BASE; m.attr("SRAM_NS_SIZE") = SRAM_NS_SIZE;
+    py::register_exception<HardwareFault>(m, "HardwareFault", PyExc_RuntimeError);
+    py::register_exception<TeachingStop>(m, "TeachingStop", PyExc_RuntimeError);
     m.attr("CODE_SLOTS") = CODE_SLOTS;
 
     py::class_<CPUCore>(m, "CPUCore")
@@ -2240,7 +2272,7 @@ PYBIND11_MODULE(_picosim_core, m) {
 
         // ── raw memory access (loading, the debugger) ─────────────────────
         // Addresses are the RP2040's; a range must lie inside one of ROM,
-        // flash or SRAM.  These never fault on ROM or flash.
+        // flash or SRAM (either view).  These never fault on ROM or flash.
         .def("load_memory", [](CPUCore& self, py::bytes data, uint32_t addr) {
             auto buf = data.cast<std::string_view>();
             if (!buf.size()) return;
@@ -2269,7 +2301,7 @@ PYBIND11_MODULE(_picosim_core, m) {
             self.mem_set(addr, val);
         })
         .def_static("mem_kind", [](uint32_t addr) {
-            static const char* K[] = {"io", "rom", "flash", "sram"};
+            static const char* K[] = {"io", "rom", "flash", "sram", "sram"};   // either view of SRAM
             return std::string(K[mem_kind(addr)]);
         }, "'rom', 'flash', 'sram' or 'io' (anything else) for an address.")
         .def_static("code_slot", [](uint32_t addr) -> py::object {

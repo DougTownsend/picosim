@@ -6,8 +6,9 @@ Behaviour at the edges, where the simulator must act like the real Pico
    bit 0 clear, undefined and non-ARMv6-M encodings, unmapped addresses.
    After a fault the PC points back at the instruction that caused it.
 2. The other ARMv6-M instructions: hints, CPS, barriers, MRS / MSR.
-3. Memory: the RP2040's map (ROM, flash, SRAM); stores into ROM or flash
-   stop the program; accesses at the end of SRAM never touch the registers.
+3. Memory: the RP2040's map (ROM, flash, SRAM and SRAM0-3's non-striped
+   view); stores into ROM or flash stop the program; accesses at the end of
+   SRAM never touch the registers.
 4. GPIO: a pin follows SIO only when its FUNCSEL is 5 (SIO).
 5. The ELF loader shows data in code as data, with exact label addresses.
 6. The GUI backend keeps running whatever a program or a client does.
@@ -22,7 +23,8 @@ import unittest
 
 from picosim._picosim_core import CPUCore
 from picosim.loader import load_program
-from picosim.cpu import SimulatorError
+from picosim.cpu import (SimulatorError, stop_reason, unmapped_reason, HARDWARE_FAULT, MODEL_LIMIT,
+                         TEACHING_STOP)
 from picosim.memmap import USER_BASE as CODE, SRAM_BASE, SRAM_END
 from test_server import start
 
@@ -71,25 +73,27 @@ class ProgramFile:
 
 
 class FaultTest(unittest.TestCase):
+    HF, TS = HARDWARE_FAULT, TEACHING_STOP
     CASES = [
-        # (what, encodings, registers, words the message must contain)
-        ("unaligned word store", [0x6001], {0: SRAM_BASE + 0x4002}, "Unaligned"),
-        ("unaligned halfword load", [0x8801], {0: SRAM_BASE + 0x4001}, "Unaligned"),
-        ("unaligned word load at the top of SRAM", [0x6801], {0: SRAM_END - 2}, "Unaligned"),
-        ("BX PC (faults at the instruction, as on the chip)", [0x4778], {}, "BX PC at 0x10000100"),
-        ("BLX PC (faults at the instruction, as on the chip)", [0x47F8], {}, "BLX PC at 0x10000100"),
-        ("UDF", [0xDE00], {}, "Undefined instruction 0xDE00 at 0x10000100"),
-        ("store into flash", [0x6001], {0: CODE + 0x100}, "Write to read-only memory"),
-        ("store into ROM", [0x7001], {0: 0x2FFC}, "Write to read-only memory"),
-        ("IT (Thumb-2 only)", [0xBF08], {}, "Undefined"),
-        ("0xB8xx is not ADD SP", [0xB802], {}, "Undefined"),
-        ("REV with op 2", [0xBA81], {}, "Undefined"),
-        ("CBZ (Thumb-2 only)", [0xB110], {}, "Undefined"),
-        ("MOVW (Thumb-2 only)", [0xF240, 0x0005], {}, "Undefined instruction 0xF2400005"),
+        # (what, encodings, registers, words the message must contain, stop reason)
+        ("unaligned word store", [0x6001], {0: SRAM_BASE + 0x4002}, "Unaligned", HF),
+        ("unaligned halfword load", [0x8801], {0: SRAM_BASE + 0x4001}, "Unaligned", HF),
+        ("unaligned word load at the top of SRAM", [0x6801], {0: SRAM_END - 2}, "Unaligned", HF),
+        ("unaligned word load, non-striped SRAM", [0x6801], {0: 0x21010002}, "Unaligned", HF),
+        ("BX PC (faults at the instruction, as on the chip)", [0x4778], {}, "BX PC at 0x10000100", HF),
+        ("BLX PC (faults at the instruction, as on the chip)", [0x47F8], {}, "BLX PC at 0x10000100", HF),
+        ("UDF", [0xDE00], {}, "Undefined instruction 0xDE00 at 0x10000100", HF),
+        ("store into flash", [0x6001], {0: CODE + 0x100}, "Write to read-only memory", TS),
+        ("store into ROM", [0x7001], {0: 0x2FFC}, "Write to read-only memory", TS),
+        ("IT (Thumb-2 only)", [0xBF08], {}, "Undefined", HF),
+        ("0xB8xx is not ADD SP", [0xB802], {}, "Undefined", HF),
+        ("REV with op 2", [0xBA81], {}, "Undefined", HF),
+        ("CBZ (Thumb-2 only)", [0xB110], {}, "Undefined", HF),
+        ("MOVW (Thumb-2 only)", [0xF240, 0x0005], {}, "Undefined instruction 0xF2400005", HF),
     ]
 
     def test_faults(self):
-        for what, hws, regs, words in self.CASES:
+        for what, hws, regs, words, reason in self.CASES:
             for cycle in (False, True):
                 with self.subTest(case=what, cycle=cycle):
                     c = core_with(hws, regs)
@@ -100,6 +104,7 @@ class FaultTest(unittest.TestCase):
                         else:
                             c.step()
                     self.assertIn(words, str(cm.exception))
+                    self.assertEqual(stop_reason(cm.exception), reason)
                     self.assertEqual(c.pc, CODE, "the PC points at the faulting instruction")
                     self.assertFalse(c.in_insn)
 
@@ -152,17 +157,72 @@ class FaultTest(unittest.TestCase):
         self.assertEqual(c.pc, CODE + 0x10)
 
     def test_bus_fault(self):
-        for body, words in [("ldr r1, =0x40054028\nldr r0, [r1]\nbx lr", "reads from 0x40054028"),
-                            ("ldr r1, =0x21000000\nstr r0, [r1]\nbx lr", "non-striped"),
-                            ("ldr r1, =0x13000000\nldr r0, [r1]\nbx lr", "XIP cache's aliases"),
+        """Where the Pico has nothing too: a bus fault, a HardFault on the Pico."""
+        for body, words in [("ldr r1, =0x21040000\nstr r0, [r1]\nbx lr", "writes to 0x21040000"),
                             ("ldr r1, =0x20042000\nldr r0, [r1]\nbx lr", "reads from 0x20042000"),
+                            ("ldr r1, =0x15000000\nldr r0, [r1]\nbx lr", "XIP cache's own memory"),
                             ("ldr r0, =0x30000001\nbx r0", "jumped to 0x30000000")]:
             with self.subTest(body=body.splitlines()[0]), ProgramFile(body) as path:
                 cpu = load_program(path).cpu
                 with self.assertRaises(SimulatorError) as cm:
                     cpu._core.run(1000)
-                self.assertIn("Bus fault", str(cm.exception))
-                self.assertIn(words, str(cm.exception))
+                msg = str(cm.exception)
+                self.assertIn("Bus fault", msg)
+                self.assertIn(words, msg)
+                self.assertIn("HardFault too", msg)
+                self.assertEqual(stop_reason(cm.exception), HARDWARE_FAULT)
+
+    def test_not_simulated(self):
+        """Where the Pico has something picosim does not simulate: the stop
+        says it is picosim's limit, and never that the Pico would fault."""
+        for body, words in [("ldr r1, =0x40054028\nldr r0, [r1]\nbx lr", "reads from 0x40054028"),
+                            ("ldr r1, =0x13000000\nldr r0, [r1]\nbx lr", "XIP cache"),
+                            ("ldr r1, =0xE000E010\nldr r0, [r1]\nbx lr", "SysTick"),
+                            ("ldr r1, =0xD0000060\nldr r0, [r1]\nbx lr", "divider")]:
+            with self.subTest(body=body.splitlines()[0]), ProgramFile(body) as path:
+                cpu = load_program(path).cpu
+                with self.assertRaises(SimulatorError) as cm:
+                    cpu._core.run(1000)
+                msg = str(cm.exception)
+                self.assertIn("Not simulated", msg)
+                self.assertIn("limit of picosim", msg)
+                self.assertIn(words, msg)
+                self.assertNotIn("HardFault", msg)
+                self.assertEqual(stop_reason(cm.exception), MODEL_LIMIT)
+                with self.assertRaises(SimulatorError) as cm:      # the Python step path too
+                    cpu.step()
+                self.assertEqual(cm.exception.reason, MODEL_LIMIT)
+
+    def test_unmapped_reasons_follow_the_chip(self):
+        """Every address the chip was probed at (hwfacts/memory_map.json): a
+        fault on the chip is HARDWARE_FAULT here; an access that worked on the
+        chip is never called a HardFault."""
+        import json
+        from picosim import memmap
+        with open(os.path.join(ROOT, 'hwfacts', 'memory_map.json')) as f:
+            probes = json.load(f)['probes']
+        checked = 0
+        for a, p in probes.items():
+            a = int(a, 16)
+            ops = (p.get('core') or {}).values()
+            if not ops or memmap.is_memory(a) or 0xD0000000 <= a < 0xD0000040:
+                continue
+            faulted = all(not o['ok'] for o in ops)
+            worked = all(o['ok'] for o in ops)
+            reason = unmapped_reason(a)[0]
+            with self.subTest(addr=hex(a)):
+                if faulted:
+                    self.assertEqual(reason, HARDWARE_FAULT)
+                elif worked and not (0x40000000 <= a < 0x40020000 and memmap.kind(a) == 'io'
+                                     and self._gpio_has(a)):
+                    self.assertEqual(reason, MODEL_LIMIT)
+            checked += 1
+        self.assertGreater(checked, 200)
+
+    @staticmethod
+    def _gpio_has(a):
+        from picosim.gpio import GPIO
+        return GPIO().handles(a)
 
     def test_error_messages_are_hex(self):
         c = core_with([0xDE00])
@@ -244,7 +304,8 @@ class MemorySafetyTest(unittest.TestCase):
         self.assertEqual(memmap.STACK_TOP, 0x20042000)
         for a, k in [(0, 'rom'), (0x3FFF, 'rom'), (0x4000, 'io'), (0x10000000, 'flash'),
                      (0x101FFFFF, 'flash'), (0x10200000, 'io'), (0x20041FFF, 'sram'),
-                     (0x20042000, 'io'), (0xD0000000, 'io')]:
+                     (0x20042000, 'io'), (0x21000000, 'sram'), (0x2103FFFF, 'sram'),
+                     (0x21040000, 'io'), (0x20FFFFFF, 'io'), (0xD0000000, 'io')]:
             self.assertEqual(memmap.kind(a), k, hex(a))
         for a in (0x10000000, 0x10000100, 0x1000FFFE):
             self.assertEqual(memmap.slot_addr(memmap.code_slot(a)), a)
@@ -287,6 +348,103 @@ class MemorySafetyTest(unittest.TestCase):
         for words in ("Write to read-only memory", "flash", ".data", "0x20000000"):
             self.assertIn(words, msg)
         self.assertEqual(cpu.pc, CODE + 4, "the PC points at the store")
+
+
+class NonStripedSramTest(unittest.TestCase):
+    """SRAM0-3 at 0x21000000 + bank * 0x10000, the same memory as the striped
+    0x20000000-0x2003FFFF (RP2040 datasheet 2.6.2; measured on a Pico:
+    hwfacts/memory_map.json "sram")."""
+
+    @staticmethod
+    def striped(bank, word):
+        return SRAM_BASE + 16 * word + 4 * bank
+
+    @staticmethod
+    def flat(bank, word):
+        return 0x21000000 + 0x10000 * bank + 4 * word
+
+    def test_round_trip_every_bank(self):
+        import random
+        rng = random.Random(2040)
+        c = CPUCore()
+        for bank in range(4):
+            for word in (0, 1, 0x1234, 0x3FFF) + tuple(rng.randrange(0x4000) for _ in range(200)):
+                s, f = self.striped(bank, word), self.flat(bank, word)
+                v = rng.getrandbits(32)
+                c.write32(f, v)
+                self.assertEqual(c.read32(s), v)
+                c.write32(s, v ^ 0xFFFFFFFF)
+                self.assertEqual(c.read32(f), v ^ 0xFFFFFFFF)
+                c.write16(f + 2, 0xBEEF)
+                self.assertEqual(c.read16(s + 2), 0xBEEF)
+                c.write8(s + 1, 0x5A)
+                self.assertEqual(c.read8(f + 1), 0x5A)
+
+    def test_measured_sample(self):
+        """The chip's own sample: the striped word at A is bank (A >> 2) & 3,
+        word (A - 0x20000000) >> 4."""
+        import json
+        from picosim import memmap
+        with open(os.path.join(ROOT, 'hwfacts', 'memory_map.json')) as f:
+            sram = json.load(f)['sram']
+        self.assertTrue(sram['confirmed'])
+        c = CPUCore()
+        for e in sram['sample']:
+            a = int(e['striped'], 16)
+            f = self.flat(e['bank'], e['word'])
+            self.assertEqual(memmap.ns_to_striped(f), a)
+            self.assertEqual(memmap.striped_to_ns(a), f)
+            c.write32(a, 0xB0000000 | a & 0xFFFF)
+            self.assertEqual(c.read32(f), 0xB0000000 | a & 0xFFFF)
+        for a in sram['past']:          # past the end of SRAM (0x21040000 among them): not memory
+            self.assertEqual(memmap.kind(int(a, 16)), 'io')
+
+    def test_program_uses_both_views(self):
+        """A program stores through the non-striped view and loads through
+        the striped one (and back), runs code there, and faults like the chip
+        on an unaligned access or past SRAM3."""
+        body = ("ldr r1, =0x21030010\nldr r0, =0x12345678\nstr r0, [r1]\n"   # bank 3, word 4
+                "ldr r2, =0x2000004C\nldr r3, [r2]\n"                         # striped 16 * 4 + 12
+                "movs r0, #0x77\nstrb r0, [r2, #1]\nldrh r4, [r1]\n"
+                "bx lr")
+        with ProgramFile(body) as path:
+            cpu = load_program(path).cpu
+            cpu._core.run(1000)
+            self.assertTrue(cpu.halted)
+            self.assertEqual(cpu.regs[3], 0x12345678)
+            self.assertEqual(cpu.regs[4], 0x7778)
+        c = core_with([0x6808], {1: 0x21020002})               # LDR R0, [R1]: unaligned
+        with self.assertRaisesRegex(RuntimeError, "Unaligned") as cm:
+            c.step()
+        self.assertEqual(stop_reason(cm.exception), HARDWARE_FAULT)
+        # code at a non-striped address: MOVS R0, #42; BX LR with LR = halt
+        c = CPUCore()
+        c.write16(0x21000100, 0x202A)
+        c.write16(0x21000102, 0x4770)
+        self.assertEqual(c.read16(self.striped(0, 0x40)), 0x202A)
+        c.set_reg(14, 0xFFFFFFFF)
+        c.pc = 0x21000100
+        c.run(10)
+        self.assertTrue(c.halted)
+        self.assertEqual(c.regs[0], 42)
+
+    def test_ranges(self):
+        from picosim import memmap
+        c = CPUCore()
+        self.assertEqual(memmap.span(0x21000000, 0x40000), (0x21000000, 0x21040000))
+        self.assertIsNone(memmap.span(0x2103FFFE, 4))
+        for addr, n in [(0x2103FFFE, 4), (0x21040000, 1), (0x20FFFFFF, 2)]:
+            with self.assertRaises(RuntimeError):
+                c.get_mem_slice(addr, n)
+        c.load_memory(bytes(range(16)), 0x2100FFF8)              # across SRAM0 into SRAM1
+        self.assertEqual(c.get_mem_slice(0x2100FFF8, 16), bytes(range(16)))
+        self.assertEqual(c.read32(self.striped(1, 0)), 0x0B0A0908)
+        img = memmap.Image()
+        img.write(0x2100FFF9, bytes(range(1, 40)))
+        self.assertEqual(img.read(0x2100FFF9, 39), bytes(range(1, 40)))
+        self.assertEqual(img.read(self.striped(1, 1), 4), bytes([12, 13, 14, 15]))
+        img.load_into(c)
+        self.assertEqual(c.get_mem_slice(0x2100FFF9, 39), bytes(range(1, 40)))
 
 
 class GpioFuncselTest(unittest.TestCase):
