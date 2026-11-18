@@ -74,7 +74,10 @@ class HwfactsIntegrityTest(unittest.TestCase):
         for key, e in index.items():
             with self.subTest(run=key):
                 self.assertRegex(key, r'^chip\d+/[a-z0-9-]+-?[A-Za-z0-9-]*/\d{8}-\d{6}(-repeat)?$')
-                self.assertIn('state.json', e['files'])
+                if key.split('/')[1] == 'flashed':      # F has no batches: it keeps its facts documents
+                    self.assertTrue(e['files'] and all(n.startswith('facts-') for n in e['files']), e['files'])
+                else:
+                    self.assertIn('state.json', e['files'])
                 for name, sha in e['files'].items():
                     self.assertRegex(sha, r'^[0-9a-f]{64}$', name)
 

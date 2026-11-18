@@ -147,7 +147,9 @@ def sha256_file(path):
 
 def record_raw(run_path, target_kind):
     """Note a run's raw files (with SHA-256) in raw_index.json, and copy
-    them to ~/picosim-hwfacts-raw/ (decision D4: kept out of git, twice)."""
+    them to ~/picosim-hwfacts-raw/ (decision D4: kept out of git, twice).
+    Raw files: batch-*, state.json, and facts-* (campaign F, which has no
+    batches, keeps each run's facts documents that way)."""
     import shutil
     idx_path = os.path.join(root(target_kind), 'raw_index.json')
     idx = {}
@@ -156,7 +158,7 @@ def record_raw(run_path, target_kind):
             idx = json.load(f)
     files = {}
     for n in sorted(os.listdir(run_path)):
-        if n.startswith('batch-') or n == 'state.json':
+        if n.startswith('batch-') or n.startswith('facts-') or n == 'state.json':
             files[n] = sha256_file(os.path.join(run_path, n))
     # <label>/<campaign>-<stage>/<run id>: where the run sits under the cache
     key = '/'.join(os.path.normpath(os.path.abspath(run_path)).split(os.sep)[-3:])

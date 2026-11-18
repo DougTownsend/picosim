@@ -13,6 +13,11 @@ The rules are the proposal's §7:
                   WATCHDOG, SYSCFG except PROC_IN_SYNC_BYPASS, SSI, IO_QSPI,
                   PADS_QSPI, XIP_CTRL except FLUSH and its counters, USB,
                   DMA, PIO, AIRCR (unless a run allows its one planned test);
+                  one exception, PSM.FRCE_OFF bit 16 (core 1) through the
+                  SET/CLR aliases, only when the caller allows it: campaign
+                  F's reset of core 1 before each program it starts, as the
+                  SDK's multicore_reset_core1() does (user approved
+                  2026-11-17);
   allowlist       IO_BANK0, PADS_BANK0, RESETS (allowed peripherals' bits,
                   through the SET/CLR/XOR aliases only), SIO GPIO, divider,
                   interpolators and spinlocks, TIMER, PWM, UART, SPI, I2C, ADC,
@@ -73,6 +78,8 @@ NEVER_RANGES = [
     ('XIP_AUX', 0x50400000, 0x50400010, ()),                 # the XIP stream FIFO (not a hole)
 ]
 AIRCR = 0xE000ED0C
+PSM_FRCE_OFF = 0x40010004
+PSM_PROC1 = 1 << 16
 
 # ── allowed ─────────────────────────────────────────────────────────────────
 ALLOW = [
@@ -116,11 +123,17 @@ def _peripheral(addr):
     return None
 
 
-def check_write(addr, width=4, value=0, pins=frozenset(), allow_aircr=False, why=''):
+def check_write(addr, width=4, value=0, pins=frozenset(), allow_aircr=False, why='',
+                allow_core1_reset=False):
     """Raise SafetyError unless writing `value` (`width` bytes) to `addr` is
-    allowed.  pins: the GPIOs this run may drive."""
+    allowed.  pins: the GPIOs this run may drive.  allow_core1_reset: let
+    exactly PSM_PROC1 through PSM.FRCE_OFF's SET or CLR alias (nothing else
+    in PSM)."""
     pins = frozenset(pins)
     where = f"0x{addr:08X}" + (f" ({why})" if why else '')
+    if allow_core1_reset and width == 4 and value == PSM_PROC1 \
+            and addr in (PSM_FRCE_OFF + 0x2000, PSM_FRCE_OFF + 0x3000):
+        return
     bad_pins = pins & PICO_W_PINS
     if bad_pins:
         raise SafetyError(f"--pins names GP{', GP'.join(map(str, sorted(bad_pins)))}, which the Pico W's "

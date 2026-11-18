@@ -255,12 +255,114 @@ def wait_for_bkpt(t, timeout=20.0):
     return False
 
 
+def stuck_at(t, syms):
+    """Halt the core and say where it was: PC (with the nearest symbol), LR, xPSR."""
+    try:
+        t.rsp.interrupt()
+        t.rsp.wait_stop(5.0)
+        regs = t.rsp.read_core_regs()
+        xpsr = t.rsp.read_reg(t.xpsr_n)
+        pc, lr = regs[15], regs[14]
+        near = max(((a, n) for n, a in (syms or {}).items() if isinstance(a, int) and a <= (pc | 1)),
+                   default=None)
+        name = f" in {near[1]}+0x{(pc & ~1) - (near[0] & ~1):X}" if near else ''
+        return f"PC 0x{pc:08X}{name}, LR 0x{lr:08X}, xPSR 0x{xpsr:08X} (exception {xpsr & 0x3F})"
+    except Exception as e:                   # noqa: BLE001
+        return f"could not read where it was: {e}"
+
+
+def start_program(t):
+    """Core 1 back to the boot ROM (flashguard.reset_core1), then `reset run`.
+    Without the core 1 reset a program that launches core 1 (every Flash
+    build does: report_pins) hangs when the previous one had launched it."""
+    from .. import flashguard
+    flashguard.reset_core1(lambda c: t.rsp.monitor(c, timeout=15.0))
+    t.rsp.monitor('reset run', timeout=15.0)
+
+
 def flash_program(t, elf, log):
     said = t.rsp.monitor(f"program {{{elf}}} verify", timeout=300.0)
     log(' '.join(said.split())[:200])
     if 'Verified OK' not in said and 'verified' not in said.lower():
         raise RuntimeError(f"OpenOCD did not confirm the write: {said.strip()[:300]}")
-    t.rsp.monitor('reset run', timeout=15.0)
+    start_program(t)
+
+
+HELLO_TEXT = 'Hi!'
+
+
+def strip_pin_frames(text):
+    """The console text without wrapper_main.c's pin reports
+    (\\x02P<8 hex>,<8 hex>\\x03, sent by core 1), as picosim's console shows it."""
+    import re
+    return re.sub(r'\x02P[0-9a-fA-F]{8},[0-9a-fA-F]{8}\x03', '', text)
+
+
+def wait_for_port(board_id, before, timeout=15.0, poll=0.1):
+    """Wait for the board's USB serial port after a reset.  Returns
+    (port, how it was found) or (None, None)."""
+    from .. import flashguard
+    end = time.monotonic() + timeout
+    while True:
+        port, how = flashguard.board_serial_port(board_id, before)
+        if port or time.monotonic() >= end:
+            return port, how
+        time.sleep(poll)
+
+
+def read_console(port, want=HELLO_TEXT, timeout=8.0, open_port=None):
+    """Open the port (DTR on, which ends wrapper_main.c's wait for a
+    terminal) and read until `want` shows in the console text or `timeout`
+    passes.  Returns the raw text read."""
+    if open_port is None:
+        import serial                        # pyserial
+        open_port = lambda p: serial.Serial(p, 115200, timeout=0.2)   # noqa: E731
+    raw = b''
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        # The port found may still be the old program's, about to go away:
+        # an open or read that fails is retried until the time is up.
+        try:
+            with open_port(port) as s:
+                while time.monotonic() < end:
+                    raw += s.read(256)
+                    if want in strip_pin_frames(raw.decode('latin-1')):
+                        return raw.decode('latin-1')
+        except (OSError, IOError, ValueError):
+            time.sleep(0.1)
+    return raw.decode('latin-1')
+
+
+def hello_check(t, elf, board_id, log, flash=None, port_timeout=15.0, read_timeout=8.0):
+    """01_hello after Flash: does "Hi!" reach the USB console?
+
+    The program waits up to 5 s for a terminal (stdio_init_all), then prints
+    once, so the port must be opened inside that window: wait_for_port polls
+    every 0.1 s and the read starts at once."""
+    from .. import flashguard
+    before = flashguard._serial_ports()
+    (flash or flash_program)(t, elf, log)
+    port, how = wait_for_port(board_id, before, timeout=port_timeout)
+    if not port:
+        return {'port': None, 'ok': False,
+                'detail': f"no serial port for flash ID {board_id} (and no new port) within {port_timeout:.0f} s"}
+    raw = read_console(port, timeout=read_timeout)
+    text = strip_pin_frames(raw)
+    return {'port': port, 'found_by': how, 'printed': text[:120],
+            'pin_frames': raw.count('\x02P'), 'ok': HELLO_TEXT in text}
+
+
+def funcsel_result(st):
+    """GPIO21_STATUS after a program set GP21's SIO OE and OUT but never its
+    FUNCSEL.  After reset FUNCSEL is 0x1F (NULL), so the pad should get
+    neither: OETOPAD (bit 13) and OUTTOPAD (bit 9) both 0.  picosim shows the
+    pin as Z (test_asm_files/funcsel_check.s)."""
+    if st is None:
+        return {'status': None, 'ok': None, 'detail': 'GPIO21_STATUS could not be read'}
+    oe, out = bool(st >> 13 & 1), bool(st >> 9 & 1)
+    return {'status': f"0x{st:08X}", 'pad_driven': oe, 'out_to_pad': out,
+            'expected': 'pad_driven and out_to_pad both false (FUNCSEL NULL after reset)',
+            'ok': not oe and not out}
 
 
 def old_checks(ctx, t, guard_ok):
@@ -268,21 +370,11 @@ def old_checks(ctx, t, guard_ok):
     out = {}
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     try:
-        elf = build_firmware(ctx.log, os.path.join(root, 'examples', '01_hello.s'), 'hello')
         from .. import flashguard
-        before = flashguard._serial_ports()
-        flash_program(t, elf, ctx.log)
-        port, text = None, ''
-        end = time.monotonic() + 10
-        while time.monotonic() < end and port is None:
-            new = sorted(set(flashguard._serial_ports()) - set(before))
-            port = new[0] if new else None
-            time.sleep(0.25)
-        if port:
-            import serial                    # pyserial, if installed
-            with serial.Serial(port, 115200, timeout=6) as s:
-                text = s.read(256).decode('latin-1')
-        out['01_hello'] = {'port': port, 'printed': text[:120], 'ok': bool(text.strip())}
+        board_id = (flashguard.load_state() or {}).get('unique_id')
+        elf = build_firmware(ctx.log, os.path.join(root, 'examples', '01_hello.s'), 'hello')
+        out['01_hello'] = hello_check(t, elf, board_id, ctx.log)
+        ctx.log(f"01_hello: {out['01_hello']}")
     except Exception as e:                   # noqa: BLE001
         out['01_hello'] = {'error': str(e)}
     if 21 in ctx.pins:
@@ -296,9 +388,7 @@ def old_checks(ctx, t, guard_ok):
             flash_program(t, elf, ctx.log)
             wait_for_bkpt(t)
             st = _read(t, 0x40014000 + 8 * 21)          # GPIO21_STATUS
-            out['funcsel_skipped'] = {'status': None if st is None else f"0x{st:08X}",
-                                      'pad_driven': None if st is None else bool(st >> 13 & 1),
-                                      'out_to_pad': None if st is None else bool(st >> 9 & 1)}
+            out['funcsel_skipped'] = funcsel_result(st)
         except Exception as e:               # noqa: BLE001
             out['funcsel_skipped'] = {'error': str(e)}
     else:
@@ -311,6 +401,7 @@ def run(ctx):
     from .. import flashguard
     t = ctx.t
     standin = ctx.kind == 'standin'
+    started = time.time()
     env = {}
     guard = None
     restored = None
@@ -334,7 +425,15 @@ def run(ctx):
             ctx.status(NAME, 'partial', step='write and boot')
             flash_program(t, elf, ctx.log)
             if not wait_for_bkpt(t):
-                raise RuntimeError("the probe firmware did not reach its BKPT within 20 s")
+                # 2026-11-17 (--pins 21): still running after 20 s, where the run
+                # before reached the BKPT in 6 s.  Say where it was, then try once more.
+                where = stuck_at(t, syms)
+                ctx.log(f"The probe firmware did not reach its BKPT within 20 s ({where}); "
+                        "resetting it once more ...")
+                start_program(t)
+                if not wait_for_bkpt(t):
+                    raise RuntimeError("the probe firmware did not reach its BKPT within 20 s, "
+                                       f"twice (first: {where}; second: {stuck_at(t, syms)})")
         else:
             t.reset_halt()
             syms = {}
@@ -393,12 +492,51 @@ def run(ctx):
                           prediction={'value': 125, 'from': 'timing.PICO_CLOCK_MHZ'}))
     if restored:
         fs.append(FX.fact('environment.flash_restored_identical', restored['identical']))
+    oc = env.get('old_checks') or {}
+    for key, fid, why in (('01_hello', 'environment.old_check.hello_prints',
+                           'picosim: 01_hello prints "Hi!" after Flash'),
+                          ('funcsel_skipped', 'environment.old_check.funcsel_skipped_undriven',
+                           'picosim: GP21 stays Z without a FUNCSEL write')):
+        v = oc.get(key) or {}
+        if isinstance(v.get('ok'), bool):
+            fs.append(FX.fact(fid, v['ok'], prediction={'value': True, 'from': why}))
     prov = ctx.provenance(None, campaign='F')
     path = ctx.write_facts('environment.json', 'environment', prov, fs, environment=env)
+    keep_run(ctx, path, started)
     done = standin or (restored and restored['identical'])
     ctx.status(NAME, 'done' if done else 'partial', facts=path, differences=None,
                **({} if done else {'step': 'restore not verified'}))
     return path
+
+
+FLASHED_FACTS = ('peripherals/gpio_flashed.json', 'peripherals/timer.json', 'peripherals/uart.json')
+
+
+def keep_run(ctx, env_path, started):
+    """Keep this run's facts documents: hwfacts/ holds only the latest, and
+    a repeat run replaced the first one's (2026-11-17: the first pull-timing
+    run's per-d table was lost that way).  Copies go to
+    <cache>/flashed/<time>/facts-*.json and through facts.record_raw into
+    raw_index.json and the second copy, like every other campaign's raw
+    files.  Returns the run folder, or None if nothing could be kept."""
+    from .. import facts as FX
+    hw = os.path.dirname(env_path)
+    srcs = [env_path] + [os.path.join(hw, *n.split('/')) for n in FLASHED_FACTS]
+    srcs = [p for p in srcs if os.path.exists(p) and os.path.getmtime(p) >= started - 1]
+    if not srcs:
+        return None
+    run = os.path.join(ctx.root, NAME, time.strftime('%Y%m%d-%H%M%S', time.localtime(started)))
+    try:
+        os.makedirs(run, exist_ok=True)
+        for p in srcs:
+            rel = os.path.relpath(p, hw).replace(os.sep, '-')
+            shutil.copy2(p, os.path.join(run, 'facts-' + rel))
+        FX.record_raw(run, ctx.kind)
+        ctx.log(f"this run's facts kept in {run}")
+        return run
+    except Exception as e:                   # noqa: BLE001 - never lose the run over its copy
+        ctx.log(f"could not keep this run's facts files: {e}")
+        return None
 
 
 def _hx(v):
