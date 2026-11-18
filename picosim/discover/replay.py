@@ -139,6 +139,7 @@ def run(case, lay, scratch_words, max_steps=None, code=None, lenient_bus=False):
         words.append(case['xpsr'] | 0x01000000)
         mem.write(frame, b''.join(w.to_bytes(4, 'little') for w in words))
     core = CPUCore()
+    timing.install(core)
     core.strict = True
     core.rom_store_stop = False           # the chip's ROM ignores a store: compare the rest
     mem.load_into(core)
@@ -212,7 +213,13 @@ def body_cycles(case, lay, scratch_words=0):
     with the same scratch window as on the chip (its loads steer branches)."""
     body = case['code_bytes'][2:-2]
     r = run(case, lay, scratch_words, max_steps=4096, code=body, lenient_bus=True)
+    core = r['core']
+    # The core's live counter, which picosim itself now runs on; the
+    # per-address profile through timing.cycles must give the same number.
     total = 0
-    for e in r['core'].profile():
-        total += timing.cycles('m0plus', e['hw1'], e['hw2'], e)
-    return total, r
+    for e in core.profile():
+        total += timing.cycles('m0plus', e['hw1'], e['hw2'], e)   # None (no time) raises, as before
+    live = core.m0_cycles
+    if core.m0_untimed or live != total:
+        raise AssertionError(f"live cycle count {live} != timing.cycles {total}")
+    return live, r

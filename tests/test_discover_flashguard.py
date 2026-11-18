@@ -44,11 +44,20 @@ class FakeOpenOCD:
         self.fail_verify = False
         self.corrupt_reads = 0          # the next N read_banks return a flipped bit
         self.corrupt_writes = False     # write_image flips a bit
+        self.xip_on = True              # False: reads through XIP give zeros (after a reset halt)
+        self.psm_frce_off = 0           # PSM.FRCE_OFF (reset_core1 pulses bit 16)
 
     def monitor(self, cmd, timeout):
         self.commands.append(cmd)
         if cmd in ('halt', 'reset run'):
             return ''
+        if cmd.startswith('mww 0x4001'):
+            a, v = (int(x, 16) for x in cmd.split()[1:])
+            assert a in (0x40012004, 0x40013004) and v == 1 << 16, cmd   # the only PSM write allowed
+            self.psm_frce_off = self.psm_frce_off | v if a == 0x40012004 else self.psm_frce_off & ~v
+            return ''
+        if cmd == 'mdw 0x40010004':
+            return f"0x40010004: {self.psm_frce_off:08x} \n"
         if cmd == 'flash probe 0':
             if self.fail_probe:
                 return "Error: Failed to probe flash\nauto_probe failed\n"
@@ -61,7 +70,7 @@ class FakeOpenOCD:
                     "buswidth 0, chipwidth 0\n")
         if cmd.startswith('flash read_bank 0 '):
             p = _path(cmd)
-            data = bytes(self.flash)
+            data = bytes(self.flash) if self.xip_on else bytes(len(self.flash))
             if self.corrupt_reads:
                 self.corrupt_reads -= 1
                 data = _corrupt(data)
@@ -81,7 +90,8 @@ class FakeOpenOCD:
             p = _path(cmd)
             with open(p, 'rb') as f:
                 data = f.read()
-            if self.fail_verify or bytes(self.flash[:len(data)]) != data:
+            seen = bytes(self.flash[:len(data)]) if self.xip_on else bytes(len(data))
+            if self.fail_verify or seen != data:
                 return ("checksum mismatch - attempting binary compare\n"
                         "diff 0 address 0x10000064. Was 0x01 instead of 0x00\n"
                         "No more differences found.\n")
@@ -102,13 +112,14 @@ class FakePicotool:
     def __call__(self, args, timeout):
         self.calls.append(list(args))
         if args[0] == 'save':
-            assert args[1] == '--all' and args[3:] == ['-t', 'bin'], args
+            assert args[1:4] == ['--range', '0x10000000', f'0x{0x10000000 + len(self.ocd.flash):08x}'] \
+                and args[5:] == ['-t', 'bin'], args
             data = bytes(self.ocd.flash)
             if self.corrupt_saves and self.corrupt_saves.pop(0):
                 data = _corrupt(data)
-            with open(args[2], 'wb') as f:
+            with open(args[4], 'wb') as f:
                 f.write(data)
-            return 0, f"Saving file: [==============================]  100%\nWrote {len(data)} bytes to {args[2]}\n"
+            return 0, f"Saving file: [==============================]  100%\nWrote {len(data)} bytes to {args[4]}\n"
         if args[:2] == ['info', '-d']:
             if self.uid is None:
                 return 0, "Device Information\n type:                   RP2040\n"
@@ -184,6 +195,14 @@ class FlashGuardTest(unittest.TestCase):
         fg.require_no_pending_restore(self.state_path)
         self.assertTrue(any(c.startswith('verify_image ') for c in self.ocd.commands))
         self.assertEqual(self.ocd.commands[-1], 'reset run')
+        # core 1 pulsed into reset (SET, read back, CLR, read back) just before it
+        self.assertEqual(self.ocd.commands[-5:-1], ['mww 0x40012004 0x00010000', 'mdw 0x40010004',
+                                                    'mww 0x40013004 0x00010000', 'mdw 0x40010004'])
+        self.assertEqual([c for c in self.ocd.commands if c.startswith('mww')],
+                         ['mww 0x40012004 0x00010000', 'mww 0x40013004 0x00010000'])
+        self.assertEqual(self.ocd.commands[-2], 'mdw 0x40010004')
+        self.assertEqual(self.ocd.psm_frce_off, 0)
+        self.assertNotIn('core 1 could not', st['boot_check_detail'] or '')
         self.assertFalse(g.status()['pending_restore'])
 
     def test_restore_reads_id_with_picotool_when_not_given(self):
@@ -262,6 +281,135 @@ class FlashGuardTest(unittest.TestCase):
         self.assertIsNone(fg.parse_flash_id("type: RP2040\n"))
         with self.assertRaises(FlashGuardError):
             fg.parse_flash_id("flash id: 0x1111111111111111\nflash id: 0x2222222222222222\n")
+
+    # -- unique ID over SWD (flash_id.py) -----------------------------------
+
+    def test_swd_id_when_picotool_reports_none(self):
+        """2026-11-17: the first 4 KB erased, picotool printed only type/revision."""
+        self.pt.uid = None
+        reads = []
+        g = self.guard(read_unique_id=lambda: reads.append(1) or UID)
+        b = g.backup()
+        self.assertEqual(b.unique_id, UID)
+        self.assertEqual(self.state()['unique_id'], UID)
+        self.assertEqual(len(reads), 1)
+        self.assertIn('using the ID read over SWD', '\n'.join(self.logs))
+        # read before backup A: identify's probe, then the ID, then read_bank
+        first_read = next(i for i, c in enumerate(self.ocd.commands) if c.startswith('flash read_bank'))
+        self.assertGreater(first_read, self.ocd.commands.index('flash probe 0'))
+
+    def test_swd_id_cross_checked_with_picotool(self):
+        g = self.guard(read_unique_id=lambda: UID)
+        self.assertEqual(g.backup().unique_id, UID)
+        self.assertIn(f'picotool reports the same flash ID ({UID})', '\n'.join(self.logs))
+
+    def test_swd_id_byte_reversed_picotool_matches(self):
+        self.pt.uid = bytes.fromhex(UID)[::-1].hex().upper()
+        self.assertEqual(self.guard(read_unique_id=lambda: UID).backup().unique_id, UID)
+
+    def test_swd_and_picotool_disagree_refused(self):
+        g = self.guard(read_unique_id=lambda: '0123456789ABCDEF')
+        with self.assertRaisesRegex(FlashGuardError, 'different'):
+            g.backup()
+        self.assertFalse(os.path.exists(self.state_path))
+        self.assertEqual(self.ocd.writes(), [])
+
+    def test_swd_read_failure_stops_before_backup(self):
+        def broken():
+            raise RuntimeError("the ID routine did not finish (timeout)")
+        with self.assertRaisesRegex(FlashGuardError, 'debug wires failed.*timeout'):
+            self.guard(read_unique_id=broken).backup()
+        self.assertFalse(any(c.startswith('flash read_bank') for c in self.ocd.commands))
+        self.assertEqual(self.asked, [])                   # never got to BOOTSEL
+        self.assertFalse(os.path.exists(self.state_path))
+
+    def test_restore_uses_swd_id_without_bootsel(self):
+        self.pt.uid = None
+        g = self.guard(read_unique_id=lambda: UID)
+        g.backup()
+        g.mark_written()
+        self.ocd.flash[:] = os.urandom(SIZE)
+        n = len(self.asked)
+        g.restore()
+        self.assertEqual(len(self.asked), n)               # no BOOTSEL replug
+        self.assertEqual(self.state()['state'], 'restored')
+
+    def test_restore_refuses_other_board_by_swd_id(self):
+        uid = {'v': UID}
+        g = self.guard(read_unique_id=lambda: uid['v'])
+        g.backup()
+        g.mark_written()
+        uid['v'] = '0123456789ABCDEF'
+        with self.assertRaisesRegex(FlashGuardError, 'another board'):
+            g.restore()
+        self.assertEqual(self.ocd.writes(), [])
+
+    # -- reads through XIP (2026-11-17: zeros after the reconnect's reset halt)
+
+    def _xip_off_after_reset(self):
+        self.ocd.xip_on = False
+        prepares = []
+
+        def prepare():
+            prepares.append(1)
+            self.ocd.xip_on = True
+        reconnect = lambda: setattr(self.ocd, 'xip_on', False)     # noqa: E731
+        return prepares, prepare, reconnect
+
+    def test_zero_read_is_a_failed_read(self):
+        """Today's case without the fix: refused as a failed read, not 'changed'."""
+        g = self.guard(read_unique_id=lambda: UID)
+        g.backup()
+        self.ocd.xip_on = False                       # the reconnect's reset halt
+        with self.assertRaisesRegex(FlashGuardError, 'only zeros'):
+            g.mark_written()
+        self.assertEqual(self.state()['state'], 'backed-up')
+        self.assertEqual(self.ocd.writes(), [])
+
+    def test_zero_backup_refused(self):
+        self.ocd.xip_on = False
+        with self.assertRaisesRegex(FlashGuardError, 'only zeros'):
+            self.guard(read_unique_id=lambda: UID).backup()
+        self.assertFalse(os.path.exists(self.state_path))
+
+    def test_prepare_read_before_every_read_and_verify(self):
+        prepares, prepare, reconnect = self._xip_off_after_reset()
+        original = bytes(self.ocd.flash)
+        g = self.guard(read_unique_id=lambda: UID, prepare_read=prepare, reconnect=reconnect)
+        b = g.backup()
+        self.assertEqual(b.sha256, fg.sha256_bytes(original))
+        g.mark_written()                               # after the reconnect: XIP set up again
+        self.ocd.flash[:] = os.urandom(SIZE)
+        reconnect()
+        r = g.restore()
+        self.assertEqual(bytes(self.ocd.flash), original)
+        self.assertEqual(r.readback_sha256, b.sha256)
+        reads = len([c for c in self.ocd.commands if c.startswith('flash read_bank')])
+        verifies = len([c for c in self.ocd.commands if c.startswith('verify_image')])
+        self.assertEqual(len(prepares), reads + verifies)
+
+    def test_prepare_read_failure(self):
+        def broken():
+            raise RuntimeError("turning XIP on did not finish (timeout)")
+        with self.assertRaisesRegex(FlashGuardError, 'reading over SWD.*timeout'):
+            self.guard(read_unique_id=lambda: UID, prepare_read=broken).backup()
+        self.assertFalse(any(c.startswith('flash read_bank') for c in self.ocd.commands))
+
+    def test_same_flash_id(self):
+        self.assertTrue(fg.same_flash_id(UID, '0x' + UID.lower()))
+        self.assertTrue(fg.same_flash_id(UID, bytes.fromhex(UID)[::-1].hex()))
+        self.assertFalse(fg.same_flash_id(UID, '0123456789ABCDEF'))
+        self.assertFalse(fg.same_flash_id(UID, None))
+
+    def test_from_target_reads_id_over_swd(self):
+        class T:
+            reconnect = None
+            rsp = None
+        g = FlashGuard.from_target(T())
+        self.assertTrue(callable(g.read_unique_id))
+        self.assertTrue(callable(g.prepare_read))
+        mine = lambda: UID                                  # noqa: E731
+        self.assertIs(FlashGuard.from_target(T(), read_unique_id=mine).read_unique_id, mine)
 
     # -- restore failures --------------------------------------------------
 

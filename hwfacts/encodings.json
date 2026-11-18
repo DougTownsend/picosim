@@ -7,7 +7,7 @@
    "cpuid": "0x410CC601",
    "rom_version": 3
   },
-  "date": "2026-11-10 14:58:13",
+  "date": "2026-11-12 13:55:09",
   "openocd": "Open On-Chip Debugger 0.12.0",
   "swd_khz": 5000,
   "picosim": {
@@ -16,22 +16,17 @@
   },
   "agent": "ddc1370363c94c44fa27ca70211ce320015137ad",
   "campaign": "B",
-  "run_id": "20261110-145502",
+  "run_id": "20261111-002711",
   "runs": 1,
   "agreed": null,
   "target": "openocd",
   "chip_label": "chip1",
-  "rebuilt_offline": {
-   "date": "2026-11-11 17:43:38",
-   "picosim": {
-    "commit": "96776657416f811f5b4647b2c70bcb76b0c15088",
-    "dirty": true
-   },
-   "note": "measured on the date above; compared with picosim again from the saved raw records, with no board"
-  },
   "stages_done": [
    "B1",
-   "B2"
+   "B2",
+   "B3",
+   "B4",
+   "B5"
   ]
  },
  "facts": [
@@ -387,6 +382,1121 @@
    },
    "repeat": null,
    "differences": []
+  },
+  "B3": {
+   "cases": 109568,
+   "endings": {
+    "fell-through": 109532,
+    "elsewhere": 35,
+    "watchdog": 1
+   },
+   "check": {
+    "match": 109496,
+    "differs": 37,
+    "pending: exception model": 35
+   },
+   "compared_in_part": {
+    "loaded memory the agent never set (those registers not compared)": 16
+   },
+   "repeat": null,
+   "differences": [
+    {
+     "status": "differs",
+     "class": "memory",
+     "encoding": "PUSH {list}",
+     "cases": 4,
+     "example": {
+      "code": "00b4",
+      "name": "PUSH {list}",
+      "id": 805351424,
+      "regs": [
+       "0xCC60C079",
+       "0xE77EF00E",
+       "0x62540BD5",
+       "0x0719FD78",
+       "0xEC0F6208",
+       "0xA1305672",
+       "0xCB7E5904",
+       "0x92E427E6",
+       "0xC0EDF0F9",
+       "0x5ADE5B5A",
+       "0xE58A4F71",
+       "0xA90C0D88",
+       "0xA437FF44"
+      ],
+      "nzcv": "0111",
+      "psp": "0x20018800",
+      "primask": 0,
+      "detail": "scratch changes: chip +0x800=0x20016299 and more, picosim none"
+     },
+     "known": null
+    },
+    {
+     "status": "pending: exception model",
+     "class": "faults",
+     "encoding": "POP {list}",
+     "cases": 4,
+     "example": {
+      "code": "00bc",
+      "name": "POP {list}",
+      "id": 805352448,
+      "regs": [
+       "0x2B0CFB1E",
+       "0xF62517DC",
+       "0x1D47167F",
+       "0xE0D5D61E",
+       "0x115295BC",
+       "0x69C28FFA",
+       "0x036F7CDA",
+       "0x894F5104",
+       "0x8250F682",
+       "0xE7BCFC6B",
+       "0xCBFFD30B",
+       "0x2F4650EC",
+       "0xF04E05A2"
+      ],
+      "nzcv": "1010",
+      "psp": "0x20018800",
+      "primask": 0,
+      "detail": "a HardFault at 0x824B0DDE"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "decoder",
+     "encoding": "STM Rn!,{list}",
+     "cases": 32,
+     "example": {
+      "code": "00c0",
+      "name": "STM Rn!,{list}",
+      "id": 805352960,
+      "regs": [
+       "0x20018158",
+       "0xB7CC6FD0",
+       "0x1CB43B95",
+       "0x66FB51B5",
+       "0xC03E7990",
+       "0xB9FB4D07",
+       "0x58FF76D4",
+       "0xC61D08B6",
+       "0x52A7D08A",
+       "0xC597D0DE",
+       "0x9E6865C5",
+       "0xD91928B0",
+       "0xFCC147EC"
+      ],
+      "nzcv": "1100",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "r0: chip 0x2001815C, picosim 0x20018158"
+     },
+     "known": "UNPREDICTABLE encoding: STM Rn!,{} (0xC000-0xC700, empty register list). The RP2040 adds 4 to Rn (it stores one word; B's cases aim it at ROM, so what it stores is not seen). picosim leaves Rn unchanged."
+    },
+    {
+     "status": "pending: exception model",
+     "class": "faults",
+     "encoding": "LDM Rn{!},{list}",
+     "cases": 31,
+     "example": {
+      "code": "00c8",
+      "name": "LDM Rn{!},{list}",
+      "id": 805357056,
+      "regs": [
+       "0x20018DEC",
+       "0x314F1B3B",
+       "0x6A83D60A",
+       "0x6817648D",
+       "0xF308E520",
+       "0x6F620BD0",
+       "0x57F95B80",
+       "0x9F15F55F",
+       "0x8F8BB796",
+       "0x7C83BB6A",
+       "0xA85E8CAD",
+       "0x4026744D",
+       "0xE2E0C605"
+      ],
+      "nzcv": "0111",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "a HardFault at 0xBE6C42C2"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "LDM Rn{!},{list}",
+     "cases": 1,
+     "example": {
+      "code": "00cf",
+      "name": "LDM Rn{!},{list}",
+      "id": 805415424,
+      "regs": [
+       "0x2FD3ED86",
+       "0x77440D40",
+       "0x787AC7CB",
+       "0x8C2C6D71",
+       "0xECE159E4",
+       "0xEFCE0BE5",
+       "0x6A4C72B7",
+       "0x20018214",
+       "0xB4B5BBDC",
+       "0x66F910D3",
+       "0xED0F2F2D",
+       "0x358CC138",
+       "0xE0A9E771"
+      ],
+      "nzcv": "1100",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip loops forever; picosim: runs it and falls through"
+     },
+     "known": "UNPREDICTABLE encoding: LDM Rn!,{} (0xC800-0xCF00, empty register list). The RP2040 loads PC from [Rn] (7 of 8 then HardFault on the ROM word they load; 0xCA00 runs boot-ROM code and lands in the sled), Rn unchanged. picosim does nothing and falls through."
+    }
+   ]
+  },
+  "B4": {
+   "cases": 60762,
+   "endings": {
+    "fell-through": 28849,
+    "sled": 31512,
+    "watchdog": 113,
+    "elsewhere": 256,
+    "fault": 32
+   },
+   "check": {
+    "match": 60222,
+    "differs": 284,
+    "pending: exception model": 256
+   },
+   "compared_in_part": {
+    "loaded memory the agent never set (those registers not compared)": 32
+   },
+   "repeat": null,
+   "differences": [
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "BX Rm",
+     "cases": 112,
+     "example": {
+      "code": "0047",
+      "name": "BX Rm",
+      "id": 1073801217,
+      "regs": [
+       "0x2001386A",
+       "0x0807E840",
+       "0xB7D4EEA0",
+       "0x01FFD953",
+       "0xF7D61BB4",
+       "0xA5A63EA9",
+       "0x063F2BDB",
+       "0x373502E3",
+       "0x7B99C242",
+       "0xEB518D0E",
+       "0xD3D440C8",
+       "0x0AA17EDA",
+       "0x7FF2FE71"
+      ],
+      "nzcv": "1100",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip branches to 0x2001386A with the Thumb bit clear, then faults there (INVSTATE); picosim stops with an error at 0x20014000: BX at 0x20014000 jumps to 0x2001386A with bit 0 clear. The Cortex-M0+ only runs Thumb code, so the Pico would stop with a HardFault here. A code address you jump to through a register needs bit 0 set:"
+     },
+     "known": null
+    },
+    {
+     "status": "pending: exception model",
+     "class": "faults",
+     "encoding": "BX Rm",
+     "cases": 126,
+     "example": {
+      "code": "0047",
+      "name": "BX Rm",
+      "id": 1073801218,
+      "regs": [
+       "0xE0100001",
+       "0x0807E840",
+       "0xB7D4EEA0",
+       "0x01FFD953",
+       "0xF7D61BB4",
+       "0xA5A63EA9",
+       "0x063F2BDB",
+       "0x373502E3",
+       "0x7B99C242",
+       "0xEB518D0E",
+       "0xD3D440C8",
+       "0x0AA17EDA",
+       "0x7FF2FE71"
+      ],
+      "nzcv": "1100",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "a HardFault at 0xE0100000"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "BLX Rm",
+     "cases": 112,
+     "example": {
+      "code": "8047",
+      "name": "BLX Rm",
+      "id": 1073801583,
+      "regs": [
+       "0x200137AA",
+       "0xF774B27C",
+       "0x05EDE0F9",
+       "0x3D7EA777",
+       "0xA43E3006",
+       "0x9E820B75",
+       "0x2283F556",
+       "0x064F7C6E",
+       "0x8D9080CA",
+       "0xA74BD2EA",
+       "0xDEA6A009",
+       "0x67C8890C",
+       "0xE55490FB"
+      ],
+      "nzcv": "1011",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip branches to 0x200137AA with the Thumb bit clear, then faults there (INVSTATE); picosim stops with an error at 0x20014000: BLX at 0x20014000 jumps to 0x200137AA with bit 0 clear. The Cortex-M0+ only runs Thumb code, so the Pico would stop with a HardFault here. A code address you jump to through a register needs bit 0 set"
+     },
+     "known": null
+    },
+    {
+     "status": "pending: exception model",
+     "class": "faults",
+     "encoding": "BLX Rm",
+     "cases": 126,
+     "example": {
+      "code": "8047",
+      "name": "BLX Rm",
+      "id": 1073801584,
+      "regs": [
+       "0xE0100001",
+       "0xF774B27C",
+       "0x05EDE0F9",
+       "0x3D7EA777",
+       "0xA43E3006",
+       "0x9E820B75",
+       "0x2283F556",
+       "0x064F7C6E",
+       "0x8D9080CA",
+       "0xA74BD2EA",
+       "0xDEA6A009",
+       "0x67C8890C",
+       "0xE55490FB"
+      ],
+      "nzcv": "1011",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "a HardFault at 0xE0100000"
+     },
+     "known": null
+    },
+    {
+     "status": "pending: exception model",
+     "class": "faults",
+     "encoding": "ADD PC,SP,PC",
+     "cases": 2,
+     "example": {
+      "code": "ef44",
+      "name": "ADD PC,SP,PC",
+      "id": 1073801974,
+      "regs": [
+       "0x60911414",
+       "0xD5D238F2",
+       "0xE081C3A5",
+       "0x32F9C876",
+       "0x764E2963",
+       "0x56B08A08",
+       "0xC6580641",
+       "0x98207E91",
+       "0x33461E84",
+       "0x8D962BE4",
+       "0x770517CF",
+       "0x9576A490",
+       "0x29E0080E"
+      ],
+      "nzcv": "0001",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "a HardFault at 0x40054F04"
+     },
+     "known": null
+    },
+    {
+     "status": "pending: exception model",
+     "class": "faults",
+     "encoding": "ADD PC,PC",
+     "cases": 2,
+     "example": {
+      "code": "ff44",
+      "name": "ADD PC,PC",
+      "id": 1073801978,
+      "regs": [
+       "0x18D845C3",
+       "0x247D6960",
+       "0x749EC169",
+       "0x42E303F8",
+       "0x70A414CA",
+       "0xABD9D5DD",
+       "0x186A6FBE",
+       "0x473DE066",
+       "0x9B29E1B6",
+       "0x8A257763",
+       "0x1B6981BE",
+       "0x06A62F10",
+       "0xAFE99009"
+      ],
+      "nzcv": "0010",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "a HardFault at 0x40028008"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "CPS (should-be bits wrong)",
+     "cases": 60,
+     "example": {
+      "code": "60b6",
+      "name": "CPS (should-be bits wrong)",
+      "id": 1073802522,
+      "regs": [
+       "0xCFD6D2D4",
+       "0x77E5B18C",
+       "0x11A7B218",
+       "0x624FAC62",
+       "0x137B8CF4",
+       "0xB0823E57",
+       "0x6D10B411",
+       "0x69F5BBC6",
+       "0x263E192A",
+       "0x8C324F6D",
+       "0xF90528EA",
+       "0x96D8F646",
+       "0x0B51F63F"
+      ],
+      "nzcv": "1110",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip runs it and falls through; picosim stops with an error at 0x20014000: Undefined instruction 0xB660 at 0x20014000: this is not a Cortex-M0+ (ARMv6-M) instruction, so the Pico would stop with a HardFault. If it is data, keep it out of the path the program runs through."
+     },
+     "known": "UNPREDICTABLE encoding: CPS with its should-be bits 3:0 not 0010. The RP2040 ignores bits 3:0: 0xB660-0xB66F act as CPSIE i and 0xB670-0xB67F as CPSID i (PRIMASK read back, all 32 forms). picosim stops with 'Undefined instruction ... not a Cortex-M0+ instruction'."
+    }
+   ]
+  },
+  "B5": {
+   "cases": 131902,
+   "endings": {
+    "fault": 130542,
+    "sled": 14,
+    "fell-through": 1325,
+    "lockup": 19,
+    "elsewhere": 2
+   },
+   "check": {
+    "match": 131353,
+    "differs": 528,
+    "pending: exception model": 21
+   },
+   "compared_in_part": {
+    "loaded memory the agent never set (those registers not compared)": 23
+   },
+   "repeat": null,
+   "differences": [
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "MSR spec_reg,Rn",
+     "cases": 248,
+     "example": {
+      "code": "80f33b89",
+      "name": "MSR spec_reg,Rn",
+      "id": 1342227496,
+      "regs": [
+       "0xB0708971",
+       "0x3F2D5BBD",
+       "0x3F8D529A",
+       "0x16CF2F3D",
+       "0x73F1F4EF",
+       "0x5F2FE5BF",
+       "0xB57657EC",
+       "0x67CE749F",
+       "0xB520A7EC",
+       "0x94EED9CF",
+       "0x5E4EDB4B",
+       "0xF94FF372",
+       "0xC4C90465"
+      ],
+      "nzcv": "1100",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip runs it and falls through; picosim stops with an error at 0x20014000: Undefined instruction 0xF380893B at 0x20014000: this is not a Cortex-M0+ (ARMv6-M) instruction, so the Pico would stop with a HardFault. If it is data, keep it out of the path the program runs through"
+     },
+     "known": null
+    },
+    {
+     "status": "pending: exception model",
+     "class": "faults",
+     "encoding": "MSR spec_reg,Rn",
+     "cases": 8,
+     "example": {
+      "code": "89f30f88",
+      "name": "MSR spec_reg,Rn",
+      "id": 1342228001,
+      "regs": [
+       "0x1AC355C4",
+       "0xA9B1227D",
+       "0xFE9E6610",
+       "0xE7F83394",
+       "0x8F7DD2CF",
+       "0xA38BED7F",
+       "0xD94216D2",
+       "0x5541D766",
+       "0x2A3F64DE",
+       "0xB3166C9A",
+       "0x7FCAF511",
+       "0xEE6BAC4F",
+       "0x97F6DB1F"
+      ],
+      "nzcv": "1011",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip: lockup"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "DMB #1",
+     "cases": 1,
+     "example": {
+      "code": "b0f351aa",
+      "name": "DMB #1",
+      "id": 1342230195,
+      "regs": [
+       "0x6E3776B9",
+       "0xDE8DD7E4",
+       "0xE5825FE6",
+       "0x2A87F7A4",
+       "0x305C713D",
+       "0x0854367A",
+       "0x127CD6F2",
+       "0x8FDBB854",
+       "0xC80348D7",
+       "0x6478A923",
+       "0x59DF2D10",
+       "0x86EC1DAB",
+       "0x3A05AD79"
+      ],
+      "nzcv": "1010",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip runs it and falls through; picosim stops with an error at 0x20014000: Undefined instruction 0xF3B0AA51 at 0x20014000: this is not a Cortex-M0+ (ARMv6-M) instruction, so the Pico would stop with a HardFault. If it is data, keep it out of the path the program runs through"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "DMB #10",
+     "cases": 1,
+     "example": {
+      "code": "b1f35a80",
+      "name": "DMB #10",
+      "id": 1342230242,
+      "regs": [
+       "0x7B2FE91F",
+       "0xE72D57D5",
+       "0x5E4A392E",
+       "0x5CD21953",
+       "0xD1DD8F48",
+       "0xD2A95E20",
+       "0x0C3ACF3A",
+       "0x75501CAD",
+       "0x7202BBCA",
+       "0xBA74AF83",
+       "0xB041956E",
+       "0xF47A1255",
+       "0xFFD335D2"
+      ],
+      "nzcv": "1010",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip runs it and falls through; picosim stops with an error at 0x20014000: Undefined instruction 0xF3B1805A at 0x20014000: this is not a Cortex-M0+ (ARMv6-M) instruction, so the Pico would stop with a HardFault. If it is data, keep it out of the path the program runs through"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "DSB #14",
+     "cases": 1,
+     "example": {
+      "code": "b1f34ea6",
+      "name": "DSB #14",
+      "id": 1342230248,
+      "regs": [
+       "0x20416E93",
+       "0x89204076",
+       "0x8E930C62",
+       "0x5300ADB5",
+       "0x5B733EEF",
+       "0xFB1C02B5",
+       "0x9F3C32C9",
+       "0xF6741898",
+       "0x9B760191",
+       "0xFD3DED09",
+       "0x07A99880",
+       "0x06304F95",
+       "0xACBFA348"
+      ],
+      "nzcv": "0110",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip runs it and falls through; picosim stops with an error at 0x20014000: Undefined instruction 0xF3B1A64E at 0x20014000: this is not a Cortex-M0+ (ARMv6-M) instruction, so the Pico would stop with a HardFault. If it is data, keep it out of the path the program runs through"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "DSB #4",
+     "cases": 1,
+     "example": {
+      "code": "b2f344a9",
+      "name": "DSB #4",
+      "id": 1342230304,
+      "regs": [
+       "0xF6B42AE6",
+       "0xF66C8DCD",
+       "0x4CC6B00A",
+       "0xB0341C9B",
+       "0x33C4CB1D",
+       "0x85247E79",
+       "0x35FF5CB6",
+       "0xDA6D10CD",
+       "0x3E4E78C1",
+       "0x32BCAC17",
+       "0x17D0D012",
+       "0x56BA8961",
+       "0x06C5D37D"
+      ],
+      "nzcv": "0010",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip runs it and falls through; picosim stops with an error at 0x20014000: Undefined instruction 0xF3B2A944 at 0x20014000: this is not a Cortex-M0+ (ARMv6-M) instruction, so the Pico would stop with a HardFault. If it is data, keep it out of the path the program runs through"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "DSB #8",
+     "cases": 2,
+     "example": {
+      "code": "b4f348a1",
+      "name": "DSB #8",
+      "id": 1342230419,
+      "regs": [
+       "0x23C570C4",
+       "0xD610E9AF",
+       "0x04FD8AC9",
+       "0x9B0C2E13",
+       "0x6BC93401",
+       "0x0E2DB0A4",
+       "0x0D6664F7",
+       "0x4B983CE1",
+       "0xDE2E7196",
+       "0x6BC67412",
+       "0x85A314B6",
+       "0x1B94D518",
+       "0xAFABAD2E"
+      ],
+      "nzcv": "1010",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip runs it and falls through; picosim stops with an error at 0x20014000: Undefined instruction 0xF3B4A148 at 0x20014000: this is not a Cortex-M0+ (ARMv6-M) instruction, so the Pico would stop with a HardFault. If it is data, keep it out of the path the program runs through"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "DSB SY",
+     "cases": 1,
+     "example": {
+      "code": "b5f34f8f",
+      "name": "DSB SY",
+      "id": 1342230465,
+      "regs": [
+       "0x52666353",
+       "0xD465EFB7",
+       "0xED9A1629",
+       "0xD7228268",
+       "0xB8982233",
+       "0x2D04A9D6",
+       "0xAF5DB08C",
+       "0xAEA6D53F",
+       "0xCEE603D4",
+       "0x1FF75C8B",
+       "0x6F261EAB",
+       "0xC0174525",
+       "0x80B86292"
+      ],
+      "nzcv": "1101",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip runs it and falls through; picosim stops with an error at 0x20014000: Undefined instruction 0xF3B58F4F at 0x20014000: this is not a Cortex-M0+ (ARMv6-M) instruction, so the Pico would stop with a HardFault. If it is data, keep it out of the path the program runs through"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "DSB #7",
+     "cases": 1,
+     "example": {
+      "code": "b5f3478e",
+      "name": "DSB #7",
+      "id": 1342230467,
+      "regs": [
+       "0xED3ADC0B",
+       "0x51F6FC35",
+       "0xF048079A",
+       "0x6BA3925D",
+       "0x7CCEBF4B",
+       "0x9F801ABF",
+       "0x66369011",
+       "0x8AD7F0E9",
+       "0x07B2230A",
+       "0x7EE65F6A",
+       "0xB627B2BF",
+       "0xADBDE1BF",
+       "0x1870C05F"
+      ],
+      "nzcv": "1010",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip runs it and falls through; picosim stops with an error at 0x20014000: Undefined instruction 0xF3B58E47 at 0x20014000: this is not a Cortex-M0+ (ARMv6-M) instruction, so the Pico would stop with a HardFault. If it is data, keep it out of the path the program runs through"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "DSB #6",
+     "cases": 1,
+     "example": {
+      "code": "b6f3468f",
+      "name": "DSB #6",
+      "id": 1342230523,
+      "regs": [
+       "0x949D9C8C",
+       "0xBD703F23",
+       "0x29F29609",
+       "0x5385AD53",
+       "0xE618CDB1",
+       "0xF734A4CC",
+       "0x77A3CE59",
+       "0xA97E0124",
+       "0xB25A2C83",
+       "0x5C136AA5",
+       "0x880E2959",
+       "0xCEE6387D",
+       "0x41267617"
+      ],
+      "nzcv": "0111",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip runs it and falls through; picosim stops with an error at 0x20014000: Undefined instruction 0xF3B68F46 at 0x20014000: this is not a Cortex-M0+ (ARMv6-M) instruction, so the Pico would stop with a HardFault. If it is data, keep it out of the path the program runs through"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "DMB #4",
+     "cases": 1,
+     "example": {
+      "code": "b7f35489",
+      "name": "DMB #4",
+      "id": 1342230576,
+      "regs": [
+       "0x04738C01",
+       "0x9E8557D7",
+       "0xC33EA28E",
+       "0x20BE51D0",
+       "0xC12A5165",
+       "0x7C4B9A48",
+       "0xDDFF9E75",
+       "0xFF634C79",
+       "0x56EA0AC3",
+       "0x5DDB4A22",
+       "0x814C53EE",
+       "0xD0F6E8F1",
+       "0xF077959B"
+      ],
+      "nzcv": "1101",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip runs it and falls through; picosim stops with an error at 0x20014000: Undefined instruction 0xF3B78954 at 0x20014000: this is not a Cortex-M0+ (ARMv6-M) instruction, so the Pico would stop with a HardFault. If it is data, keep it out of the path the program runs through"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "ISB #0",
+     "cases": 1,
+     "example": {
+      "code": "b7f36086",
+      "name": "ISB #0",
+      "id": 1342230577,
+      "regs": [
+       "0xBEB78DCC",
+       "0x79B3D2C5",
+       "0x3C9854FA",
+       "0xFBE0283B",
+       "0x263185D8",
+       "0x2DC0E85B",
+       "0xAB179E96",
+       "0x0511C182",
+       "0x75057D54",
+       "0xB57BE1C2",
+       "0x95B86FC2",
+       "0x00583E99",
+       "0x4F786F64"
+      ],
+      "nzcv": "0101",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip runs it and falls through; picosim stops with an error at 0x20014000: Undefined instruction 0xF3B78660 at 0x20014000: this is not a Cortex-M0+ (ARMv6-M) instruction, so the Pico would stop with a HardFault. If it is data, keep it out of the path the program runs through"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "DMB #14",
+     "cases": 1,
+     "example": {
+      "code": "bbf35e84",
+      "name": "DMB #14",
+      "id": 1342230801,
+      "regs": [
+       "0x087AABEE",
+       "0xBB132557",
+       "0x745742BF",
+       "0x70134452",
+       "0x1B983464",
+       "0x77B7F12B",
+       "0x115962F0",
+       "0xA1FFE274",
+       "0x84CB349D",
+       "0x5B1A4AFD",
+       "0xDF6911A8",
+       "0x9A8418D6",
+       "0xE3C636C5"
+      ],
+      "nzcv": "1110",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip runs it and falls through; picosim stops with an error at 0x20014000: Undefined instruction 0xF3BB845E at 0x20014000: this is not a Cortex-M0+ (ARMv6-M) instruction, so the Pico would stop with a HardFault. If it is data, keep it out of the path the program runs through"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "ISB #6",
+     "cases": 1,
+     "example": {
+      "code": "bcf366a4",
+      "name": "ISB #6",
+      "id": 1342230864,
+      "regs": [
+       "0x7BE9748F",
+       "0x1372DC73",
+       "0x233FB596",
+       "0x55B3D697",
+       "0x5E4C8356",
+       "0x7D2620DD",
+       "0x811BEE7B",
+       "0xC1EFB2CF",
+       "0x66771FE9",
+       "0xE5D742D8",
+       "0xA6C9FEE2",
+       "0xF1D5EA53",
+       "0x994B3CA0"
+      ],
+      "nzcv": "0011",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip runs it and falls through; picosim stops with an error at 0x20014000: Undefined instruction 0xF3BCA466 at 0x20014000: this is not a Cortex-M0+ (ARMv6-M) instruction, so the Pico would stop with a HardFault. If it is data, keep it out of the path the program runs through"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "DSB #10",
+     "cases": 1,
+     "example": {
+      "code": "bcf34aa1",
+      "name": "DSB #10",
+      "id": 1342230865,
+      "regs": [
+       "0x049C5A62",
+       "0xC81EC983",
+       "0xE82089B2",
+       "0x8793AF90",
+       "0xE4DC6E92",
+       "0x851B71A1",
+       "0x713AF0FE",
+       "0x79BF2DBC",
+       "0x4E1A25EE",
+       "0x9422D7D2",
+       "0xB709AD0B",
+       "0xDA9A965E",
+       "0xA70670A7"
+      ],
+      "nzcv": "1011",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip runs it and falls through; picosim stops with an error at 0x20014000: Undefined instruction 0xF3BCA14A at 0x20014000: this is not a Cortex-M0+ (ARMv6-M) instruction, so the Pico would stop with a HardFault. If it is data, keep it out of the path the program runs through"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "DMB #11",
+     "cases": 1,
+     "example": {
+      "code": "bdf35b84",
+      "name": "DMB #11",
+      "id": 1342230914,
+      "regs": [
+       "0xFA2B387F",
+       "0xDFBB3D37",
+       "0x1553A26E",
+       "0x18AB9782",
+       "0x65B52A9B",
+       "0xEA2A2BC7",
+       "0x097BB6A4",
+       "0xCCE6DBC8",
+       "0xF446E3BE",
+       "0xD65E5477",
+       "0x1A3C8C3B",
+       "0xDA6355FC",
+       "0x5A14A718"
+      ],
+      "nzcv": "0011",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip runs it and falls through; picosim stops with an error at 0x20014000: Undefined instruction 0xF3BD845B at 0x20014000: this is not a Cortex-M0+ (ARMv6-M) instruction, so the Pico would stop with a HardFault. If it is data, keep it out of the path the program runs through"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "DMB #2",
+     "cases": 1,
+     "example": {
+      "code": "bff35280",
+      "name": "DMB #2",
+      "id": 1342231026,
+      "regs": [
+       "0x3D75BCBD",
+       "0x362C5C25",
+       "0x4CBF201F",
+       "0x7EEC5E81",
+       "0x85FCA782",
+       "0x21C7BA21",
+       "0xA9176132",
+       "0xE1576395",
+       "0x87CFA1DB",
+       "0x0DF69FAD",
+       "0x52EC6DB8",
+       "0x1599ABA0",
+       "0x5D09BE36"
+      ],
+      "nzcv": "1001",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip runs it and falls through; picosim stops with an error at 0x20014000: Undefined instruction 0xF3BF8052 at 0x20014000: this is not a Cortex-M0+ (ARMv6-M) instruction, so the Pico would stop with a HardFault. If it is data, keep it out of the path the program runs through"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "DMB #7",
+     "cases": 1,
+     "example": {
+      "code": "bff357ae",
+      "name": "DMB #7",
+      "id": 1342231035,
+      "regs": [
+       "0x67A26495",
+       "0x3E5D6CA1",
+       "0x3A5C42EE",
+       "0xE18FC073",
+       "0x80C8807C",
+       "0xCE3AE384",
+       "0xC10FCAEB",
+       "0x17171D32",
+       "0x173A4296",
+       "0x894F45C4",
+       "0x2F7B6EA3",
+       "0xACA8422B",
+       "0xE66C3400"
+      ],
+      "nzcv": "0001",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip runs it and falls through; picosim stops with an error at 0x20014000: Undefined instruction 0xF3BFAE57 at 0x20014000: this is not a Cortex-M0+ (ARMv6-M) instruction, so the Pico would stop with a HardFault. If it is data, keep it out of the path the program runs through"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "faults",
+     "encoding": "MRS Rd,spec_reg",
+     "cases": 240,
+     "example": {
+      "code": "e0f3ee86",
+      "name": "MRS Rd,spec_reg",
+      "id": 1342232872,
+      "regs": [
+       "0xC7C1BDEF",
+       "0x24988603",
+       "0xB45623FA",
+       "0x3329AB85",
+       "0x4734D550",
+       "0x76602097",
+       "0xA35B4EE6",
+       "0x5C3E0CC7",
+       "0x29804670",
+       "0x1B61E38B",
+       "0xB6A6435F",
+       "0x60D4F98F",
+       "0xA680AA1D"
+      ],
+      "nzcv": "0101",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip runs it and falls through; picosim stops with an error at 0x20014000: Undefined instruction 0xF3E086EE at 0x20014000: this is not a Cortex-M0+ (ARMv6-M) instruction, so the Pico would stop with a HardFault. If it is data, keep it out of the path the program runs through"
+     },
+     "known": null
+    },
+    {
+     "status": "pending: exception model",
+     "class": "faults",
+     "encoding": "MRS Rd,spec_reg",
+     "cases": 13,
+     "example": {
+      "code": "e1f3298d",
+      "name": "MRS Rd,spec_reg",
+      "id": 1342232929,
+      "regs": [
+       "0x2D9624D4",
+       "0xB1CB12CF",
+       "0x4417CC6A",
+       "0x2F39097C",
+       "0x45C3129D",
+       "0xEFA98BAF",
+       "0xF36CBAB0",
+       "0x887FD98E",
+       "0xC37DB971",
+       "0xE931942D",
+       "0x81F78940",
+       "0x08FA5E54",
+       "0x58B20083"
+      ],
+      "nzcv": "1111",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "the chip: lockup"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "decoder",
+     "encoding": "MRS Rd,spec_reg",
+     "cases": 20,
+     "example": {
+      "code": "eff30880",
+      "name": "MRS Rd,spec_reg",
+      "id": 1342308390,
+      "regs": [
+       "0xB7BE4B82",
+       "0xD33C20FB",
+       "0xF58E64DA",
+       "0x177D8AC7",
+       "0x4A56900A",
+       "0x361CB0B1",
+       "0x5B52EE02",
+       "0xD2C50FE3",
+       "0x651BE370",
+       "0x479B09BA",
+       "0x00ACEC40",
+       "0x13260132",
+       "0xEA85F716"
+      ],
+      "nzcv": "0110",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "r0: chip 0x20040800, picosim 0x20040F00"
+     },
+     "known": null
+    },
+    {
+     "status": "differs",
+     "class": "decoder",
+     "encoding": "MSR spec_reg,Rn",
+     "cases": 3,
+     "example": {
+      "code": "80f30888",
+      "name": "MSR spec_reg,Rn",
+      "id": 1342308392,
+      "regs": [
+       "0x200409EC",
+       "0x60951022",
+       "0xCEB0AD9C",
+       "0x84F521B5",
+       "0xA0BD772F",
+       "0x95A7D9B5",
+       "0xA8EA75B5",
+       "0x56AAA9D4",
+       "0x54D6D228",
+       "0x184F84FE",
+       "0xCAEBAE30",
+       "0x9AC54824",
+       "0xDDDC8BC3"
+      ],
+      "nzcv": "1010",
+      "psp": "0x20040F00",
+      "primask": 0,
+      "detail": "sp: chip 0x20040F00, picosim 0x200409EC"
+     },
+     "known": null
+    }
+   ]
   }
  }
 }

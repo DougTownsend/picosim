@@ -59,6 +59,7 @@ keep their facts (campaign B writes `encodings.json` after each stage).
 ```bash
 python3 -m picosim.discover status              # every campaign: not run, partial, done
 python3 -m picosim.discover check               # picosim against hwfacts/ (writes hwfacts/report.md)
+python3 -m picosim.discover preflight           # before a board session: what is in the way, what Resume will do
 python3 -m picosim.discover verify-raw          # every raw capture, in both copies, against its SHA-256
 python3 -m picosim.discover encodings --offline # facts again from the finished runs on disk (no board)
 ```
@@ -75,8 +76,17 @@ The Testing window shows the same: a **Hardware facts (Level 5 discovery)**
 group with each campaign's status, its provenance and its differences from
 picosim, with Run, Resume and Stop. **Run starts the campaign again from
 the beginning** (the command line's `--fresh`); on a campaign that is
-partial or done, the window asks first and offers Resume instead. A
-`--repeat` run is only on the command line.
+partial or done, the window asks first and offers Resume instead. Tick
+**Run twice** for `--repeat`.
+
+### Before a board session
+
+`preflight` reads only this computer. It stops you if an OpenOCD is
+already running (one left from an earlier picosim holds the probe) or a
+flash restore is pending, checks that openocd and picotool are installed
+and that the raw captures are intact, and says for every stage what a Resume
+will do: reuse a finished run (no board time), resume one at its next batch,
+or start a new run because the cases or the agent changed since.
 
 ### Where the results go
 

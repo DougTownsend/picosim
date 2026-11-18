@@ -62,12 +62,20 @@ explanation wherever a real Pico would crash with a HardFault:
 
 - a word or halfword load/store to an address that is not a multiple of its size;
 - `bx`, `blx` or `pop {pc}` to an address with bit 0 clear (put `.thumb_func`
-  before a label whose address you load with `ldr r0, =label`);
+  before a label whose address you load with `ldr r0, =label`). As on the
+  RP2040 the jump happens and the fault comes at the target, so picosim stops
+  there and names the branch that went there; `bx pc` and `blx pc` stop at the
+  instruction itself, as the chip does;
 - an instruction the M0+ does not have (e.g. code assembled for a Cortex-M4);
 - an address that is neither memory (ROM, flash or SRAM, below) nor a simulated
   I/O register (SIO, IO_BANK0, PADS_BANK0, RESETS);
 - a store into flash or ROM (on a Pico the store would simply be lost): put
   variables after `.data` or `.bss`, which go in SRAM.
+
+Encodings the ARM manual calls UNPREDICTABLE, which the assembler never
+writes but hand-made `.hword` data can (an empty register list such as
+`pop {}`, CPS or MRS/MSR with "should be" bits wrong), run exactly as the
+RP2040 runs them: this was measured on the chip (`hwfacts/`).
 
 ### Memory map
 

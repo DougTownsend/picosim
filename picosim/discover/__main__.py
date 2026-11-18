@@ -7,6 +7,7 @@ Level 5 discovery from the command line (docs/level5-discovery.md).
     python3 -m picosim.discover check [--standin] [--run DIR] [--report FILE]
     python3 -m picosim.discover status [--standin]
     python3 -m picosim.discover verify-raw            (the raw captures against raw_index.json, both copies)
+    python3 -m picosim.discover preflight             (before a board session: what is in the way, what Resume does)
     python3 -m picosim.discover backup-flash | restore-flash
     python3 -m picosim.discover compare-chips [--a chip1] [--b chip2]
 
@@ -30,7 +31,7 @@ def parser():
     ap = argparse.ArgumentParser(prog='python3 -m picosim.discover',
                                  description="Measure the real RP2040 for picosim's Level 5")
     ap.add_argument('command', choices=list(ORDER) + ['check', 'status', 'backup-flash', 'restore-flash',
-                                                      'compare-chips', 'verify-raw'])
+                                                      'compare-chips', 'verify-raw', 'preflight'])
     ap.add_argument('--target', choices=('openocd', 'gdb', 'standin'), default='openocd')
     ap.add_argument('--gdb', default='127.0.0.1:3333', help="host:port of a running GDB server (--target gdb)")
     ap.add_argument('--speed', type=int, default=5000, help="SWD clock in kHz")
@@ -72,6 +73,9 @@ def main(argv=None):
         return cmd_status(a)
     if a.command == 'verify-raw':
         return cmd_verify_raw(a)
+    if a.command == 'preflight':
+        from .preflight import main as preflight
+        return preflight(a.chip_label)
     if a.command == 'compare-chips':
         from .compare import compare_chips
         print(compare_chips(a.a, a.b, 'standin' if a.standin else 'openocd'))

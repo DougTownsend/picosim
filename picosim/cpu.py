@@ -16,6 +16,7 @@ import sys
 import struct
 
 from ._picosim_core import CPUCore as _CPUCore
+from . import timing
 from .memmap import (STACK_TOP, SRAM_BASE, SRAM_END, FLASH_BASE, FLASH_END, ROM_END, fmt,
                      span)
 
@@ -73,6 +74,7 @@ def svc_write_data(core):
 class CPU:
     def __init__(self, memory, entry, asm_map, sym_map, trace=False):
         self._core   = _CPUCore()
+        timing.install(self._core)     # the live RP2040 cycle count (core.m0_cycles)
         self.memory  = memory          # Memory object (for peripheral dispatch)
         self.asm_map = asm_map
         self.sym_map = sym_map

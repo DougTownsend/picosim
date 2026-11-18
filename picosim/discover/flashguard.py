@@ -14,7 +14,8 @@ Backup (FlashGuard.backup(), before anything is written):
      it must be the RP2040's flash at 0x10000000 and exactly 2 MiB.
   2. Backup A over SWD: `flash read_bank 0 <file>`, the whole chip.
   3. Backup B over USB, an independent path: you put the TARGET Pico in
-     BOOTSEL mode, then `picotool save --all <file> -t bin` (the boot ROM
+     BOOTSEL mode, then `picotool save --range 0x10000000 0x10200000 <file>
+     -t bin` (the boot ROM
      reads the chip).
   4. A and B must have the same SHA-256.  If not, both are read once more;
      if they still differ, stop: nothing is written.
@@ -43,13 +44,16 @@ ended before it):
      failed boot check is reported, but the flash is still proven identical.
  12. Backup files are never deleted by this code.
 
-The unique ID and OpenOCD.  OpenOCD 0.12 has no command that reads the
-flash's unique ID over SWD, so the ID can only be read with picotool, in
-BOOTSEL mode.  restore() therefore takes `board_id` from the caller; if it
-is not given it uses a `read_unique_id()` callback, and failing that it asks
-you to put the board in BOOTSEL mode and reads the ID with picotool
-(unique_id_via_picotool()).  The trade-off: the picotool route costs one
-more unplug-and-replug, but is the only route that proves the ID.  Restoring
+The unique ID.  OpenOCD 0.12 has no command that reads the flash's unique
+ID, and picotool 2.3.1 prints it only when it can size the flash, which it
+can't when the first 4 KB is erased (2026-11-17).  So from_target() gives
+the guard a `read_unique_id()` that has the core send the flash its Read
+Unique ID command (flash_id.py, read-only, as the SDK does).  backup()
+reads the ID that way before backup A, then cross-checks it with picotool's
+in BOOTSEL mode when picotool reports one (the two may print the bytes in
+opposite orders: same_flash_id()).  restore() takes `board_id` from the
+caller, else read_unique_id(), else asks for BOOTSEL and uses picotool
+(unique_id_via_picotool()), as a guard built without a target does.  Restoring
 over SWD while the board is in BOOTSEL mode works (the boot ROM is running,
 not the flash), and `reset run` then boots the restored program.
 
@@ -78,6 +82,7 @@ import sys
 import time
 from dataclasses import dataclass
 
+FLASH_XIP_BASE = 0x10000000           # the flash as the core and picotool address it
 FLASH_SIZE = 0x200000                 # 2 MiB: the Pico and Pico W's W25Q16
 XIP_BASE = 0x10000000
 
@@ -186,6 +191,16 @@ def normalize_id(text):
     if not re.fullmatch(r'[0-9a-fA-F]{1,16}', t):
         return None
     return t.upper().zfill(16)
+
+
+def same_flash_id(a, b):
+    """True when two IDs name the same flash.  picotool and the SWD reader
+    (flash_id.py) may print the 8 bytes in opposite orders, so a byte-
+    reversed match counts too (a chance collision is about 1 in 2**64)."""
+    a, b = normalize_id(a), normalize_id(b)
+    if not a or not b:
+        return False
+    return a == b or bytes.fromhex(a) == bytes.fromhex(b)[::-1]
 
 
 def parse_flash_id(output):
@@ -324,28 +339,104 @@ def _serial_ports():
     return set(p for pat in pats for p in glob.glob(pat))
 
 
+def _mdw(monitor, addr):
+    """One word read with OpenOCD's mdw ('0x40010004: 00010000 ')."""
+    out = monitor(f'mdw 0x{addr:08x}')
+    m = re.search(r'0x%08x:\s*([0-9a-fA-F]{8})' % addr, out)
+    if not m:
+        raise FlashGuardError(f"could not read 0x{addr:08X}: {out.strip()[:200]}")
+    return int(m.group(1), 16)
+
+
+def reset_core1(monitor):
+    """Put core 1 back in the boot ROM, as at power-up, before `reset run`.
+
+    OpenOCD's `reset run` (SYSRESETREQ) resets core 0 only, so core 1 kept
+    running the previous program and the next one hung in
+    multicore_launch_core1 (2026-11-17: F stopped twice that way, PC in
+    multicore_launch_core1_raw).  This is the SDK's multicore_reset_core1():
+    PSM.FRCE_OFF bit 16 set through the SET alias, read back until set,
+    cleared through the CLR alias.  The one PSM write safety allows
+    (approved 2026-11-17).  monitor(cmd) -> OpenOCD's reply.  Returns
+    FRCE_OFF as read after the clear."""
+    from . import safety
+    set_a, clr_a = safety.PSM_FRCE_OFF + 0x2000, safety.PSM_FRCE_OFF + 0x3000
+    for a in (set_a, clr_a):
+        safety.check_write(a, 4, safety.PSM_PROC1, allow_core1_reset=True, why='reset core 1')
+    monitor(f'mww 0x{set_a:08x} 0x{safety.PSM_PROC1:08x}')
+    for _ in range(20):
+        if _mdw(monitor, safety.PSM_FRCE_OFF) & safety.PSM_PROC1:
+            break
+    else:
+        monitor(f'mww 0x{clr_a:08x} 0x{safety.PSM_PROC1:08x}')
+        raise FlashGuardError("core 1 did not go into reset (PSM.FRCE_OFF bit 16 never read as set)")
+    monitor(f'mww 0x{clr_a:08x} 0x{safety.PSM_PROC1:08x}')
+    after = _mdw(monitor, safety.PSM_FRCE_OFF)
+    if after & safety.PSM_PROC1:
+        raise FlashGuardError("core 1 stayed forced off (PSM.FRCE_OFF bit 16 still set after the clear)")
+    return after
+
+
+def _usb_serials():
+    """{port: USB serial number} for the serial ports pyserial can see
+    ({} without pyserial)."""
+    try:
+        from serial.tools import list_ports
+    except ImportError:
+        return {}
+    return {p.device: p.serial_number for p in list_ports.comports()}
+
+
+def board_serial_port(board_id, before=(), serials=None, ports=None):
+    """The serial port of the board whose flash unique ID is board_id, and
+    how it was found: (port, 'flash id' | 'new port') or (None, None).
+
+    A Pico SDK program reports the flash ID as its USB serial number, so
+    the port is matched on that first.  The port NAME can't tell two of the
+    board's programs apart: macOS names a USB modem by where it is plugged
+    in, so the probe firmware and the next program get the same name
+    (2026-11-17: F's 01_hello check missed its port that way).  Without
+    pyserial, a port that wasn't in `before` is the fallback."""
+    serials = _usb_serials() if serials is None else serials
+    if board_id:
+        hits = sorted(p for p, sn in serials.items() if sn and same_flash_id(sn, board_id))
+        if hits:
+            return hits[0], 'flash id'
+    new = sorted(set(_serial_ports() if ports is None else ports) - set(before))
+    return (new[0], 'new port') if new else (None, None)
+
+
 class UsbSerialBootCheck:
     """The default boot check: a picosim program's USB serial port appears
     after `reset run`.  before_reset() notes the ports that exist; calling
     the object waits up to `timeout` s for a new one.  Returns
     (ok, description)."""
 
-    def __init__(self, timeout=10.0, poll=0.25):
+    def __init__(self, timeout=10.0, poll=0.1, board_id=None):
         self.timeout = timeout
         self.poll = poll
         self.before = set()
+        self.board_id = board_id     # restore() sets the backup's flash ID: matched first
+        self.seen_gone = False
 
     def before_reset(self):
         self.before = _serial_ports()
+        self.seen_gone = False
 
     def __call__(self):
         if not (sys.platform == 'darwin' or sys.platform.startswith('linux')):
             return False, "The boot check only knows macOS and Linux serial port names."
         end = time.monotonic() + self.timeout
         while True:
-            new = sorted(_serial_ports() - self.before)
-            if new:
-                return True, f"The board's USB serial port appeared: {new[0]}."
+            port, how = board_serial_port(self.board_id, self.before)
+            # A port that was there before the reset may be the old program's,
+            # still listed (2026-11-17: a stale port passed a restore whose
+            # image cannot boot).  It counts only once it has gone and come back.
+            if port and (port not in self.before or self.seen_gone):
+                return True, (f"The board's USB serial port appeared: {port}"
+                              + (" (its USB serial number is the flash ID)." if how == 'flash id' else "."))
+            if not port:
+                self.seen_gone = True
             if time.monotonic() >= end:
                 return False, (f"No new USB serial port appeared within {self.timeout:.0f} s. "
                                "A program that doesn't use USB serial shows nothing here; check "
@@ -444,10 +535,12 @@ class FlashGuard:
     boot_check()                    -> (ok, description); before_reset() is called first if it has one
     reconnect()                     optional: re-open SWD after a power cycle
     read_unique_id()                optional: the board's flash unique ID, for restore()
+    prepare_read()                  optional: make the flash readable over SWD (XIP on)
+                                    before every `flash read_bank`
     """
 
     def __init__(self, monitor, run_picotool=None, ask=None, log=None, boot_check=None,
-                 reconnect=None, read_unique_id=None, backup_dir=None, cache_dir=None,
+                 reconnect=None, read_unique_id=None, prepare_read=None, backup_dir=None, cache_dir=None,
                  work_dir=None, state_path=None, expected_size=FLASH_SIZE, now=None):
         self.monitor = monitor
         self.run_picotool = run_picotool or default_run_picotool
@@ -456,6 +549,7 @@ class FlashGuard:
         self.boot_check = boot_check or UsbSerialBootCheck()
         self.reconnect = reconnect
         self.read_unique_id = read_unique_id
+        self.prepare_read = prepare_read
         self.backup_dir = os.path.expanduser(backup_dir or DEFAULT_BACKUP_DIR)
         self.cache_dir = os.path.expanduser(cache_dir or DEFAULT_CACHE_DIR)
         self.work_dir = os.path.expanduser(work_dir or DEFAULT_WORK_DIR)
@@ -467,6 +561,13 @@ class FlashGuard:
     def from_target(cls, target, **kw):
         """A FlashGuard for a picosim.hwtest.target.Target."""
         kw.setdefault('reconnect', target.reconnect)
+        if 'read_unique_id' not in kw:
+            from . import flash_id
+            log = kw.get('log')
+            kw['read_unique_id'] = lambda: flash_id.read_unique_id(target, log=log)
+        if 'prepare_read' not in kw:
+            from . import flash_id
+            kw['prepare_read'] = lambda: flash_id.enable_xip(target)
         return cls(lambda cmd, timeout: target.rsp.monitor(cmd, timeout=timeout), **kw)
 
     # -- OpenOCD -----------------------------------------------------------
@@ -528,7 +629,16 @@ class FlashGuard:
 
     def _read_bank(self, path, what):
         """The whole flash, read over SWD into `path`; returns the bytes."""
-        self._halt()
+        if self.prepare_read:
+            try:
+                self.prepare_read()
+            except FlashGuardError:
+                raise
+            except Exception as e:
+                raise FlashGuardError(f"Setting the flash up for reading over SWD ({what}) failed: "
+                                      f"{e}. Nothing has been written.")
+        else:
+            self._halt()
         if os.path.exists(path):
             os.remove(path)            # a scratch file in the work folder, never a backup
         out = self._mon(f'flash read_bank 0 {tcl_path(path)}', T_READ)
@@ -539,6 +649,12 @@ class FlashGuard:
         if len(data) != self.expected_size:
             raise FlashGuardError(f"Reading the flash over SWD ({what}) gave {len(data)} bytes, "
                                   f"not {self.expected_size}.")
+        if not data.strip(b'\0'):
+            # An erased flash reads 0xFF.  All zeros is a failed read: XIP
+            # off after a reset halt gave exactly this, with no error.
+            raise FlashGuardError(f"Reading the flash over SWD ({what}) returned only zeros, which "
+                                  "means the read failed (the flash was not readable), not that "
+                                  "the flash is blank. Nothing has been written.")
         return data
 
     # -- picotool ----------------------------------------------------------
@@ -554,7 +670,13 @@ class FlashGuard:
     def _picotool_save(self, path, what):
         if os.path.exists(path):
             os.remove(path)            # scratch file in the work folder
-        self._picotool(['save', '--all', os.path.abspath(path), '-t', 'bin'], f"saving the flash ({what})")
+        # An explicit range, not --all: picotool 2.x on a board whose flash it
+        # cannot size ("Cannot determine the flash size", 2026-11-12) refuses
+        # --all.  The size is the one identify() checked through OpenOCD; the
+        # length check below still refuses anything short.
+        end = FLASH_XIP_BASE + self.expected_size
+        self._picotool(['save', '--range', f'0x{FLASH_XIP_BASE:08x}', f'0x{end:08x}',
+                        os.path.abspath(path), '-t', 'bin'], f"saving the flash ({what})")
         if not os.path.exists(path):
             raise FlashGuardError(f"picotool reported success but wrote no file ({what}).")
         data = _read(path)
@@ -576,6 +698,22 @@ class FlashGuard:
                 f"be tied to this board. It said:\n{out.strip()}\nNothing has been written.")
         return uid
 
+    def unique_id_via_swd(self):
+        """The ID from read_unique_id() (flash_id.py over SWD), as a
+        FlashGuardError when that fails."""
+        try:
+            uid = normalize_id(self.read_unique_id())
+        except FlashGuardError:
+            raise
+        except Exception as e:
+            raise FlashGuardError(
+                f"Reading the flash's unique ID over the debug wires failed: {e}. "
+                "Nothing has been written.")
+        if not uid:
+            raise FlashGuardError("Reading the flash's unique ID over the debug wires gave no ID. "
+                                  "Nothing has been written.")
+        return uid
+
     # -- backup ------------------------------------------------------------
 
     def backup(self, return_to_run_mode=True):
@@ -584,6 +722,9 @@ class FlashGuard:
         for d in (self.backup_dir, self.cache_dir, self.work_dir):
             os.makedirs(d, exist_ok=True)
         size = self.identify()
+        # The ID over SWD first, when the caller can (flash_id.py): picotool
+        # can't report it when the flash's first sector is erased.
+        uid = self.unique_id_via_swd() if self.read_unique_id else None
         a_path = os.path.join(self.work_dir, 'backup_a.bin')
         b_path = os.path.join(self.work_dir, 'backup_b.bin')
 
@@ -595,7 +736,7 @@ class FlashGuard:
         b = self._picotool_save(b_path, "backup B")
         sa, sb = sha256_bytes(a), sha256_bytes(b)
         self.log(f"  backup A (SWD) SHA-256: {sa}\n  backup B (USB) SHA-256: {sb}")
-        uid = self.unique_id_via_picotool()     # while still in BOOTSEL
+        uid = self._id_check_with_picotool(uid)     # while still in BOOTSEL
         if sa != sb:
             self.log("The two backups differ; reading both again once ...")
             b = self._picotool_save(b_path, "backup B, second read")
@@ -634,6 +775,26 @@ class FlashGuard:
                      "Then press \u201cDone: carry on\u201d.")
             self._reconnect()
         return backup
+
+    def _id_check_with_picotool(self, swd_uid):
+        """With no SWD ID, picotool's is required (the old route).  With one,
+        picotool's is a cross-check when it reports one; if it reports none
+        (a blank first sector), the SWD ID stands alone."""
+        if swd_uid is None:
+            return self.unique_id_via_picotool()
+        out = self._picotool(['info', '-d'], "reading the flash's unique ID")
+        pid = parse_flash_id(out)
+        if pid is None:
+            self.log("picotool did not report a flash ID (normal when the flash's first 4 KB is "
+                     "erased); using the ID read over SWD.")
+        elif not same_flash_id(pid, swd_uid):
+            raise FlashGuardError(
+                f"The flash ID read over SWD ({swd_uid}) and the one picotool reports ({pid}) are "
+                "different, so the board on the debug wires may not be the one in BOOTSEL mode. "
+                + WHICH_PICO + " Nothing has been written.")
+        else:
+            self.log(f"picotool reports the same flash ID ({pid}).")
+        return swd_uid
 
     def _store(self, image, sha, uid, size):
         """Step 6: two copies, each .bin + .sha256 + .uf2, all read back and checked."""
@@ -780,12 +941,12 @@ class FlashGuard:
         # Step 8: the right board
         if board_id is None:
             if self.read_unique_id:
-                board_id = self.read_unique_id()
+                board_id = self.unique_id_via_swd()
             else:
                 board_id = self.unique_id_via_picotool(prompt=True)
                 self._reconnect()
         bid = normalize_id(board_id)
-        if not bid or bid != normalize_id(backup.unique_id):
+        if not bid or not same_flash_id(bid, backup.unique_id):
             raise FlashGuardError(
                 f"This board's flash ID is {bid or board_id!r}, but the backup belongs to the board "
                 f"with flash ID {backup.unique_id}. Restoring it here would put another board's "
@@ -805,6 +966,12 @@ class FlashGuard:
                                   f"{out.strip()}\nThe flash may be half-written; that is not "
                                   "permanent. Run the restore again (or drag the .uf2 onto the "
                                   "RPI-RP2 drive in BOOTSEL mode).")
+        if self.prepare_read:          # verify_image reads through XIP too
+            try:
+                self.prepare_read()
+            except Exception as e:
+                raise FlashGuardError(f"Setting the flash up for reading before the verify failed: "
+                                      f"{e}. The flash was written; run the restore again.")
         out = self._mon(f'verify_image {tcl_path(image)} 0x{XIP_BASE:08x} bin', T_READ)
         m = re.search(r'verified\s+(\d+)\s+bytes', out)
         if _looks_failed(out, p) or not m or int(m.group(1)) != backup.size:
@@ -826,14 +993,23 @@ class FlashGuard:
         self.log("The flash is identical to the backup, bit for bit.")
 
         # Step 11: boot check
+        if hasattr(self.boot_check, 'board_id'):
+            self.boot_check.board_id = backup.unique_id
         before = getattr(self.boot_check, 'before_reset', None)
         if before:
             before()
+        core1_note = ''
+        try:
+            reset_core1(self._mon)
+        except Exception as e:                   # the flash is already verified: say so, go on
+            core1_note = f" (core 1 could not be reset first: {e}; a program that uses core 1 may hang)"
+            self.log("Could not reset core 1 before booting the restored program" + core1_note)
         out = self._mon('reset run')
         try:
             ok, detail = self.boot_check()
         except Exception as e:
             ok, detail = False, f"the boot check itself failed ({e})"
+        detail += core1_note
         if _looks_failed(out):
             ok, detail = False, f"'reset run' reported a problem: {out.strip()}. " + detail
         if st and st['state'] == 'restored':

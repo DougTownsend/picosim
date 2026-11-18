@@ -66,6 +66,7 @@ RESETS_RESET, RESETS_DONE = 0x4000C000, 0x4000C008
 CHIP_ID = 0x20002927                 # a placeholder: revision 2, part 0x0002, manufacturer 0x927
 NONSTRIPED = (0x21000000, 0x40000)     # SRAM0-3 one bank after another (datasheet 2.6.2)
 SIO = (0xD0000000, 0x1000)
+DEBUG_ACCESS_CYCLES = 1000          # pad-clock time one debugger access takes (as test_gpio_fidelity)
 SIO_MODEL = (0x050, 0x180)           # SIO offsets modelled by discover/interp_model.py, not gpio.py
 PPB = (0xE000E000, 0x1000)
 SYST_CSR, SYST_RVR, SYST_CVR, SYST_CALIB = 0xE000E010, 0xE000E014, 0xE000E018, 0xE000E01C
@@ -147,6 +148,13 @@ class Chip:
 
     def reset(self):
         self.gpio = GPIO()
+        # The pads' clock: the core's cycles, plus time for each debugger
+        # access (the chip's clocks run on while the core is halted, and one
+        # SWD access is far longer than a pull's 54-72 cycles).  Without it a
+        # pull set through the debugger never reached the pin (gpio.py's pull
+        # timing, 2026-11-17).
+        self.debug_cycles = 0
+        self.gpio.clock = lambda: self.cycles + self.debug_cycles
         self.sio = None                  # divider, interpolators, spinlocks (_sio_model)
         self.cycles = 0
         self.syst = {'csr': 0, 'rvr': 0, 'cvr': 0}
@@ -651,6 +659,7 @@ class Chip:
         self._stall(addr)
         if self.stalled:
             return bytes(n)                  # as OpenOCD answers once the debug port is gone
+        self.debug_cycles += DEBUG_ACCESS_CYCLES
         if self._plain(addr, n):
             return bytes(self.uc.mem_read(addr, n))
         return bytes(self._debug_byte(a) for a in range(addr, addr + n))
@@ -680,6 +689,7 @@ class Chip:
         self._stall(addr)
         if self.stalled:
             return
+        self.debug_cycles += DEBUG_ACCESS_CYCLES
         if self._plain(addr, len(data)):
             self.uc.mem_write(addr, bytes(data))
             # Unicorn keeps translated code; new code there must not run the old
