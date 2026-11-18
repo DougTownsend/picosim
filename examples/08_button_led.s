@@ -97,7 +97,7 @@
         .equ    SHORT,  400000          @ about 10 ms between button checks
         .equ    LONG,   20000000        @ about half a second per LED step
         .else
-        .equ    SETTLE, 1
+        .equ    SETTLE, 30              @ a pull takes 57-75 cycles on the chip (Level 5, campaign F)
         .equ    SHORT,  1
         .equ    LONG,   2
         .endif

@@ -31,6 +31,16 @@ def intr(p): return 0x400140F0 + 4 * (p // 8)
 def bit(v, p): return (v >> p) & 1
 
 
+def settled():
+    """A GPIO whose clock moves 1000 cycles at every access: like campaign
+    G's debugger accesses, microseconds apart, so every pull has finished
+    (gpio.py's measured rise/fall times are under 100 cycles)."""
+    g = GPIO()
+    t = iter(range(0, 1 << 62, 1000))
+    g.clock = lambda: next(t)
+    return g
+
+
 def chip():
     with open(FACTS) as f:
         return json.load(f)
@@ -44,7 +54,7 @@ class PullsTest(unittest.TestCase):
         self.assertTrue(measured)
         for key, row in measured.items():
             pin = int(key)
-            g, got = GPIO(), {}
+            g, got = settled(), {}
             for name, value in (('pull-up', PAD_UP), ('pull-down', PAD_DOWN), ('none after down', PAD_NONE)):
                 g.write32(pad(pin), value)
                 got[name] = bit(g.read32(IN), pin)
@@ -68,7 +78,7 @@ class InoverTest(unittest.TestCase):
                    'INOVER low (pulled up)': [(pad(pin), PAD_UP), (ctrl(pin), 0x2001F)],
                    'normal (pulled up)': [(pad(pin), PAD_UP)]}
             for name, writes in seq.items():
-                g = GPIO()
+                g = settled()
                 for a, v in writes:
                     g.write32(a, v)
                 self.assertEqual(bit(g.read32(IN), pin), row['read'][name], f"GP{pin} {name}")
@@ -82,7 +92,7 @@ class StatusIntrTest(unittest.TestCase):
             if 'error' in row:
                 continue
             pin, sh = int(key), 4 * (int(key) % 8)
-            g = GPIO()
+            g = settled()
             got = {}
 
             def snap(tag):
@@ -106,7 +116,7 @@ class StatusIntrTest(unittest.TestCase):
             pin, sh = int(key), 4 * (int(key) % 8)
             for tag, setv in (('normal', 0), ('inover invert', 0x10000), ('inover high', 0x30000),
                               ('irqover invert', 0x10000000), ('irqover high', 0x30000000)):
-                g = GPIO()
+                g = settled()
                 if setv:
                     g.write32(ctrl(pin) + 0x2000, setv)          # SET alias, as the campaign did
                 g.write32(intr(pin), 0xC << sh)
@@ -116,7 +126,7 @@ class StatusIntrTest(unittest.TestCase):
                 self.assertEqual(got, row[tag], f"GP{pin} {tag}")
 
     def test_status_output_side(self):
-        g = GPIO()
+        g = settled()
         g.write32(ctrl(15), 5)
         g.write32(OE_SET, 1 << 15)
         g.write32(OUT_SET, 1 << 15)
@@ -128,7 +138,7 @@ class StatusIntrTest(unittest.TestCase):
         self.assertEqual((bit(s, 8), bit(s, 9), bit(s, 17)), (1, 0, 0))
 
     def test_edges_latch_and_clear_by_writing_one(self):
-        g = GPIO()
+        g = settled()
         sh = 4 * (19 % 8)
         g.set_external(19, True)
         g.set_external(19, False)
@@ -141,7 +151,7 @@ class StatusIntrTest(unittest.TestCase):
         self.assertEqual(g.read32(intr(19)) >> sh & 0xF, LEVEL_LOW)
 
     def test_ints_is_intr_or_intf_masked_by_inte(self):
-        g = GPIO()
+        g = settled()
         sh = 4 * (2 % 8)
         g.write32(0x40014100, (EDGE_HIGH | LEVEL_LOW) << sh)    # PROC0_INTE0
         self.assertEqual(g.read32(0x40014120) >> sh & 0xF, LEVEL_LOW)
@@ -157,14 +167,14 @@ class StatusIntrTest(unittest.TestCase):
 
 class PadTest(unittest.TestCase):
     def test_input_enable_off_reads_zero(self):
-        g = GPIO()
+        g = settled()
         g.write32(pad(4), PAD_UP & ~0x40)
         self.assertEqual(bit(g.read32(IN), 4), 0)
         g.write32(pad(4), PAD_UP)
         self.assertEqual(bit(g.read32(IN), 4), 1)
 
     def test_output_disable_wins(self):
-        g = GPIO()
+        g = settled()
         g.write32(pad(15), 0x40 | 0x80)                         # IE, OD
         g.write32(ctrl(15), 5)
         g.write32(OE_SET, 1 << 15)
@@ -174,18 +184,18 @@ class PadTest(unittest.TestCase):
         self.assertTrue(bit(g.read32(status(15)), 13))          # OETOPAD is before the pad's OD
 
     def test_debug_pads_and_voltage_select_read_back(self):
-        g = GPIO()
+        g = settled()
         self.assertEqual(g.read32(0x4001C07C), 0xDA)
         self.assertEqual(g.read32(0x4001C080), 0x5A)
         g.write32(0x4001C000, 1)
         self.assertEqual(g.read32(0x4001C000), 1)
 
     def test_board_view_unchanged_for_untouched_pins(self):
-        p = GPIO().pin_states()[7]
+        p = settled().pin_states()[7]
         self.assertEqual((p['dir'], p['level'], p['pull']), ('in', None, None))
 
     def test_keeper_shown_with_its_level(self):
-        g = GPIO()
+        g = settled()
         g.write32(pad(9), PAD_UP)
         g.write32(pad(9), PAD_KEEP)
         p = g.pin_states()[9]
@@ -194,7 +204,7 @@ class PadTest(unittest.TestCase):
 
 class SyscfgTest(unittest.TestCase):
     def test_registers_store_with_their_masks(self):
-        g = GPIO()
+        g = settled()
         self.assertEqual(g.read32(0x40004008), 0x10000000)      # PROC_CONFIG reset
         self.assertEqual(g.read32(0x40004014), 0x66)            # DBGFORCE reset
         g.write32(0x4000400C, 0xFFFFFFFF)
@@ -207,10 +217,10 @@ class SyscfgTest(unittest.TestCase):
 
 class CopyTest(unittest.TestCase):
     def test_copy_from_is_independent(self):
-        a = GPIO()
+        a = settled()
         a.write32(pad(5), PAD_UP)
         a.write32(0x40014100, 0xF0)
-        b = GPIO()
+        b = settled()
         b.copy_from(a)
         self.assertEqual(b.read32(IN), a.read32(IN))
         b.write32(pad(5), PAD_DOWN)
@@ -249,6 +259,14 @@ class PullTimingTest(unittest.TestCase):
         self.t = 1000
         self.g.write32(pad(2), PAD_DOWN)
         self.assertEqual([self.at(t) for t in (1000, 1501, 1502)], [1, 1, 0])
+
+    def test_level_stays_after_the_pin_settles(self):
+        """Regression (2026-11-17): once a pin stopped moving, GPIO_IN went
+        back to a value cached while it was still moving."""
+        self.g.write32(pad(2), PAD_UP)
+        self.assertEqual([self.at(t) for t in (302, 303, 10_000, 1_000_000)], [1, 1, 1, 1])
+        self.g.write32(pad(2), PAD_DOWN)
+        self.assertEqual([self.at(t) for t in (1_000_502, 1_000_503, 2_000_000)], [0, 0, 0])
 
     def test_bypass_removes_the_synchroniser(self):
         self.g.write32(0x4000400C, 1 << 2)                   # PROC_IN_SYNC_BYPASS for GP2

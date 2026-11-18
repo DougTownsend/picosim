@@ -37,8 +37,7 @@ Time (GPIO.clock: the core's live RP2040 cycle count, CPUCore.m0_cycles):
   set.  STATUS and INTR see the pin itself.  Times are counted, as on the
   chip and in campaign F's measurement, from the start of the store to the
   start of the load.  A pin driven by the chip or from outside changes at
-  once.  While these are None (not yet measured at 125 MHz), a pull moves
-  the pin at once and there is no synchroniser delay.
+  once.  The numbers are campaign F's, measured on the chip at 125 MHz.
 
 Register GPIO with the CPU's Memory object so reads/writes to those
 addresses are routed here automatically.
@@ -80,11 +79,14 @@ _PADS_SWCLK_RESET, _PADS_SWD_RESET = 0xDA, 0x5A     # SVD reset values
 
 # Pull and synchroniser timing at 125 MHz (cycles from the start of the PADS
 # store to the start of the GPIO_IN load that first sees the new level),
-# from campaign F (hwfacts/peripherals/gpio_flashed.json).  None: not yet
-# measured, so a pull moves the pin at once.
-PULL_RISE_CYCLES = None      # synchroniser bypassed
-PULL_FALL_CYCLES = None
-SYNC_CYCLES = 0              # the synchroniser's own delay (datasheet: 2; measured by F)
+# measured by campaign F on 2026-11-17 (hwfacts/peripherals/gpio_flashed.json):
+# GP2 of a Pico W on a breadboard, nothing wired to it, clk_sys 125 MHz.
+# With the synchroniser bypassed the load first saw the rise at 5 + 49 and
+# the fall at 5 + 67 cycles; with it on, at 5 + 52 and 5 + 70.  A pin with
+# more wiring on it (more capacitance) takes longer.  None would mean "at once".
+PULL_RISE_CYCLES = 54        # synchroniser bypassed
+PULL_FALL_CYCLES = 72
+SYNC_CYCLES = 3              # the synchroniser's own delay (datasheet: 2; measured: 3, rise and fall)
 
 # IO_BANK0 GPIOn_STATUS bits
 ST_OUTFROMPERI, ST_OUTTOPAD = 1 << 8, 1 << 9
@@ -319,6 +321,9 @@ class GPIO(MemoryBlock):
                 self._base[i] = h.pop(0)[1]
             self._latch(i, now)
             if not h:
+                # Settled: GPIO_IN's cached bit was computed while the pin
+                # was still on its way, so refresh it before dropping the pin.
+                self._gin = self._gin & ~(1 << i) | (int(self._gpio_in_bit(i, now)) << i)
                 self._moving.discard(i)
 
     def _latch(self, i, now):

@@ -63,5 +63,56 @@ class PullLatencyCodeTest(unittest.TestCase):
             self.assertGreaterEqual(seen[2] - seen[1], P.FLASHED_SYNC_SETTLE)
 
 
+class MatchesTheChipTest(unittest.TestCase):
+    """F's routine run inside picosim (live counter + gpio.py's constants)
+    sees the new level from the same d as the chip did (gpio_flashed.json)."""
+
+    def run_once(self, d, bypass):
+        from picosim.gpio import GPIO
+        c = core_with(P.pull_latency_code(d))
+        g = GPIO()
+        g.clock = lambda: c.m0_cycles
+        if bypass:
+            g.write32(P.SYSCFG_BYPASS, 1 << P.SYNC_PIN)
+        g.write32(P.pad_addr(P.SYNC_PIN), P.PAD_DOWN)
+        c.peripheral_read = lambda a, n: g.read32(a)
+        c.peripheral_write = lambda a, v, n: g.write32(a, v)
+        for r, v in {0: P.SIO, 1: P.pad_addr(P.SYNC_PIN), 2: P.PAD_UP, 3: P.PAD_DOWN}.items():
+            c.set_reg(r, v)
+        for _ in range(3_000_000):
+            if c.read16(c.pc) == 0xBE00 | P.Mini.DONE:
+                break
+            c.step()
+        return bool(c.get_reg(4) >> P.SYNC_PIN & 1), not c.get_reg(5) >> P.SYNC_PIN & 1
+
+    def test_thresholds_match_the_chip(self):
+        import json
+        import os
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            'hwfacts', 'peripherals', 'gpio_flashed.json')
+        with open(path) as f:
+            chip = json.load(f)['results']
+        for name, bypass in (('synchronised', False), ('bypass', True)):
+            for i, edge in ((0, 'rise'), (1, 'fall')):
+                sim = next(d for d in range(0, 200) if self.run_once(d, bypass)[i])
+                lo, hi = chip_window(chip[name], edge)
+                self.assertTrue(lo <= sim <= hi + 1,
+                                f"{name} {edge}: picosim first sees it at d={sim}; the chip at d={lo}..{hi}")
+
+
+def chip_window(res, edge):
+    """Where the chip's edge was seen, from F's per-d table: (first d at which
+    any repeat saw it, first d from which every repeat did).  The edge is an
+    analog pull crossing the pad's threshold somewhere inside a clock cycle,
+    so near it the repeats disagree (None) and two runs can differ by a cycle:
+    2026-11-17, the synchronised fall was seen always from d=70 in one run and
+    from d=69 (sometimes at 67, 68) in the next.  picosim is deterministic: its
+    d must lie in that window, or one past it (the earlier run's value)."""
+    table = {int(d): v for d, v in res[edge].items()}
+    always = res['value'][f'{edge}_seen_from_d']
+    first = min((d for d, v in table.items() if v is not False and d <= always), default=always)
+    return first, always
+
+
 if __name__ == '__main__':
     unittest.main()
