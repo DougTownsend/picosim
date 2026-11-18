@@ -1,0 +1,198 @@
+{
+ "schema": 1,
+ "kind": "peripherals-uart",
+ "provenance": {
+  "chip": {
+   "chip_id": "0x20002927",
+   "cpuid": "0x410CC601",
+   "rom_version": 3
+  },
+  "date": "2026-11-17 15:55:30",
+  "openocd": "Open On-Chip Debugger 0.12.0",
+  "swd_khz": 5000,
+  "picosim": {
+   "commit": "8f6d0f4c2732c15fc7592112ac092a5db7eab2b2",
+   "dirty": true
+  },
+  "agent": null,
+  "campaign": "G (flashed, in F)",
+  "run_id": null,
+  "runs": 1,
+  "agreed": null,
+  "target": "openocd",
+  "clocks": {
+   "clk_sys": 125001.0,
+   "clk_peri": 125000.0
+  },
+  "chip_label": "chip1"
+ },
+ "facts": [
+  {
+   "id": "uart.tx_fifo_depth",
+   "value": 32,
+   "source": "measured"
+  },
+  {
+   "id": "uart.rx_fifo_depth",
+   "value": 32,
+   "source": "measured"
+  },
+  {
+   "id": "uart.character_fast",
+   "value": {
+    "ibrd": 1,
+    "fbrd": 0,
+    "cycles_per_bit_predicted": 16.0,
+    "runs": [
+     {
+      "ended": "timeout"
+     },
+     {
+      "ended": "timeout"
+     },
+     {
+      "ended": "timeout"
+     }
+    ],
+    "predicted": {
+     "received_bits": 9.5,
+     "sent_bits": 10,
+     "timeout_bits": 32,
+     "from": "PL011 TRM: stop bit sampled mid-bit; timeout after 32 bit periods"
+    }
+   },
+   "source": "measured"
+  },
+  {
+   "id": "uart.character_115200_at_125_MHz",
+   "value": {
+    "ibrd": 67,
+    "fbrd": 52,
+    "cycles_per_bit_predicted": 1085.01,
+    "runs": [
+     {
+      "ended": "timeout"
+     },
+     {
+      "ended": "timeout"
+     },
+     {
+      "ended": "timeout"
+     }
+    ],
+    "predicted": {
+     "received_bits": 9.5,
+     "sent_bits": 10,
+     "timeout_bits": 32,
+     "from": "PL011 TRM: stop bit sampled mid-bit; timeout after 32 bit periods"
+    }
+   },
+   "source": "measured"
+  },
+  {
+   "id": "uart.flag_timeline_fast",
+   "value": [
+    {
+     "cycles": 14,
+     "fr": "0x98",
+     "busy": 1,
+     "rxfe": 1,
+     "txfe": 1
+    },
+    {
+     "cycles": 182,
+     "fr": "0x80",
+     "busy": 0,
+     "rxfe": 0,
+     "txfe": 1
+    }
+   ],
+   "source": "measured"
+  },
+  {
+   "id": "uart.differences",
+   "value": [],
+   "source": "measured"
+  },
+  {
+   "id": "picosim.uart",
+   "value": "not modelled",
+   "source": "not modelled"
+  }
+ ],
+ "results": {
+  "tx_fifo_depth": {
+   "value": 32,
+   "predicted": 32
+  },
+  "rx_fifo_depth": {
+   "value": 32,
+   "predicted": 32,
+   "fr_full": "0x000000C0",
+   "overrun_ris": 1
+  },
+  "character fast": {
+   "ibrd": 1,
+   "fbrd": 0,
+   "cycles_per_bit_predicted": 16.0,
+   "runs": [
+    {
+     "ended": "timeout"
+    },
+    {
+     "ended": "timeout"
+    },
+    {
+     "ended": "timeout"
+    }
+   ],
+   "predicted": {
+    "received_bits": 9.5,
+    "sent_bits": 10,
+    "timeout_bits": 32,
+    "from": "PL011 TRM: stop bit sampled mid-bit; timeout after 32 bit periods"
+   }
+  },
+  "character 115200 at 125 MHz": {
+   "ibrd": 67,
+   "fbrd": 52,
+   "cycles_per_bit_predicted": 1085.01,
+   "runs": [
+    {
+     "ended": "timeout"
+    },
+    {
+     "ended": "timeout"
+    },
+    {
+     "ended": "timeout"
+    }
+   ],
+   "predicted": {
+    "received_bits": 9.5,
+    "sent_bits": 10,
+    "timeout_bits": 32,
+    "from": "PL011 TRM: stop bit sampled mid-bit; timeout after 32 bit periods"
+   }
+  },
+  "flag_timeline_fast": {
+   "value": [
+    {
+     "cycles": 14,
+     "fr": "0x98",
+     "busy": 1,
+     "rxfe": 1,
+     "txfe": 1
+    },
+    {
+     "cycles": 182,
+     "fr": "0x80",
+     "busy": 0,
+     "rxfe": 0,
+     "txfe": 1
+    }
+   ],
+   "note": "UARTFR each time it changed after a DR write"
+  }
+ }
+}

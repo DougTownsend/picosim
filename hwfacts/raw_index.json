@@ -6507,5 +6507,14 @@
   "batches_done": 3,
   "batches": 3,
   "cases": 1001
+ },
+ "chip1/flashed/20261117-155530": {
+  "files": {
+   "facts-environment.json": "84c4a986b8796ed01ec7cfdbf31bec18e47537cfd041f5224e488006646098a5",
+   "facts-peripherals-gpio_flashed.json": "863d26d2a004aa983d56236e152b0b2ba3e82eea93220c86ecdca5fae684201d",
+   "facts-peripherals-timer.json": "1dc5ee55bbcd698dfb91c68d60b1d0ae4e0da340cb778babfbfe6fbd6daf3d46",
+   "facts-peripherals-uart.json": "c4d70889d94415f4588cf4f172f3231f1a6674a241b84a3482728f43f4377d58"
+  },
+  "recorded": "2026-11-17 16:03:31"
  }
 }

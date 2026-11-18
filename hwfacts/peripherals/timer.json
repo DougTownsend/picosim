@@ -1,0 +1,167 @@
+{
+ "schema": 1,
+ "kind": "peripherals-timer",
+ "provenance": {
+  "chip": {
+   "chip_id": "0x20002927",
+   "cpuid": "0x410CC601",
+   "rom_version": 3
+  },
+  "date": "2026-11-17 15:55:30",
+  "openocd": "Open On-Chip Debugger 0.12.0",
+  "swd_khz": 5000,
+  "picosim": {
+   "commit": "8f6d0f4c2732c15fc7592112ac092a5db7eab2b2",
+   "dirty": true
+  },
+  "agent": null,
+  "campaign": "G (flashed, in F)",
+  "run_id": null,
+  "runs": 1,
+  "agreed": null,
+  "target": "openocd",
+  "clocks": {
+   "clk_sys": 125001.0,
+   "clk_peri": 125000.0
+  },
+  "chip_label": "chip1"
+ },
+ "facts": [
+  {
+   "id": "timer.paused_while_halted",
+   "value": true,
+   "source": "measured"
+  },
+  {
+   "id": "timer.ticks_per_host_second",
+   "value": 999872,
+   "source": "measured"
+  },
+  {
+   "id": "timer.timehr_latched_by_timelr",
+   "value": true,
+   "source": "measured"
+  },
+  {
+   "id": "timer.cycles_per_tick",
+   "value": 125.001,
+   "source": "measured"
+  },
+  {
+   "id": "timer.systick_external_ticks_per_timer_tick",
+   "value": 1.0,
+   "source": "measured"
+  },
+  {
+   "id": "timer.alarm_to_irq",
+   "value": {
+    "spin": 7.0,
+    "wfi": 7.0
+   },
+   "source": "measured"
+  },
+  {
+   "id": "timer.differences",
+   "value": [],
+   "source": "measured"
+  },
+  {
+   "id": "picosim.timer",
+   "value": "not modelled",
+   "source": "not modelled"
+  }
+ ],
+ "results": {
+  "paused_while_halted": {
+   "value": true,
+   "dbgpause": "0x00000007",
+   "raw": [
+    5001863,
+    5001863
+   ],
+   "predicted": true
+  },
+  "ticks_per_host_second": {
+   "value": 999872,
+   "predicted": 1000000,
+   "note": "host-timed through the debugger: about 0.5 % uncertainty"
+  },
+  "timehr_latched_by_timelr": {
+   "value": true,
+   "timelr": "0xFFF801F7",
+   "timerawh_after_carry": 2,
+   "timehr_after_carry": 1,
+   "timelr_again": "0x0002BC90",
+   "timehr_again": 2,
+   "set_to": "0x00000000FFF80000",
+   "predicted": "TIMEHR keeps the high word latched by the TIMELR read"
+  },
+  "cycles_per_tick": {
+   "value": 125.001,
+   "ticks": 1000
+  },
+  "systick_external_ticks_per_timer_tick": {
+   "value": 1.0,
+   "note": "SYST_CSR.CLKSOURCE = 0 (the external reference), counted over 100 TIMER ticks"
+  },
+  "alarm_to_irq": {
+   "value": {
+    "spin": 7.0,
+    "wfi": 7.0
+   },
+   "detail": {
+    "spin": {
+     "cycles": [
+      7.0,
+      7.0,
+      8.0,
+      8.0,
+      9.0,
+      10.0,
+      10.0,
+      10.0,
+      10.0,
+      10.0,
+      11.0,
+      12.0,
+      12.0,
+      12.0,
+      13.0,
+      13.0
+     ],
+     "min": 7.0,
+     "max": 13.0,
+     "ends": {
+      "done": 16
+     }
+    },
+    "wfi": {
+     "cycles": [
+      7.0,
+      8.0,
+      9.0,
+      9.0,
+      9.0,
+      9.0,
+      9.0,
+      9.0,
+      10.0,
+      10.0,
+      11.0,
+      11.0,
+      12.0,
+      12.0,
+      13.0,
+      13.0
+     ],
+     "min": 7.0,
+     "max": 13.0,
+     "ends": {
+      "done": 16
+     }
+    }
+   },
+   "note": "cycles from the alarm tick to the handler's first load, minus the poll lag (0..~6 cycles)"
+  }
+ }
+}

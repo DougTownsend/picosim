@@ -445,7 +445,8 @@ scenario files `picosim/discover/scenarios/*.s` for D4.
   - **backup B**: `picotool save --all` in BOOTSEL mode, which needs **you**
     (see §6);
   - the two SHA-256s must match;
-  - read the flash unique ID (`picotool info -a`);
+  - read the flash unique ID over SWD (`flash_id.py`, before backup A),
+    checked against `picotool info -d` when picotool reports one;
   - store the backup twice, plus a `.uf2` that is decoded back and checked
     against the `.bin`;
   - **restore**: `flash write_image erase`, then `verify_image`, a full
@@ -905,6 +906,159 @@ Found on the board (2026-11-10, campaign C's write masks):
     of B carries on B1's 11 Nov run (17 batches), reuses B2, carries on B3
     at batch 60, then runs B4 and B5; the case lists and the agent match
     every saved run.
+
+Found on the board (2026-11-17, campaign F's backup):
+  - Backups A (SWD) and B (USB) matched (SHA-256 9c9d6e82…), then F
+    stopped before writing anything: `picotool info -d` printed only
+    `type: RP2040` and `revision: B2`, no `flash id`. The target's flash
+    is erased below 0x1000 (data from 0x1000 to 0x7F0FF), and picotool
+    2.3.1 prints the ID only when it can size the flash, which it can't
+    with a blank first sector (the same cause as 12 Nov's "Cannot
+    determine the flash size").
+  - Fix: `picosim/discover/flash_id.py` reads the ID over SWD. After
+    `reset halt` the core runs a 96-byte routine from SRAM that calls the
+    ROM's connect_internal_flash and flash_exit_xip, sends 0x4B (Read
+    Unique ID, read-only) with chip select forced low as the SDK's
+    flash_get_unique_id does, then flash_flush_cache and
+    flash_enter_cmd_xip. It reads twice (both must agree), refuses
+    all-0x00/0xFF, and has a poll timeout that still releases chip select
+    and turns XIP back on. The ROM addresses come from the chip's own
+    function table (measured B2 ROM: IF 0x2491, EX 0x23E5, FC 0x2351,
+    CX 0x2321).
+  - The guard reads that ID before backup A. In BOOTSEL it checks it
+    against picotool's when picotool reports one (either byte order),
+    and refuses on a mismatch. A restore reads it the same way, so it
+    needs no extra BOOTSEL replug. Tested in Unicorn with a modelled
+    SSI and flash (`tests/test_discover_flash_id.py`) and in
+    test_discover_flashguard. On the chip (14:48) it read flash ID
+    E6642815E38BA828 and the backup finished (saved as
+    20261117-144849-E6642815E38BA828).
+  - Then the check before writing stopped F: "the flash no longer matches
+    the backup". It hadn't changed: `prewrite.bin` was 2 MB of zeros. The
+    reconnect after the replug runs `reset halt`, which leaves the core at
+    the boot ROM's start before XIP is set up, and `flash read_bank` reads
+    through XIP, so OpenOCD returned zeros with no error. Backup A had
+    only worked because the ID routine ends with flash_enter_cmd_xip.
+    Fix: `flash_id.enable_xip()` (reset halt, then ROM IF/EX/FC/CX) runs
+    before every SWD read and before a restore's verify_image (the guard's
+    `prepare_read`), and a read of all zeros is refused as a failed read
+    (an erased flash reads 0xFF). Nothing was written; the backup stands.
+  - F then ran to the end (15:00): probe firmware written, measured,
+    backup written back, read-back SHA-256 identical (9c9d6e82…). The boot
+    check found no USB port, as expected: this board's own flash content
+    has no boot2 (first 4 KB erased), so it never ran a program.
+    Measured: clk_sys 125.000 MHz, clk_peri 125.001, clk_usb/adc 48.000,
+    xosc 12.000, rosc 5.394; 125.4 cycles per TIMER µs; interference loop
+    194 cycles in all 256 runs (no jitter from USB or core 1). GPIO pull
+    on GP2 (nothing wired): GPIO_IN first sees the rise at 5 + 49 cycles
+    with the synchroniser bypassed and 5 + 52 with it on; the fall at
+    5 + 67 and 5 + 70. So the synchroniser is 3 cycles (datasheet: 2).
+  - Built from it: gpio.py PULL_RISE_CYCLES = 54, PULL_FALL_CYCLES = 72,
+    SYNC_CYCLES = 3. F's own routine run inside picosim now gives the
+    chip's thresholds exactly (test_pull_latency_code MatchesTheChipTest).
+    This found a model bug: once a pin settled, GPIO_IN fell back to a
+    value cached while it was still moving (regression test added). The
+    static G tests now use a clock that moves 1000 cycles per access, like
+    G's debugger reads. 08_button_led's sim SETTLE 1 -> 30: with 1 the
+    read came 26 cycles after the last pad store and GP26-28 read
+    backwards; with 30 it is 113 cycles.
+  - Old checks: 01_hello found no new serial port (inconclusive: the
+    probe firmware's port likely had the same name, so it wasn't "new");
+    the FUNCSEL check did not run (needs `--pins 21`).
+  - Fixed after the run (no board): macOS names a USB modem port by where
+    it is plugged in (the probe shows as `cu.usbmodem1102`), so the probe
+    firmware and 01_hello, both on USB stdio, get the same name and the
+    "new port" test can never fire. A Pico SDK program reports the flash
+    unique ID as its USB serial number, so `flashguard.board_serial_port`
+    now matches the port on the flash ID (either byte order) and falls
+    back to "new port" only without pyserial. The 01_hello check polls
+    every 0.1 s and opens the port at once (wrapper_main.c waits only 5 s
+    for a terminal, then prints into nothing), reads until "Hi!" shows,
+    strips core 1's pin frames, and passes only on "Hi!" (pin frames
+    alone are not a pass). The FUNCSEL check now scores itself (OETOPAD
+    and OUTTOPAD both 0 = as picosim predicts). Both checks are facts
+    (`environment.old_check.*`) with picosim's prediction. The restore's
+    boot check matches the flash ID first too, so another USB device
+    appearing can't pass it. Tests: tests/test_discover_old_checks.py.
+    Still to do on the board: `flashed --pins 21` (GP21 must be free).
+  - `flashed --pins 21` (15:45) stopped: the probe firmware never reached
+    its BKPT, twice (the 15:09 try had done the same). Halted, core 0 was
+    at 0x1000650C in multicore_launch_core1_raw, waiting in
+    multicore_fifo_pop_blocking for core 1's answer. OpenOCD here drives
+    core 0 only, and its `reset run` (SYSRESETREQ) resets core 0 only:
+    core 1 kept running the last program's report_pins, so the next
+    program's launch handshake never got an answer. The 14:55 run worked
+    because a BOOTSEL replug (a power cycle) came just before it. The same
+    hang explains 01_hello printing nothing in that run (flashed right
+    after the probe firmware: USB came up, then the launch hung before
+    asm_main). The flash was restored and verified identical every time.
+  - Fix (user chose it, 2026-11-17): `flashguard.reset_core1` does what
+    the SDK's multicore_reset_core1() does, from the debugger:
+    PSM.FRCE_OFF bit 16 set through the SET alias, read back, cleared
+    through the CLR alias. Core 1 then waits in the boot ROM as at
+    power-up. F's `start_program` runs it before every `reset run`, and
+    so does the restore (there a failure is noted in the boot detail and
+    the restore goes on, since the flash is already verified). Safety: one
+    narrow exception to "PSM is never written", `check_write(...,
+    allow_core1_reset=True)` lets through exactly 0x00010000 to
+    0x40012004/0x40013004 and nothing else in PSM (tested).
+  - The same run showed a false pass in my new boot check: the restored
+    image can't boot (no boot2; the boot ROM's BOOTSEL USB has no serial
+    port), yet the check passed on the probe firmware's port, still
+    listed. Matching on the flash ID had dropped the "not there before
+    the reset" rule. Now a port that was listed before the reset counts
+    only after it has gone and come back. The guard's state file still
+    says this 15:46 restore's boot check passed: it did not (the flash
+    itself was verified bit for bit).
+  - Rerun with the core 1 reset (15:55): F finished. Both old checks pass
+    on the chip: 01_hello printed "Hi!" after Flash (port found by flash
+    ID, `environment.old_check.hello_prints`), and the program that skips
+    FUNCSEL left GP21_STATUS = 0 (OETOPAD and OUTTOPAD 0), as picosim
+    predicts (`environment.old_check.funcsel_skipped_undriven`). Restored
+    identical (9c9d6e82…); the boot check now correctly finds no port.
+    Clocks, the XIP cache and interference (194 cycles in all 256) repeat
+    the first run; cycles per TIMER µs 124.2.
+  - Pull timing, second run: bypass rise 49 and fall 67 and synchronised
+    rise 52 repeat exactly; the synchronised fall was seen always from
+    d = 69 (sometimes at 67, 68), against 70 in the first run. The edge
+    is an analog pull crossing the pad threshold at some point within a
+    cycle, so near it the result jitters by about a cycle. gpio.py keeps
+    54/72/3 (picosim's synchronised fall, 70, is the first run's value).
+    MatchesTheChipTest now checks that picosim's d lies in the chip's
+    window (first d any repeat saw it .. first d all did, + 1).
+  - F used to keep only the latest facts files, so this run replaced the
+    first run's per-d table (only the summary above survives). Now each
+    run's documents are copied to `<cache>/chip1/flashed/<time>/facts-*`
+    and recorded by `facts.record_raw` (raw_index.json + the second copy);
+    the 15:55 run is kept as 20261117-155530.
+  - Stand-in: G's stand-in run showed no pin following its pull. The
+    stand-in's gpio.py clock was never connected (it stayed at 0), so once
+    gpio.py had real pull delays a pull set through the debugger never
+    reached the pin. Now the pads' clock is the stand-in's cycle count plus
+    1000 cycles per debugger access (the chip's clocks run on while the
+    core is halted; an SWD access is far longer than 72 cycles), as
+    test_gpio_fidelity already models. SysTick and cycle counts unchanged.
+- 2026-11-17, proposals 2, 7 and 8 finished (no board):
+  - The core (uncommitted, from an earlier session) already ran the
+    UNPREDICTABLE forms as the chip does, which goes past proposals 7 and
+    8 as approved ("keep stopping, with a message"). Asked again: the user
+    chose **run them like the chip** (also for the MSR/MRS/barrier
+    should-be bits and reserved SYSm, which were still open). README and
+    the guide's Troubleshooting say so.
+  - Last measured case built: `STM Rn!,{}` stores LR at [Rn] and adds 4
+    to Rn (B3: the stored word was LR in 2 of 2 cases; B1: Rn + 4). Same
+    as PUSH {} (LR at [SP], SP unchanged): the chip treats an empty list
+    as LR (stores) or PC (loads). Both execution paths; the teaching
+    datapath now shows STM {} as one transfer (2 more states).
+  - `BX PC` / `BLX PC`: the chip faults at the instruction (B4, all 16
+    cases), not at PC + 4 like a BX to another even address. picosim now
+    stops there, in both paths, with its own message.
+  - test_faults rewritten for proposal 2 (the branch completes, LR set for
+    BLX; the next step stops at the target and names the branch; moving
+    the PC away drops the stop); the stand-in replay test counts BX even
+    as a match. known_differences.json: 9 entries -> 2 (MRS/MSR MSP,
+    proposal 1, Stage 4). All recorded chip cases: 97,328 match, 1 known
+    difference (MRS MSP), none new.
 
 Safety additions:
 - The PADS_BANK0 SWCLK/SWD pads and VOLTAGE_SELECT are never written;
