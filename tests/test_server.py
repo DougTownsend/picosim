@@ -43,7 +43,9 @@ def start(path):
     srv = Server(0)
     srv.path = path
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    return Client(srv.port)
+    c = Client(srv.port)
+    c.send(cmd='hello', token=srv.token)
+    return c
 
 
 class ServerTest(unittest.TestCase):

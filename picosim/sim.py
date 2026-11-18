@@ -761,10 +761,14 @@ def run_gui(input_file):
         print("Error: Godot 4 not found.  Put 'godot' on PATH or set PICOSIM_GODOT.",
               file=sys.stderr)
         return 1
-    srv = Server(0)
+    srv = Server(0)                  # makes this run's secret, srv.token
     srv.path = os.path.abspath(input_file) if input_file else None
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    proc = subprocess.run([godot, '--path', gui_dir, '--', '--port', str(srv.port)])
+    # The secret goes to Godot in its environment, which other users cannot
+    # read (a command line they can); the GUI sends it first (server.py).
+    from .server import TOKEN_ENV
+    env = dict(os.environ, **{TOKEN_ENV: srv.token})
+    proc = subprocess.run([godot, '--path', gui_dir, '--', '--port', str(srv.port)], env=env)
     return proc.returncode
 
 

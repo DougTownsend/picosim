@@ -12,6 +12,18 @@ The server answers with events, also one JSON object per line:
     {"type": "perf", ...}          performance metrics, machine comparison, pipeline
     {"type": "error", "message"}
 
+The connection is private to the GUI that picosim launched.  The launcher
+makes a secret for this run (Server.token) and gives it to the GUI in the
+environment variable PICOSIM_TOKEN (never on a command line, which other
+users can see).  The first line on a connection must be
+    {"cmd": "hello", "token": "<the secret>"}
+within HELLO_TIMEOUT seconds; until then the server shows nothing and runs
+nothing, and a connection that gets it wrong is closed.  Once the GUI is in,
+the server stops listening.  After that it accepts only the commands in
+COMMANDS, with the argument types in ARG_TYPES; a line longer than MAX_LINE
+is dropped, and a GUI that stops reading for SEND_TIMEOUT seconds is
+disconnected, so it cannot keep the server alive for ever.
+
 All CPU access happens on the single server thread, so the GUI never races
 the simulator.  Console input for getchar is queued; when the machine is
 about to execute `svc #3` with an empty queue it stalls (waiting_input) and
@@ -19,10 +31,12 @@ resumes as soon as input arrives.
 """
 
 import contextlib
+import hmac
 import io
 import json
 import os
 import re
+import secrets
 import select
 import socket
 import sys
@@ -55,6 +69,65 @@ PIPE_SYNC = 256          # lay out the pipeline at least this often at max speed
 WALK_FIRST = 40          # the walkthrough's first page: rows sent as soon as they are made
 WALK_PAGE = 200          # rows per later page
 WALK_SLICE = 0.008       # seconds of walkthrough building between looks at the GUI's commands
+
+# ── the private connection (see the module docstring) ─────────────────────────
+TOKEN_ENV = 'PICOSIM_TOKEN'
+HELLO_TIMEOUT = 5.0      # seconds a new connection has to send its hello
+HELLO_MAX = 4096         # bytes a hello may take
+MAX_LINE = 1 << 20       # bytes in one command line (the largest real ones are a few KB)
+SEND_TIMEOUT = 30.0      # seconds a send may wait for the GUI to read
+
+# Every command the GUI may send (Server.cmd_<name>), grouped by what it may
+# touch.  FILES: reads or writes files the user chose.  HARDWARE: talks to a
+# real board, serial port or debug probe; the GUI sends these only from a
+# button the user pressed.  Everything else stays inside the simulator.
+SIM_COMMANDS = frozenset({
+    'use_last_build', 'reload', 'step_cycle', 'step_insn', 'run', 'step_back', 'goto',
+    'set_options', 'run_to_main', 'step_over', 'set_machine', 'set_speed', 'pause', 'set_bp',
+    'clear_bp', 'toggle_bp', 'set_reg', 'set_flag', 'write_mem', 'view_mem', 'gpio_set',
+    'console_input', 'state', 'perf', 'heat', 'heat_baseline', 'walkthrough',
+    'pipe_walkthrough', 'set_mode', 'hw_info', 'hw_discover_status', 'hw_discover_detail',
+    'hw_discover_open_case'})
+FILE_COMMANDS = frozenset({'load', 'set_settings', 'heat_export', 'hw_export'})
+HARDWARE_COMMANDS = frozenset({
+    'serial_list', 'serial_open', 'serial_close', 'flash', 'hw_connect', 'hw_disconnect',
+    'hw_run', 'hw_stop', 'hw_discover_run', 'hw_discover_stop', 'hw_discover_answer',
+    'hw_discover_flash'})
+COMMANDS = SIM_COMMANDS | FILE_COMMANDS | HARDWARE_COMMANDS
+
+# Argument types checked before a command runs (the handlers check values).
+_TEXT, _NUM, _FLAG = (str,), (int, float), (bool,)
+ARG_TYPES = {
+    'load': {'path': _TEXT},
+    'set_settings': {'values': (dict,), 'defaults': _FLAG},
+    'heat_export': {'path': _TEXT, 'format': _TEXT},
+    'hw_export': {'path': _TEXT, 'kind': _TEXT},
+    'serial_open': {'port': _TEXT},
+    'hw_connect': {'kind': _TEXT, 'host': _TEXT, 'port': _NUM, 'openocd': _TEXT,
+                   'speed': _NUM, 'input': _TEXT, 'tests': (list,), 'max_steps': _NUM,
+                   'stop_on_diff': _FLAG},
+    'hw_run': {'input': _TEXT, 'tests': (list,), 'max_steps': _NUM, 'stop_on_diff': _FLAG},
+    'hw_discover_run': {'campaign': _TEXT, 'action': _TEXT, 'confirmed': _FLAG,
+                        'fresh': _FLAG},
+    'hw_discover_flash': {'campaign': _TEXT, 'action': _TEXT, 'index': _NUM},
+    'hw_discover_open_case': {'campaign': _TEXT, 'index': _NUM},
+    'console_input': {'text': _TEXT},
+}
+
+
+def _arg_problem(cmd, msg):
+    """Why msg's arguments have the wrong types for `cmd`, or None."""
+    for key, types in ARG_TYPES.get(cmd, {}).items():
+        v = msg.get(key)
+        if v is None:
+            continue
+        if isinstance(v, bool) and bool not in types:
+            return f"'{key}' must be {'text' if types == _TEXT else 'a number'}"
+        if not isinstance(v, types):
+            want = {_TEXT: 'text', _NUM: 'a number', _FLAG: 'true or false'}.get(
+                types, types[0].__name__)
+            return f"'{key}' must be {want}"
+    return None
 
 _BRANCH = re.compile(r'^(b|bl|b(?:eq|ne|hs|cs|lo|cc|mi|pl|vs|vc|hi|ls|ge|lt|gt|le|al))(\s+)#(0x[0-9a-f]+|\d+)$')
 
@@ -98,14 +171,18 @@ def heat_model_name(model):
 
 
 class Server:
-    def __init__(self, port):
+    def __init__(self, port, token=None):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind(('127.0.0.1', port))
-        self.sock.listen(1)
+        self.sock.listen(4)
         self.port = self.sock.getsockname()[1]
+        # the secret the GUI must send first (module docstring); made here
+        # unless the launcher made one
+        self.token = token or secrets.token_hex(32)
         self.conn = None
         self.rxbuf = b''
+        self._skipping = False     # dropping the rest of a line longer than MAX_LINE
 
         self.prog = None
         self.path = None
@@ -193,12 +270,90 @@ class Server:
     def console(self, text, source='sim'):
         self.send({'type': 'console', 'text': text, 'source': source})
 
+    def hello_ok(self, line):
+        """Whether `line` (bytes) is the hello with this run's secret."""
+        try:
+            msg = json.loads(line)
+        except ValueError:
+            return False
+        if not isinstance(msg, dict) or msg.get('cmd') != 'hello':
+            return False
+        token = msg.get('token')
+        return isinstance(token, str) and hmac.compare_digest(token.encode(), self.token.encode())
+
+    def _hello(self, conn):
+        """(True, bytes after the hello) when `conn` sends the right hello in
+        time, else (False, b'')."""
+        conn.settimeout(HELLO_TIMEOUT)
+        end = time.monotonic() + HELLO_TIMEOUT
+        buf = b''
+        try:
+            while b'\n' not in buf:
+                left = end - time.monotonic()
+                if left <= 0 or len(buf) > HELLO_MAX:
+                    return False, b''
+                conn.settimeout(left)
+                data = conn.recv(HELLO_MAX)
+                if not data:
+                    return False, b''
+                buf += data
+        except OSError:
+            return False, b''
+        line, rest = buf.split(b'\n', 1)
+        return (True, rest) if len(line) <= HELLO_MAX and self.hello_ok(line) else (False, b'')
+
+    def accept_gui(self):
+        """Wait for the GUI: the first connection whose hello carries the
+        secret.  Any other connection is closed; once the GUI is in, nothing
+        else can connect."""
+        while True:
+            try:
+                conn, _ = self.sock.accept()
+            except OSError:
+                return None
+            ok, rest = self._hello(conn)
+            if ok:
+                self.sock.close()
+                self.rxbuf = rest
+                return conn
+            try:
+                conn.close()
+            except OSError:
+                pass
+
+    def _take(self, data):
+        """Add received bytes; dispatch each complete line.  A line longer
+        than MAX_LINE is dropped (with one error) up to its newline."""
+        self.rxbuf += data
+        while True:
+            nl = self.rxbuf.find(b'\n')
+            if nl < 0:
+                if len(self.rxbuf) > MAX_LINE:
+                    if not self._skipping:
+                        self.error(f"a command longer than {MAX_LINE} bytes was ignored")
+                    self._skipping = True
+                    self.rxbuf = b''
+                return
+            line, self.rxbuf = self.rxbuf[:nl], self.rxbuf[nl + 1:]
+            if self._skipping:
+                self._skipping = False
+                continue
+            if len(line) > MAX_LINE:
+                self.error(f"a command longer than {MAX_LINE} bytes was ignored")
+            elif line.strip():
+                self.dispatch(line)
+
     def serve_forever(self):
-        self.conn, _ = self.sock.accept()
-        # Blocking sends (a burst of updates must never look like a hang-up);
-        # reads only happen after select() reports data, so they never block.
-        self.conn.setblocking(True)
+        self.conn = self.accept_gui()
+        if self.conn is None:
+            return
+        # Sends block (a burst of updates must never look like a hang-up), but
+        # only for SEND_TIMEOUT: a GUI that stops reading is disconnected.
+        # Reads only happen after select() reports data, so they never block.
+        self.conn.settimeout(SEND_TIMEOUT)
         self.send(teaching.facts())
+        if self.rxbuf:                # commands sent right behind the hello
+            self._take(b'')
         if self.path:
             self.cmd_load({'path': self.path})
         else:
@@ -213,11 +368,7 @@ class Server:
                     break
                 if data == b'':
                     break          # GUI closed the connection
-                self.rxbuf += data or b''
-                while b'\n' in self.rxbuf:
-                    line, self.rxbuf = self.rxbuf.split(b'\n', 1)
-                    if line.strip():
-                        self.dispatch(line)
+                self._take(data)
             try:
                 self.poll_serial()
                 self.poll_flash()
@@ -259,10 +410,13 @@ class Server:
             return self.error(f"bad JSON: {line[:80]!r}")
         if not isinstance(msg, dict):
             return self.error(f"bad command: {line[:80]!r}")
-        cmd = str(msg.get('cmd', ''))
-        handler = getattr(self, 'cmd_' + cmd, None)
-        if handler is None:
-            return self.error(f"unknown command '{cmd}'")
+        cmd = msg.get('cmd', '')
+        if not isinstance(cmd, str) or cmd not in COMMANDS:
+            return self.error(f"unknown command '{str(cmd)[:40]}'")
+        problem = _arg_problem(cmd, msg)
+        if problem:
+            return self.error(f"{cmd}: {problem}")
+        handler = getattr(self, 'cmd_' + cmd)
         try:
             handler(msg)
         except Exception as e:     # keep the server alive for the GUI
@@ -1857,9 +2011,15 @@ def main(argv=None):
     ap.add_argument('--port', type=int, default=0)
     ap.add_argument('file', nargs='?')
     args = ap.parse_args(argv)
-    srv = Server(args.port)
+    # The GUI that started us put the secret in the environment; take it out
+    # so the programs this server starts (the assembler, OpenOCD) never see it.
+    token = os.environ.pop(TOKEN_ENV, None)
+    srv = Server(args.port, token)
     srv.path = os.path.abspath(args.file) if args.file else None
     print(f"picosim server listening on 127.0.0.1:{srv.port}", flush=True)
+    if not token:                 # started by hand: say the secret to whoever started it
+        print(f"connect with the hello: {{\"cmd\": \"hello\", \"token\": \"{srv.token}\"}}",
+              flush=True)
     srv.serve_forever()
 
 

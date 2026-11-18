@@ -544,6 +544,7 @@ class ServerTest(unittest.TestCase):
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         s = socket.create_connection(('127.0.0.1', srv.port))
         s.settimeout(30)
+        s.sendall((json.dumps({'cmd': 'hello', 'token': srv.token}) + '\n').encode())
         buf = b''
 
         def send(**m):

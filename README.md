@@ -251,6 +251,15 @@ This needs Godot 4 (4.7 is tested; `godot` on your PATH, or set
 because the Godot project is read from this folder. The Godot project lives in [gui/](gui/) and talks to a Python backend
 ([picosim/server.py](picosim/server.py)) over a local TCP socket.
 
+That connection is private to the GUI picosim started. The launcher makes a
+new secret for each run and hands it to the GUI in the environment
+(`PICOSIM_TOKEN`), never on a command line other users can read. The
+backend serves nothing until a connection sends it, then stops listening.
+It accepts only its own list of commands, with their argument types checked,
+grouped into simulator, file and hardware commands, and it drops a GUI that
+stops reading. Running the project from the Godot editor works the same way:
+the GUI starts the backend and makes the secret itself.
+
 ### For beginners: levels and examples
 
 With no program loaded, picosim opens on a welcome page listing the example

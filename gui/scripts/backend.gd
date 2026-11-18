@@ -4,6 +4,12 @@ extends Node
 ## Normally `picosim --gui` starts the server and passes `--port N` after
 ## Godot's `--` separator.  When the project is run straight from the editor
 ## there is no port, so we start `python3 -m picosim.server` ourselves.
+##
+## The connection is private: whoever starts the server makes a secret for
+## this run and passes it in the environment variable PICOSIM_TOKEN (not on
+## the command line, which other users can read).  The first line we send is
+## {"cmd": "hello", "token": …}; the server ignores everything until then
+## and closes a connection without it (picosim/server.py).
 
 signal connected
 signal disconnected
@@ -43,6 +49,7 @@ var online := false
 var _server_pid := -1
 var _retry := 0.0
 var _connect_attempts := 0
+var _token := ""                 # this run's secret (PICOSIM_TOKEN)
 
 
 func _ready() -> void:
@@ -50,6 +57,9 @@ func _ready() -> void:
 	for i in args.size():
 		if args[i] == "--port" and i + 1 < args.size():
 			port = int(args[i + 1])
+	_token = OS.get_environment("PICOSIM_TOKEN")
+	# keep it out of the programs the GUI starts (the text editor)
+	OS.unset_environment("PICOSIM_TOKEN")
 	if port == 0:
 		_spawn_server()
 	_try_connect()
@@ -57,12 +67,16 @@ func _ready() -> void:
 
 func _spawn_server() -> void:
 	port = 47000 + randi() % 2000
+	_token = Crypto.new().generate_random_bytes(32).hex_encode()
 	var repo := ProjectSettings.globalize_path("res://").path_join("..").simplify_path()
 	var python := OS.get_environment("PICOSIM_PYTHON")
 	if python == "":
 		python = "python3"
+	# the server inherits the secret from our environment, only for its start
+	OS.set_environment("PICOSIM_TOKEN", _token)
 	_server_pid = OS.create_process("/usr/bin/env", ["PYTHONPATH=" + repo, python,
 		"-m", "picosim.server", "--port", str(port)])
+	OS.unset_environment("PICOSIM_TOKEN")
 
 
 func _try_connect() -> void:
@@ -77,6 +91,8 @@ func _process(delta: float) -> void:
 	if st == StreamPeerTCP.STATUS_CONNECTED:
 		if not online:
 			online = true
+			# the hello comes first: until it arrives the server does nothing
+			tcp.put_data((JSON.stringify({"cmd": "hello", "token": _token}) + "\n").to_utf8_buffer())
 			connected.emit()
 		_read()
 	elif st == StreamPeerTCP.STATUS_ERROR or st == StreamPeerTCP.STATUS_NONE:

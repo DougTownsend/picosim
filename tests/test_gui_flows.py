@@ -7,6 +7,7 @@ own: HOME and PICOSIM_COPIES_DIR point into a temporary folder and
 PICOSIM_EDITOR=none opens no editor."""
 
 import os
+import secrets
 import shutil
 import stat
 import subprocess
@@ -29,7 +30,8 @@ class GuiFlowsTest(unittest.TestCase):
         self.addCleanup(os.chmod, ro, stat.S_IRWXU)
         env = dict(os.environ, HOME=os.path.join(tmp, 'home'), PICOSIM_COPIES_DIR=os.path.join(tmp, 'copies'),
                    PICOSIM_EDITOR='none', PYTHONPATH=ROOT,
-                   PICOSIM_BUILD_DIR=os.path.join(tmp, 'build'))
+                   PICOSIM_BUILD_DIR=os.path.join(tmp, 'build'),
+                   PICOSIM_TOKEN=secrets.token_hex(32))       # the server and the GUI share it
         srv = subprocess.Popen([sys.executable, '-m', 'picosim.server', '--port', '0'], cwd=ROOT, env=env,
                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.addCleanup(srv.stdout.close)
