@@ -3,8 +3,10 @@ extends PanelContainer
 ## "@ Challenge:" and "@ Expect:" lines (see picosim/challenge.py) shows its
 ## task here while it runs; when it finishes, the strip turns green if every
 ## check passed, or says which check is not met yet and what happened
-## instead.  Hidden for programs without a challenge, and by its ✕ until
-## the next program is loaded.
+## instead (and the challenge's hint, if it has one).  Hidden for programs
+## without a challenge, and by its ✕ until the next program is loaded.
+## While the newest save does not build, the result is not shown as the
+## student's: it belongs to the last build that worked.
 
 signal help_requested
 
@@ -51,10 +53,14 @@ func _refresh() -> void:
 	if not want:
 		return
 	var checks = st.get("checks")
+	var b = st.get("build")
+	var stale = b.get("stale") if b is Dictionary else null
 	var now := ""
-	if checks is Array:
+	if stale is Dictionary and stale.get("same", true) and not stale.get("accepted", false):
+		now = "stale"
+	elif checks is Array:
 		now = "pass" if checks.all(func(c): return c["ok"]) else "fail"
-	var key := now + str(checks) + str(ch)
+	var key := now + str(checks) + str(ch) + str(stale)
 	if key == get_meta("key", ""):
 		return
 	set_meta("key", key)
@@ -62,7 +68,10 @@ func _refresh() -> void:
 	if task == "":
 		task = "Make these come true: " + ", ".join(PackedStringArray(ch.get("checks", [])))
 	var t := ""
+	var dim := Palette.hex("dim")
 	match now:
+		"stale":
+			t = "[b]Challenge:[/b]   %s   [color=%s](not checked: your newest save, from %s, does not build yet)[/color]" % [task, dim, str(stale["saved"])]
 		"pass":
 			t = "[b][color=%s]✓ Challenge passed![/color][/b]   %s" % [Palette.hex("green"), task]
 		"fail":
@@ -72,11 +81,15 @@ func _refresh() -> void:
 					t += "\n[color=%s]✓ %s[/color]" % [Palette.hex("green"), c["text"]]
 				else:
 					t += "\n[color=%s]✗ wanted %s, but %s[/color]" % [Palette.hex("changed"), c["text"], c["got"]]
+			if str(ch.get("hint", "")) != "":
+				t += "\n[color=%s]Hint: %s[/color]" % [dim, str(ch["hint"])]
 			t += "\nChange your file, save it (picosim reloads it) and run it again."
 		_:
-			t = "[b]Challenge:[/b]   %s   [color=%s](checked when the program finishes)[/color]" % [task, Palette.hex("dim")]
+			t = "[b]Challenge:[/b]   %s   [color=%s](checked when the program finishes)[/color]" % [task, dim]
+	if stale is Dictionary and stale.get("accepted", false) and now in ["pass", "fail"]:
+		t += "\n[color=%s]Checked on the last build that worked (saved %s), not on your newest save.[/color]" % [dim, str(stale.get("loaded_saved", ""))]
 	_text.text = t
 	var sb := Palette.panel_box("box_active", 6, 8)
-	sb.border_color = Palette.c("green") if now == "pass" else Palette.c("accent")
+	sb.border_color = Palette.c("green") if now == "pass" else (Palette.c("dim") if now == "stale" else Palette.c("accent"))
 	sb.set_border_width_all(2)
 	add_theme_stylebox_override("panel", sb)

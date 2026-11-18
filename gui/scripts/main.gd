@@ -21,6 +21,7 @@ const ChallengeBar := preload("res://scripts/challenge_bar.gd")
 const HelpButton := preload("res://scripts/help_button.gd")
 const ExplainPanel := preload("res://scripts/explain_panel.gd")
 const WalkPanel := preload("res://scripts/walk_panel.gd")
+const NoticeBar := preload("res://scripts/notice_bar.gd")
 const MACHINES := ["multicycle", "m0plus"]
 
 ## Clock-speed presets (cycles per second); 0 = as fast as possible.
@@ -36,6 +37,7 @@ const ABOUT_EXAMPLES_ID := 1000   # Examples menu item: the guide's page on the 
 const TESTING_ID := 7             # mode menu item: the Testing window
 const RESTORE_EXAMPLE_ID := 1001  # Examples menu item: put the original back over the student's copy
 const COPIES_FOLDER_ID := 1002    # Examples menu item: show the folder of the student's copies
+const EDIT_COPY_ID := 1003        # Examples menu item: edit the student's copy of the example on screen
 const HeatOverlay := preload("res://scripts/heat_overlay.gd")
 const SPEEDS := [1, 2, 4, 8, 16, 50, 200, 1000, 10000, 100000, 0]
 ## Optional user guide: if this file is deleted the Guide button just disappears.
@@ -74,6 +76,11 @@ var _board_path := ""            # the file _board_used is about
 var panels: Control              # everything under the toolbar except the welcome page
 var welcome: Control
 var level_bar: PanelContainer     # "New at Level N" strip, after raising the level
+var stale_bar                     # the newest save does not build (notice_bar.gd); stays until it does
+var notice_bar                    # short notes: an example just opened, the pipeline waiting (notice_bar.gd)
+var _example_note := {}           # what notice_bar says once the example being opened has loaded
+var _pipe_pending := false        # Level 4 wants the pipeline once the current instruction has finished
+var _copy_dialog: FileDialog      # where to save copies of the examples, when Documents cannot be written
 var spotlight: Control            # outlines new controls for a few seconds
 var tour: Control                 # the first-run tour (tour.gd)
 var btn_guide: Button
@@ -146,6 +153,7 @@ func _ready() -> void:
 	Backend.error_received.connect(_on_error)
 	Backend.serial_ports_listed.connect(_on_ports)
 	Backend.flash_finished.connect(_on_flash_done)
+	Backend.machine_waiting.connect(_on_machine_wait)
 	Backend.connected.connect(func():
 		_set_status("Connected to simulator", false)
 		_send_options())
@@ -279,6 +287,11 @@ func _build_ui() -> void:
 
 	root.add_child(_build_toolbar())
 	root.add_child(_build_level_bar())
+	stale_bar = NoticeBar.new()
+	stale_bar.border_key = "error"
+	root.add_child(stale_bar)
+	notice_bar = NoticeBar.new()
+	root.add_child(notice_bar)
 	var challenge_bar := ChallengeBar.new()
 	challenge_bar.help_requested.connect(func(): if guide: guide.open("challenges"))
 	root.add_child(challenge_bar)
@@ -290,6 +303,7 @@ func _build_ui() -> void:
 	panels = hsplit
 	welcome = Welcome.new()
 	welcome.open_file_requested.connect(_open_dialog)
+	welcome.example_requested.connect(_launch_example)
 	welcome.guide_requested.connect(func(): if guide: guide.open("start"))
 	root.add_child(welcome)
 
@@ -424,6 +438,12 @@ func _build_ui() -> void:
 			file_dialog.current_dir = dir
 			break
 	add_child(file_dialog)
+	_copy_dialog = FileDialog.new()
+	_copy_dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+	_copy_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	_copy_dialog.use_native_dialog = true
+	_copy_dialog.title = "Choose a folder for your copies of the examples"
+	add_child(_copy_dialog)
 
 	error_dialog = AcceptDialog.new()
 	error_dialog.title = "Could not load program"
@@ -703,7 +723,7 @@ func _level_up(old: int, now: int) -> void:
 		btn_diagram.button_pressed = true          # the diagram and the cycle inspector
 		_set_heat_overlay(true)                     # with the heat overlay on it
 	if old < 4 and now >= 4:
-		machine_select.select(1)                    # the 2-stage pipeline
+		machine_select.select(1)                    # the 2-stage pipeline (it may wait: _on_machine_wait)
 		_on_machine(1)
 	if now == 2:
 		mem_panel.tabs.current_tab = 1              # Level 2's new view: the Memory tab
@@ -742,16 +762,22 @@ func _fill_examples() -> void:
 		var e: Dictionary = list[i]
 		var tag := "" if Level.at_least(int(e["level"])) else "   (Level %d)" % int(e["level"])
 		pop.add_item(str(e["title"]) + tag, i)
-		pop.set_item_tooltip(i, str(e["about"]))
+		pop.set_item_tooltip(i, str(e["about"]) + "\nRuns the example as it is; Edit my copy (below, once it is open) lets you change it.")
 		pop.set_item_metadata(i, e["path"])
 	if list.is_empty():
 		pop.add_item("no examples folder found")
 		pop.set_item_disabled(0, true)
 	pop.add_separator()
-	var copy := str(Backend.program.get("path", "")) if Backend.state.get("loaded", false) else ""
-	if Welcome.original_of(copy) != "":
-		pop.add_item("Start %s over from the original…" % copy.get_file(), RESTORE_EXAMPLE_ID)
+	var path := str(Backend.program.get("path", "")) if Backend.state.get("loaded", false) else ""
+	var ex := Welcome.example_of(path) if path != "" else {}
+	if Welcome.original_of(path) != "":
+		pop.add_item("Start %s over from the original…" % path.get_file(), RESTORE_EXAMPLE_ID)
 		pop.set_item_tooltip(pop.get_item_index(RESTORE_EXAMPLE_ID), "Replace your copy of this example with the original, undoing your changes")
+	elif not ex.is_empty():
+		var mine := Welcome.copies_dir().path_join(path.get_file())
+		pop.add_item(("Open my copy of %s" if FileAccess.file_exists(mine) else "Edit my copy of %s") % path.get_file(), EDIT_COPY_ID)
+		pop.set_item_tooltip(pop.get_item_index(EDIT_COPY_ID), "Your own copy, saved as %s, in picosim and in a text editor" % Welcome.shown_dir(mine))
+		pop.set_item_metadata(pop.get_item_index(EDIT_COPY_ID), ex)
 	if DirAccess.dir_exists_absolute(Welcome.copies_dir()):
 		pop.add_item("Show my copies folder", COPIES_FOLDER_ID)
 		pop.set_item_tooltip(pop.get_item_index(COPIES_FOLDER_ID), "Your copies of the examples are in %s" % Welcome.copies_dir())
@@ -770,9 +796,139 @@ func _on_example(id: int) -> void:
 	if id == RESTORE_EXAMPLE_ID:
 		_confirm_restore(str(Backend.program.get("path", "")))
 		return
-	var path = examples_menu.get_popup().get_item_metadata(examples_menu.get_popup().get_item_index(id))
+	var pop := examples_menu.get_popup()
+	if id == EDIT_COPY_ID:
+		_launch_example(pop.get_item_metadata(pop.get_item_index(id)), true)
+		return
+	var path = pop.get_item_metadata(pop.get_item_index(id))
 	if path != null:
-		Welcome.open_example(path)
+		_launch_example(Welcome.example_named(str(path).get_file()), false)
+
+
+# ── opening an example ──────────────────────────────────────────────────────
+# The welcome page and the Examples menu both come here.  An example made for
+# a higher level asks first: open it at that level (set before loading, so it
+# starts with that level's view), or stay (the lower layout is kept, and a
+# note says what is missing).  Run example loads the original as it is; Edit
+# my copy saves the student's own copy, says where, and opens it in an editor.
+
+## What a level adds, to finish "Level 2 …" in the question and the notes.
+func _level_adds(n: int) -> String:
+	var t := str(Level.ABOUT[n - 1])
+	return t.left(1).to_lower() + t.substr(1) if t.begins_with("Adds") else t
+
+
+## Guide pages an example leads to: [topic, button, what to look at].
+const EXAMPLE_GUIDE := {
+	"04_memory.s": ["memory", "Memory tab guide", "Open the [b]Memory[/b] tab under the registers, type [code]numbers[/code] in its Go to box and press Enter: the four words are there, and [code]total[/code] is just after them."],
+	"05_blink_led.s": ["gpio", "Pin setup guide", "The program sets up pin GP15 before it can light the LED. Watch the [b]Pico board[/b] under the Memory tab as you step."],
+	"08_button_led.s": ["gpio", "Pin setup guide", "The program sets up its button and LED pins first. Watch the [b]Pico board[/b] under the Memory tab, and click a button pin to press it."],
+}
+
+
+func _launch_example(e: Dictionary, edit: bool) -> void:
+	if e.is_empty():
+		return
+	var lv := int(e["level"])
+	if lv <= Level.current:
+		_open_example(e, edit)
+		return
+	var d := ConfirmationDialog.new()
+	d.title = "%s · Level %d" % [str(e["title"]), lv]
+	d.dialog_text = "This example is for Level %d, which %s.\n\nOpen it at Level %d, or stay at Level %d (it runs there too, but some of what it shows stays hidden)." % [
+		lv, _level_adds(lv), lv, Level.current]
+	d.dialog_autowrap = true
+	d.min_size = Vector2i(560, 0)
+	d.ok_button_text = "Open at Level %d" % lv
+	d.add_button("Stay at Level %d" % Level.current, true, "stay")
+	d.confirmed.connect(func():
+		Level.set_level(lv)
+		_open_example(e, edit))
+	d.custom_action.connect(func(a):
+		if a == "stay":
+			d.hide()
+			_open_example(e, edit))
+	d.visibility_changed.connect(func(): if not d.visible: d.queue_free())
+	add_child(d)
+	d.popup_centered()
+
+
+func _open_example(e: Dictionary, edit: bool, dir := "") -> void:
+	var path := str(e["path"])
+	var file := path.get_file()
+	var target := path
+	var where := ""
+	if edit:
+		var r := Welcome.make_copy(path, dir)
+		if not r["ok"]:
+			_copy_failed(e, r)
+			return
+		target = str(r["copy"])
+		where = ("Your copy is saved as [b]%s[/b]. Change it in the text editor and save: picosim reloads it." if r["new"] else
+			"This is your copy, [b]%s[/b]. Change it in the text editor and save: picosim reloads it.") % Welcome.shown_dir(target).replace("[", "[lb]")
+	_example_note = {"file": target.get_file(), "path": target, "example": e, "where": where}
+	if notice_bar.key == "example":
+		notice_bar.hide_notice()                     # the note of the example before
+	Backend.send("load", {"path": target})
+	if edit:
+		Welcome.open_in_editor(target)
+
+
+## The copy could not be saved: pick a folder that can be written, or just
+## run the example.  The original is never opened for editing.
+func _copy_failed(e: Dictionary, r: Dictionary) -> void:
+	var d := ConfirmationDialog.new()
+	d.title = "Could not save your copy"
+	d.dialog_text = "picosim could not save a copy of %s in %s (%s).\n\nChoose a folder you can write to, or just run the example as it is (you can look but not change it)." % [
+		str(e["path"]).get_file(), Welcome.shown_dir(str(r["copy"]).get_base_dir()), str(r["error"])]
+	d.dialog_autowrap = true
+	d.min_size = Vector2i(560, 0)
+	d.ok_button_text = "Choose a folder…"
+	d.add_button("Just run it", true, "run")
+	d.confirmed.connect(func():
+		for c in _copy_dialog.dir_selected.get_connections():
+			_copy_dialog.dir_selected.disconnect(c["callable"])
+		_copy_dialog.dir_selected.connect(func(dir):
+			Welcome.set_copies_dir(dir)
+			welcome._build()
+			_open_example(e, true, dir), CONNECT_ONE_SHOT)
+		_copy_dialog.popup_centered_ratio(0.6))
+	d.custom_action.connect(func(a):
+		if a == "run":
+			d.hide()
+			_open_example(e, false))
+	d.visibility_changed.connect(func(): if not d.visible: d.queue_free())
+	add_child(d)
+	d.popup_centered()
+
+
+## The note under the toolbar once an example has loaded: where the copy
+## is, where to look (with its guide page), what a lower level hides, and,
+## while the built-in OS's start-up is on screen, Skip to main.
+func _show_example_note(st: Dictionary) -> void:
+	var e: Dictionary = _example_note["example"]
+	var lv := int(e["level"])
+	var parts := []
+	var actions := []
+	if str(_example_note["where"]) != "":
+		parts.append(_example_note["where"])
+		actions.append(["Show the folder", "Open the folder your copy is in", func(): OS.shell_open(str(_example_note.get("path", "")).get_base_dir())])
+	if lv > Level.current:
+		parts.append("This example is for [b]Level %d[/b], which %s; you stayed at Level %d, so that stays hidden." % [lv, _level_adds(lv), Level.current])
+		actions.append(["Show Level %d" % lv, "Raise the level to %d" % lv, func(): Level.set_level(lv)])
+	elif EXAMPLE_GUIDE.has(str(e["path"]).get_file()):
+		var g: Array = EXAMPLE_GUIDE[str(e["path"]).get_file()]
+		parts.append(g[2])
+		if guide:
+			actions.append([g[1], "Open the guide's page about it", func(): guide.open(g[0])])
+	if st.get("at_boot", false) and Level.at_least(2):
+		parts.append("The CPU starts in picosim's built-in OS: step through its start-up, or skip to the first line of your [code]main[/code].")
+		actions.append(["Skip to main ▸", "Run the OS's start-up and stop at the first line of main", func(): Backend.send("run_to_main")])
+	_example_note["boot"] = st.get("at_boot", false)
+	if parts.is_empty():
+		notice_bar.hide_notice()
+	else:
+		notice_bar.show_notice("   ".join(PackedStringArray(parts)), actions, "example")
 
 
 func _confirm_restore(copy: String) -> void:
@@ -792,7 +948,7 @@ func _apply_level() -> void:
 	var lv: int = Level.current
 	level_select.select(lv - 1)
 	level_select.text = "Level %d" % lv
-	if lv < 4 and machine_select.selected == 1:
+	if lv < 4 and (machine_select.selected == 1 or _pipe_pending):
 		machine_select.select(0)
 		_on_machine(0)
 	if lv < 3 and btn_diagram.button_pressed:
@@ -1014,6 +1170,12 @@ func _set_zoom(z: float, save := true) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	# The step keys keep working after a click in a list (the walkthrough, the
+	# Disassembly): a Tree would take S, B, O, C and Space for itself.
+	var k := event as InputEventKey
+	if k and k.pressed and get_viewport().gui_get_focus_owner() is Tree and _step_key(k):
+		get_viewport().set_input_as_handled()
+		return
 	# Ctrl/Cmd + mouse wheel zooms from anywhere in the window.
 	var mb := event as InputEventMouseButton
 	if mb and mb.pressed and mb.is_command_or_control_pressed():
@@ -1084,10 +1246,36 @@ func _on_connect() -> void:
 
 
 func _on_machine(idx: int) -> void:
+	_pipe_pending = false
+	if notice_bar.key == "pipe_wait":
+		notice_bar.hide_notice()
 	Backend.send("set_machine", {"machine": MACHINES[idx]})
 	_apply_machine()
 	if idx == 1 and not btn_diagram.button_pressed:
 		btn_diagram.button_pressed = true
+
+
+## The pipeline was asked for partway through an instruction.  It starts
+## between instructions, so nothing changed: the multi-cycle CPU stays on
+## until the instruction finishes, and then the pipeline comes on by itself
+## (see _on_state).  The student may also finish it at once.
+func _on_machine_wait(msg: Dictionary) -> void:
+	machine_select.select(0)
+	_apply_machine()
+	_pipe_pending = true
+	var insn := str(msg.get("insn", "")).replace("[", "[lb]")
+	notice_bar.show_notice(
+		"[b]The 2-stage pipeline starts between instructions.[/b] You are partway through [code]%s[/code] (%d of its %d cycles done), so the multi-cycle CPU stays on and nothing has changed. Step on: when this instruction finishes, the pipeline comes on by itself, with its own cycle count from 0." % [
+			insn, int(msg.get("done", 0)), int(msg.get("total", 0))],
+		[["Finish it now", "Run this instruction's last cycles, then switch to the pipeline", func():
+			_pipe_pending = false
+			notice_bar.hide_notice()
+			machine_select.select(1)
+			_apply_machine()
+			Backend.send("set_machine", {"machine": "m0plus", "finish": true})],
+		 ["Stay on multi-cycle", "Keep the multi-cycle CPU (the menu next to the diagram button switches later)", func():
+			_pipe_pending = false
+			notice_bar.hide_notice()]], "pipe_wait")
 
 
 func _pipeline() -> bool:
@@ -1132,23 +1320,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	# Letter keys (S, O, C, B, Space) work on every keyboard: on a Mac, F11 shows
 	# the desktop and the F keys need Fn.  A text field that has focus gets
 	# its letters first, so typing never steps the program.
-	var plain := not (k.is_command_or_control_pressed() or k.alt_pressed)
 	if k.echo and not k.keycode in [KEY_F11, KEY_F10, KEY_S, KEY_C, KEY_B]:
 		return
 	var sim: bool = mode_select.selected == 0
-	var loaded: bool = Backend.state.get("loaded", false)
-	if plain and loaded and k.keycode in [KEY_S, KEY_O, KEY_C, KEY_B, KEY_SPACE]:
-		if not sim:
-			return
-		match k.keycode:
-			KEY_S: _step_insn()
-			KEY_B:
-				if not btn_back.disabled: Backend.send("step_back")
-			KEY_O:
-				if Level.at_least(2): Backend.send("step_over")
-			KEY_C:
-				if Level.at_least(3): _step_cycle()
-			KEY_SPACE: _toggle_run()
+	if _step_key(k):
 		get_viewport().set_input_as_handled()
 		return
 	match k.keycode:
@@ -1177,6 +1352,29 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		_:
 			return
 	get_viewport().set_input_as_handled()
+
+
+## S, B, O, C and Space (the letter keys for stepping).  True if it was one.
+func _step_key(k: InputEventKey) -> bool:
+	var plain := not (k.is_command_or_control_pressed() or k.alt_pressed)
+	if not plain or not Backend.state.get("loaded", false) or not k.keycode in [KEY_S, KEY_O, KEY_C, KEY_B, KEY_SPACE]:
+		return false
+	if k.echo and not k.keycode in [KEY_S, KEY_C, KEY_B]:
+		return true                     # held: no repeats, but the key is still ours
+	if mode_select.selected != 0:
+		return false
+	match k.keycode:
+		KEY_S:
+			if not btn_insn.disabled: _step_insn()
+		KEY_B:
+			if not btn_back.disabled: Backend.send("step_back")
+		KEY_O:
+			if Level.at_least(2) and not btn_over.disabled: Backend.send("step_over")
+		KEY_C:
+			if Level.at_least(3) and not btn_cycle.disabled: _step_cycle()
+		KEY_SPACE:
+			if not btn_run.disabled or Backend.state.get("running", false): _toggle_run()
+	return true
 
 
 # ── backend events ──────────────────────────────────────────────────────────
@@ -1220,22 +1418,98 @@ func _on_state(st: Dictionary) -> void:
 		elif tour.visible:
 			tour.stop()
 	if loaded:
+		_show_stale(st)
+		if _pipe_pending and Level.at_least(4) and not st.get("in_insn", false) and str(st.get("machine", "")) == "multicycle":
+			_pipe_pending = false                    # the instruction has finished: the pipeline comes on
+			machine_select.select(1)
+			_on_machine(1)
+			notice_bar.show_notice("[b]The 2-stage pipeline is on[/b], from the start of the next instruction. Its cycle count starts at 0 here.", [], "pipe_on")
+		if not _example_note.is_empty():
+			if _example_note.get("pending", false) or (notice_bar.key == "example" and bool(_example_note.get("boot", false)) != bool(st.get("at_boot", false))):
+				_example_note["pending"] = false
+				_show_example_note(st)
 		var s := "insn %d · cycle %d" % [int(st["steps"]), int(st["cycles"])]
+		var tip := ""
 		if not Level.at_least(3):
-			s = "instruction %d" % (int(st["steps"]) - int(st.get("boot_steps", 0)))   # level 1 counts from main; cycles come in at level 3
+			# levels 1-2 count instructions; cycles come in at level 3.  Level 1
+			# hides the built-in OS, so it counts the program's own instructions
+			# (a Step over putchar adds one) and says how many the OS ran.
+			var os_n = st.get("os_steps")
+			if os_n != null:
+				s = "instruction %d" % (int(st["steps"]) - int(os_n))
+				tip = "Instructions of your own program run so far. The CPU also ran %d inside picosim's built-in OS (its start-up, putchar and getchar), which Level 1 hides." % int(os_n)
+			else:
+				s = "instruction %d" % int(st["steps"])
 		if p is Dictionary:
 			s = "insn %d · pipeline cycle %d" % [int(p["insns"]), int(p["cycle"])]
+			var from := int(st.get("pipe_from", 0) if st.get("pipe_from") != null else 0)
+			if from > 0:
+				s += " (from insn %d)" % (from + 1)
+				tip = "The pipeline's counts start where it was switched on (or where you last stepped back or jumped): instruction %d. The multi-cycle cycle count does not carry over." % (from + 1)
 		var fault: bool = st.get("fault") != null
+		var stale = st.get("build", {}).get("stale") if st.get("build") is Dictionary else null
 		if fault:
 			s += "   — stopped by a CPU fault (see the console)"
+		elif stale is Dictionary and not stale.get("accepted", false):
+			s = "Not built: %s%s · Run and Step are off" % [str(stale["file"]), (" line %d" % int(stale["line"])) if int(stale.get("line", 0)) > 0 else ""]
 		elif st.get("halted", false):
 			s += "   — halted"
 		elif st.get("waiting_input", false):
 			s += "   — waiting for input"
-		_set_status(s, fault)
+		_set_status(s, fault or (stale is Dictionary and not stale.get("accepted", false)))
+		if tip != "":
+			status_label.tooltip_text = tip
+
+
+## The newest save does not build: a strip that stays until it does, with
+## the file, when it was saved and its first mistake, the build still on
+## screen, and a way to see the mistake again or use the last build.
+func _show_stale(st: Dictionary) -> void:
+	var b = st.get("build")
+	var stale = b.get("stale") if b is Dictionary else null
+	if not stale is Dictionary:
+		if stale_bar.visible:
+			stale_bar.hide_notice()
+		return
+	var key := str(stale)
+	if stale_bar.visible and stale_bar.key == key:
+		return
+	var file := str(stale["file"]).replace("[", "[lb]")
+	var at := (" on line %d" % int(stale["line"])) if int(stale.get("line", 0)) > 0 else ""
+	var t := ""
+	var actions := [["Show the mistake", "Show what the assembler said about your file", func(): _show_load_error()]]
+	if stale.get("accepted", false):
+		t = "[b]Running the last build that worked[/b] (saved %s). Your newest save of %s (%s) still has a mistake%s: fix it and save to run it." % [
+			stale["loaded_saved"], file, stale["saved"], at]
+	elif stale.get("same", true):
+		t = "[b]%s, saved at %s, has a mistake%s.[/b] picosim still shows the last build that worked (saved %s), so Run and Step are off until the file builds. Fix it and save." % [
+			file, stale["saved"], at, stale["loaded_saved"]]
+		actions.append(["Use the last build", "Run the build from %s that worked, until a new save builds" % stale["loaded_saved"], func(): Backend.send("use_last_build")])
+	else:
+		t = "[b]%s has a mistake%s[/b], so it is not loaded. picosim still shows %s, with Run and Step off. Fix %s and save, or go back." % [
+			file, at, str(stale["loaded"]).replace("[", "[lb]"), file]
+		actions.append(["Back to %s" % str(stale["loaded"]), "Go back to the program that is loaded", func(): Backend.send("use_last_build")])
+	stale_bar.show_notice(t, actions, key, false)
+
+
+func _show_load_error() -> void:
+	var e := Backend.load_error
+	if not e.is_empty():
+		_on_load_failed(str(e["path"]), str(e.get("message", "")), e.get("errors", []))
 
 
 func _on_program(prog: Dictionary) -> void:
+	if error_dialog.visible:
+		error_dialog.hide()                         # the file builds now
+	if not _example_note.is_empty():
+		if str(prog["path"]).simplify_path() == str(_example_note.get("path", "")).simplify_path():
+			_example_note["pending"] = true
+			_example_note["seen"] = true
+		elif _example_note.get("seen", false):
+			_example_note = {}                       # another program now: the note is not about it
+			if notice_bar.key == "example":
+				notice_bar.hide_notice()
+		# (else the example is still on its way: a reload of the program before it, say)
 	mem_panel.set_program(prog)
 	if str(prog["path"]) != _board_path:
 		_board_path = str(prog["path"])
@@ -1261,9 +1535,15 @@ static func _first_upper(s: String) -> String:
 func _on_load_failed(path: String, message: String, errors: Array) -> void:
 	var y := Palette.hex("changed")
 	var dim := Palette.hex("dim")
-	var t := "[b]%s[/b] has %s. Fix %s in your editor, save, and press [b]Reload[/b].\n" % [
-		path.get_file(), "a mistake" if errors.size() <= 1 else "%d mistakes" % errors.size(),
+	var saved := str(Backend.load_error.get("saved", "")) if str(Backend.load_error.get("path", "")) == path else ""
+	var t := "[b]%s[/b]%s has %s. Fix %s in your editor and save: picosim loads it again by itself (or press [b]Reload[/b]).\n" % [
+		path.get_file(), (", saved at %s," % saved) if saved != "" else "",
+		"a mistake" if errors.size() <= 1 else "%d mistakes" % errors.size(),
 		"it" if errors.size() <= 1 else "them"]
+	var stale = Backend.load_error.get("stale")
+	if stale is Dictionary:
+		t += "[color=%s]Until it builds, picosim keeps %s on screen (the build saved at %s), with Run and Step off.[/color]\n" % [
+			dim, "the last build that worked" if stale.get("same", true) else str(stale.get("loaded", "")), str(stale.get("loaded_saved", ""))]
 	for e in errors:
 		t += "\n"
 		if int(e["line"]) > 0:
@@ -1333,11 +1613,14 @@ func _update_controls() -> void:
 	if p is Dictionary:
 		halted = not bool(p.get("more", true))   # the pipeline can still drain
 	btn_reload.disabled = not loaded and str(st.get("path", "")) == ""   # also retries a failed load
-	btn_cycle.disabled = not (loaded and sim) or halted
-	btn_insn.disabled = not (loaded and sim) or halted
+	# a save that does not build: nothing runs until it does (or the last build is chosen)
+	var stale = st.get("build", {}).get("stale") if st.get("build") is Dictionary else null
+	var blocked: bool = stale is Dictionary and not stale.get("accepted", false)
+	btn_cycle.disabled = not (loaded and sim) or halted or blocked
+	btn_insn.disabled = not (loaded and sim) or halted or blocked
 	btn_over.disabled = btn_insn.disabled
-	btn_back.disabled = not (loaded and sim) or not st.get("can_back", false)
-	btn_run.disabled = not (loaded and sim) or halted
+	btn_back.disabled = not (loaded and sim) or not st.get("can_back", false) or blocked
+	btn_run.disabled = not (loaded and sim) or halted or blocked
 	btn_run.text = "Pause" if st.get("running", false) else "Run"
 	var pico_ctl := not sim and Level.at_least(2)
 	sim_controls.visible = not pico_ctl

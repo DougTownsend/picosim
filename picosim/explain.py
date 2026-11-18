@@ -958,6 +958,19 @@ def _pin_changes(srv):
             if p['pin'] in before and (p['level'], p['dir']) != (before[p['pin']]['level'], before[p['pin']]['dir'])]
 
 
+def _after_stop(srv):
+    """What the student can do where Run stopped (never Step after a halt:
+    Step is off then)."""
+    c = srv.core
+    if srv.fault:
+        return "Fix the program, save it and press Reload; Step back shows the steps before the fault."
+    if c.halted:
+        return "The program has finished. Press Reload to run it again, or Step back to look at its last steps."
+    if srv.waiting_input:
+        return "Type a key in the serial console, then Step (or Run) to carry on."
+    return "Step from here to see each instruction explained."
+
+
 def _stop_reason(srv):
     c = srv.core
     if srv.fault:
@@ -989,7 +1002,8 @@ def build(srv):
                       "so the next instruction is the first line of main.")
         else:
             simple = ("Nothing has run yet. The CPU starts at address 10000000, in picosim's built-in OS (at the start of flash), "
-                      "which sets things up and then calls your main.")
+                      "which sets things up and then calls your main. Step through its 3 start-up instructions to "
+                      "see how a program begins, or press Skip to main to start at your own first line.")
         now = {'head': "The program is loaded", 'simple': simple,
                'detail': [[1, f"SP = 0x{STACK_TOP:08X}: the stack starts at the top of SRAM and grows down."],
                           [1, "Press Step instruction (S) to run the next instruction and see what it did."],
@@ -999,7 +1013,7 @@ def build(srv):
         where = ex.head(c.insn_addr if c.in_insn else c.pc, srv.prog.asm_map.get(c.pc, ''))
         now = {'head': "Run stopped" if not c.halted else "Run finished",
                'simple': f"Run ran {n} instruction{'s' if n != 1 else ''} by itself and stopped {_stop_reason(srv)}. "
-                         "Step from here to see each instruction explained.",
+                         + _after_stop(srv),
                'detail': [[3, f"That took {c.cycles - before['cycles']} clock cycles."]] +
                          ([[1, "Registers that changed during the run:"]] +
                           [[lv, "  • " + t] for lv, t in _changed_values(srv, before['snap'])]
@@ -1051,6 +1065,11 @@ def build(srv):
         now = {'head': ex.head(before['pc'], run.text), 'simple': ex.say(run),
                'detail': [[1, a] for a in [ex.about(Run('bl', 0, before['snap'], before['snap']))] if a] +
                          [[1, "What changed:"]] + [[lv, "  • " + t] for lv, t in ex.changed_lines(run)]}
+        ran = c.steps - before['steps']
+        if srv.step_over_os and call and in_os(call[1]) and ran > 1 and not srv.running:
+            now['simple'] += (f" That was one step for you, but the CPU ran {ran} instructions: the bl and "
+                              f"{ran - 1} inside {name}, in picosim's built-in OS. The instruction count at the top "
+                              "counts only your program's own lines, so it went up by 1.")
         if srv.running or (call and not c.in_insn and c.pc != call[0] and not c.halted):
             now['simple'] = (f"Step over started the call to {name}, but it stopped inside it "
                              f"{_stop_reason(srv)}.")

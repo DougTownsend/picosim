@@ -1,11 +1,16 @@
 """
-Program walkthrough for the user guide.
+Program walkthrough, for the walkthrough panel beside the CPU diagram.
 
-build() loads a fresh copy of a program (the GUI's machine is not touched),
+build() runs a fresh copy of a program (the GUI's machine is not touched),
 clocks it cycle by cycle from reset and explains every instruction and every
 cycle in plain words.  Each cycle also carries the machine state right after
 its clock edge, so the GUI can draw the CPU diagram exactly as it looked
-during that cycle.
+during that cycle.  The copy is made from the program already loaded when
+there is one (Program.clone(): no assembling), so the walkthrough always
+matches what is loaded, even after a save that does not build.
+
+compact_steps() yields the panel's compact rows one at a time without the
+snapshots, so the server can send the first page at once.
 """
 
 import re
@@ -133,12 +138,71 @@ def _opnd(tok, regs):
     return tok
 
 
+def _intro(info, regs0, dp0, dp1):
+    """The first sentence of a cycle's explanation: what the cycle is for.
+    Only the sentence for this cycle's state is built (the compact
+    walkthrough asks for one per cycle)."""
+    st = info['state']
+    if st == 'FETCH_ADDR':
+        return (f"The fetch of the next instruction begins. The PC holds its address, {h32(regs0[15])}; "
+                "that address must go to MAR before memory can be read, and the PC is stepped on to the next "
+                "halfword in the same cycle.")
+    if st == 'FETCH_MEMORY':
+        return (f"Memory is read at the address in MAR ({h32(dp0['MAR'])}). The 16-bit instruction "
+                f"halfword stored there, {h16(dp1['MDR'])}, is captured in MDR.")
+    if st == 'FETCH_IR':
+        return ("The halfword in MDR is copied over the bus into the instruction register IR, where the control "
+                "unit (FSM) can read it.")
+    if st == 'FETCH2_ADDR':
+        return ("This is a 32-bit instruction, so a second fetch begins: the PC now points at its second "
+                "halfword, which goes to MAR, and the PC steps on again.")
+    if st == 'FETCH2_MEMORY':
+        return (f"Memory is read at MAR ({h32(dp0['MAR'])}): the second halfword, {h16(dp1['MDR'])}, "
+                "goes into MDR.")
+    if st == 'FETCH2_IR':
+        return ("The second halfword moves from MDR over the bus into IR2. Now IR and IR2 together hold the "
+                "whole 32-bit instruction.")
+    if st == 'DECODE':
+        return ("The FSM decodes the instruction bits in IR" + (" and IR2" if 'IR2' in str(info['desc']) else "") +
+                ": it works out which registers, immediate and operation this instruction uses, and which "
+                "states must follow. "
+                + (_cap(info['desc'].split(':', 1)[1].strip().rstrip('.')) + '. '
+                   if info['desc'].startswith('Decode:') else '') +
+                "Nothing is stored in this cycle; the FSM only sets the register numbers and mux selects "
+                "that the next cycles use.")
+    if st == 'EVALUATE_ADDRESS':
+        return ("The address adder computes the memory address this instruction uses"
+                + (" (here the address itself is the result)." if not _has(info, 'LD.MAR') else '.'))
+    if st == 'FETCH_OPERANDS':
+        return ("Memory is read at the address in MAR." if _has(info, 'R/W=READ') else
+                "The store data is prepared: the register's value travels through the ALU and the bus "
+                "into MDR." if _has(info, 'LD.MDR') else
+                "The source registers are read and loaded into the ALU's input latches A and B.")
+    if st == 'STORE_RESULT':
+        return ("The memory write happens: MDR's value is stored at the address in MAR." if _has(info, 'R/W=WRITE')
+                else "The result is written to its destination register.")
+    return _INTRO.get(st, info['desc'])
+
+
+_INTRO = {
+    'EXECUTE_COMMIT': "The ALU computes the result from its latched inputs, and the result is committed "
+                      "(written to its destination).",
+    'EXECUTE_PC': "The PC is updated (or, for a branch that is not taken, left alone).",
+    'LINK': "The return address is saved in LR so the called function can come back.",
+    'WRITEBACK': "The base register (SP for PUSH/POP) is updated past the words that were transferred.",
+    'SVC_CALL': "The supervisor call starts exception entry; picosim then performs the OS service directly.",
+    'HALT': "The breakpoint stops the processor.",
+}
+
+
 class Walkthrough:
-    def __init__(self, path, limit=DEFAULT_LIMIT, keys=()):
-        self.prog = load_program(path)
+    def __init__(self, path=None, limit=DEFAULT_LIMIT, keys=(), prog=None):
+        # a copy of a program that is already loaded (no assembling), or the file
+        self.prog = prog.clone() if prog is not None else load_program(path)
         self.core = self.prog.cpu._core
         self.limit = limit
         self.output = ''
+        self.stopped = ''
         self.keys = list(keys)          # keys getchar returns, in order (the student's typing)
         self.core.svc_handler = self._svc
 
@@ -172,97 +236,118 @@ class Walkthrough:
 
     # ── run ──────────────────────────────────────────────────────────────────
 
-    def build(self):
+    def _instructions(self, full):
+        """Run the copy one instruction at a time, clocking every cycle, and
+        yield (pc, pre, cycles) per instruction; self.stopped says why it
+        ended.  With `full`, each cycle carries the whole machine after its
+        clock edge; otherwise only the datapath (what the compact form's
+        one sentence per cycle needs), and the last one the registers."""
         c = self.core
-        steps = []
-        stopped = ''
+        n = 0
         while True:
             if c.halted:
-                stopped = "The processor has halted: the program is finished."
-                break
-            if len(steps) >= self.limit:
-                stopped = (f"The walkthrough stops after the first {self.limit} instructions; "
-                           "the program itself keeps going when you run it.")
-                break
+                self.stopped = "The processor has halted: the program is finished."
+                return
+            if n >= self.limit:
+                self.stopped = (f"The walkthrough stops after the first {self.limit} instructions; "
+                                "the program itself keeps going when you run it.")
+                return
             pc = c.pc
             if is_memory(pc) and c.read16(pc) == 0xDF03 and not self.keys:
-                stopped = ("Next the program calls getchar (SVC #3), which waits for you to type a key in the "
-                           "serial console. The walkthrough stops here because what happens next depends on "
-                           "that key; run the program to continue.")
-                break
+                self.stopped = ("Next the program calls getchar (SVC #3), which waits for you to type a key in the "
+                                "serial console. The walkthrough stops here because what happens next depends on "
+                                "that key; run the program to continue.")
+                return
             pre = _snap(c)
             cycles = []
             try:
                 while True:
                     info = c.step_cycle()
-                    post = _snap(c)
-                    cycles.append({'info': info, 'post': post})
+                    cycles.append({'info': info, 'post': _snap(c) if full else {'datapath': c.datapath}})
                     if info['last'] or c.halted:
                         break
             except (RuntimeError, SimulatorError) as e:
-                stopped = f"The CPU stopped with a fault: {e}"
-                break
+                self.stopped = f"The CPU stopped with a fault: {e}"
+                return
+            if not full:
+                cycles[-1]['post'] = _snap(c)
+            n += 1
+            yield pc, pre, cycles
+
+    def steps(self, compact=False):
+        """Each instruction as a walkthrough step (see build); compact steps
+        are what compact() would make of them, built without the detail."""
+        prev_dp = None
+        for pc, pre, cycles in self._instructions(not compact):
             text = self.prog.asm_map.get(pc, '???')
             step = {'addr': pc, 'text': text, 'label': self.label(pc),
-                    'summary': self.summary(text, pre, post, cycles),
-                    'cycles': []}
-            prev = pre
-            for cy in cycles:
-                cy.update(self.explain(cy['info'], prev, cy['post'], text))
-                prev = cy['post']
-                step['cycles'].append(cy)
-            steps.append(step)
+                    'summary': self.summary(text, pre, cycles[-1]['post'], cycles), 'cycles': []}
+            if compact:
+                regs0 = pre['regs']
+                dp0 = pre['datapath']
+                for cy in cycles:
+                    info = cy['info']
+                    dp1 = cy['post']['datapath']
+                    step['cycles'].append({'state': info['state'], 'phase': info['phase'],
+                                           'what': _intro(info, regs0, dp0, dp1)})
+                    regs0, dp0 = (cy['post']['regs'] if 'regs' in cy['post'] else regs0), dp1
+            else:
+                prev = pre
+                for cy in cycles:
+                    cy.update(self.explain(cy['info'], prev, cy['post'], text))
+                    prev = cy['post']
+                    step['cycles'].append(cy)
+            yield step
+
+    def pipeline_steps(self, compact=False):
+        """The same run on the RP2040's 2-stage pipeline (see build_pipeline);
+        compact steps carry each Execute cycle's name, worked out from the
+        pipeline's schedule rather than a picture of every cycle."""
+        from .pipeline import Pipeline
+        c = self.core
+        pipe = Pipeline(c, self.prog.asm_map)
+        regs = lambda: {'regs': list(c.regs), 'flags': {'N': c.N, 'Z': c.Z, 'C': c.C, 'V': c.V}}
+        if compact:
+            first = [{'state': 'first fetch', 'phase': 'FETCH', 'what': '', 'cycle': 0}]
+        else:
+            first = [{'view': pipe.view(-1), 'post': regs()}]
+        for pc, pre, cycles in self._instructions(not compact):
+            pipe.sync()
+            row = [r for r in pipe.rows if not r['flushed']][-1]
+            text = self.prog.asm_map.get(pc, '???')
+            step = {'addr': pc, 'text': text, 'label': self.label(pc),
+                    'summary': self.summary(text, pre, cycles[-1]['post'], cycles),
+                    'row': row['row'], 'flushes': row['refill'] > 0}
+            if compact:
+                views = []
+                for u in range(row['start'], row['start'] + row['cycles']):
+                    k = u - row['start'] + 1
+                    name, kind = f"Execute {k}/{row['cycles']}", 'EXECUTE'
+                    if row['refill'] > 0 and k == row['exec']:
+                        name, kind = name + ' · taken', 'TAKEN'
+                    elif k > row['exec']:
+                        name, kind = name + ' · refill', 'DECODE'
+                    views.append({'state': name, 'phase': kind, 'what': '', 'cycle': u + 1})
+            else:
+                post = regs()
+                views = [{'view': pipe.view(u), 'post': post}
+                         for u in range(row['start'], row['start'] + row['cycles'])]
+            step['cycles'] = first + views
+            first = []
+            yield step
+
+    def build(self):
+        steps = list(self.steps())
         return {'type': 'walkthrough', 'path': self.prog.path, 'steps': steps,
-                'stopped': stopped, 'output': self.output, 'limit': self.limit}
+                'stopped': self.stopped, 'output': self.output, 'limit': self.limit}
 
     def build_pipeline(self):
         """The same run on the RP2040's 2-stage pipeline.  Each step is one
         instruction with a picture of the pipeline in every cycle it spends
         in Execute; the first step also starts with the very first fetch."""
-        from .pipeline import Pipeline
-        c = self.core
-        pipe = Pipeline(c, self.prog.asm_map)
-        steps = []
-        stopped = ''
-        regs = lambda: {'regs': list(c.regs), 'flags': {'N': c.N, 'Z': c.Z, 'C': c.C, 'V': c.V}}
-        first = [{'view': pipe.view(-1), 'post': regs()}]
-        while True:
-            if c.halted:
-                stopped = "The processor has halted: the program is finished."
-                break
-            if len(steps) >= self.limit:
-                stopped = (f"The walkthrough stops after the first {self.limit} instructions; "
-                           "the program itself keeps going when you run it.")
-                break
-            pc = c.pc
-            if is_memory(pc) and c.read16(pc) == 0xDF03 and not self.keys:
-                stopped = ("Next the program calls getchar (SVC #3), which waits for you to type a key in the "
-                           "serial console. The walkthrough stops here because what happens next depends on "
-                           "that key; run the program to continue.")
-                break
-            pre = _snap(c)
-            cycles = []
-            try:
-                while True:
-                    info = c.step_cycle()
-                    cycles.append({'info': info, 'post': _snap(c)})
-                    if info['last'] or c.halted:
-                        break
-            except (RuntimeError, SimulatorError) as e:
-                stopped = f"The CPU stopped with a fault: {e}"
-                break
-            pipe.sync()
-            row = [r for r in pipe.rows if not r['flushed']][-1]
-            post = regs()
-            views = [{'view': pipe.view(u), 'post': post}
-                     for u in range(row['start'], row['start'] + row['cycles'])]
-            text = self.prog.asm_map.get(pc, '???')
-            steps.append({'addr': pc, 'text': text, 'label': self.label(pc),
-                          'summary': self.summary(text, pre, cycles[-1]['post'], cycles),
-                          'row': row['row'], 'flushes': row['refill'] > 0,
-                          'cycles': (first if not steps else []) + views})
+        steps = list(self.pipeline_steps())
         return {'type': 'pipe_walkthrough', 'path': self.prog.path, 'steps': steps,
-                'stopped': stopped, 'output': self.output, 'limit': self.limit}
+                'stopped': self.stopped, 'output': self.output, 'limit': self.limit}
 
     # ── one-line overview of an instruction ──────────────────────────────────
 
@@ -407,44 +492,7 @@ class Walkthrough:
         dp0, dp1 = pre['datapath'], post['datapath']
         sig = info['signals']
         out = []
-        intro = {
-            'FETCH_ADDR': f"The fetch of the next instruction begins. The PC holds its address, {h32(regs0[15])}; "
-                          "that address must go to MAR before memory can be read, and the PC is stepped on to the next "
-                          "halfword in the same cycle.",
-            'FETCH_MEMORY': f"Memory is read at the address in MAR ({h32(dp0['MAR'])}). The 16-bit instruction "
-                            f"halfword stored there, {h16(dp1['MDR'])}, is captured in MDR.",
-            'FETCH_IR': "The halfword in MDR is copied over the bus into the instruction register IR, where the control "
-                        "unit (FSM) can read it.",
-            'FETCH2_ADDR': "This is a 32-bit instruction, so a second fetch begins: the PC now points at its second "
-                           "halfword, which goes to MAR, and the PC steps on again.",
-            'FETCH2_MEMORY': f"Memory is read at MAR ({h32(dp0['MAR'])}): the second halfword, {h16(dp1['MDR'])}, "
-                             "goes into MDR.",
-            'FETCH2_IR': "The second halfword moves from MDR over the bus into IR2. Now IR and IR2 together hold the "
-                         "whole 32-bit instruction.",
-            'DECODE': "The FSM decodes the instruction bits in IR" + (" and IR2" if 'IR2' in str(info['desc']) else "") +
-                      ": it works out which registers, immediate and operation this instruction uses, and which "
-                      "states must follow. "
-                      + (_cap(info['desc'].split(':', 1)[1].strip().rstrip('.')) + '. '
-                         if info['desc'].startswith('Decode:') else '') +
-                      "Nothing is stored in this cycle; the FSM only sets the register numbers and mux selects "
-                      "that the next cycles use.",
-            'EVALUATE_ADDRESS': "The address adder computes the memory address this instruction uses"
-                                + (" (here the address itself is the result)." if not _has(info, 'LD.MAR') else '.'),
-            'FETCH_OPERANDS': ("Memory is read at the address in MAR." if _has(info, 'R/W=READ') else
-                               "The store data is prepared: the register's value travels through the ALU and the bus "
-                               "into MDR." if _has(info, 'LD.MDR') else
-                               "The source registers are read and loaded into the ALU's input latches A and B."),
-            'EXECUTE_COMMIT': "The ALU computes the result from its latched inputs, and the result is committed "
-                              "(written to its destination).",
-            'STORE_RESULT': ("The memory write happens: MDR's value is stored at the address in MAR." if _has(info, 'R/W=WRITE')
-                             else "The result is written to its destination register."),
-            'EXECUTE_PC': "The PC is updated (or, for a branch that is not taken, left alone).",
-            'LINK': "The return address is saved in LR so the called function can come back.",
-            'WRITEBACK': "The base register (SP for PUSH/POP) is updated past the words that were transferred.",
-            'SVC_CALL': "The supervisor call starts exception entry; picosim then performs the OS service directly.",
-            'HALT': "The breakpoint stops the processor.",
-        }.get(st, info['desc'])
-        out.append(intro)
+        out.append(_intro(info, regs0, dp0, dp1))
 
         # who drives the bus
         gate = next((g for g in GATE_NAMES if g in sig), None)
@@ -555,30 +603,43 @@ class Walkthrough:
                 'text': ' '.join(out + [last])}
 
 
-def build(path, limit=DEFAULT_LIMIT, keys=()):
+def build(path, limit=DEFAULT_LIMIT, keys=(), prog=None):
     """Walk through `path` from reset; returns the message the GUI shows.
-    `keys` are what getchar reads, in order (the student's typing)."""
+    `keys` are what getchar reads, in order (the student's typing).  With
+    `prog` (a loaded Program) a copy of it is walked instead, without
+    assembling the file again."""
     try:
-        return Walkthrough(path, limit, keys).build()
+        return Walkthrough(path, limit, keys, prog).build()
     except LoadError as e:
         return {'type': 'walkthrough', 'path': path, 'steps': [], 'stopped': f"Could not load: {e}",
                 'output': '', 'limit': limit}
 
 
-def build_pipeline(path, limit=DEFAULT_LIMIT, keys=()):
+def build_pipeline(path, limit=DEFAULT_LIMIT, keys=(), prog=None):
     """Walk through `path` on the 2-stage pipeline; the GUI's message."""
     try:
-        return Walkthrough(path, limit, keys).build_pipeline()
+        return Walkthrough(path, limit, keys, prog).build_pipeline()
     except LoadError as e:
         return {'type': 'pipe_walkthrough', 'path': path, 'steps': [], 'stopped': f"Could not load: {e}",
                 'output': '', 'limit': limit}
+
+
+def compact_steps(prog, pipe=False, limit=DEFAULT_LIMIT, keys=()):
+    """(walkthrough, generator of compact steps) for a copy of the loaded
+    program `prog`: the walkthrough panel's rows, one at a time, so the
+    server can send the first ones at once and build the rest between
+    commands.  When the generator ends, the walkthrough's .stopped and
+    .output are set."""
+    w = Walkthrough(limit=limit, keys=keys, prog=prog)
+    return w, (w.pipeline_steps(compact=True) if pipe else w.steps(compact=True))
 
 
 def compact(wt):
     """The walkthrough without its machine snapshots, for the walkthrough
     panel beside the CPU diagram: each step's instruction and explanation,
     and per clock cycle a name, its phase and one sentence (a few kB per
-    step instead of tens)."""
+    step instead of tens).  compact_steps() makes the same rows without
+    building the snapshots first."""
     pipe = wt.get('type') == 'pipe_walkthrough'
     steps = []
     for s in wt['steps']:

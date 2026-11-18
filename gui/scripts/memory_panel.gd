@@ -58,22 +58,34 @@ func _ready() -> void:
 
 ## Hide the Disassembly tab and show the Memory tab (the CPU diagram is on
 ## at Level 3 or 4, with the walkthrough beside it), or bring it back.
+## A tab is shown before it is selected, and selected before the other is
+## hidden, so one tab is always visible and selected (hiding the only
+## visible tab is an error: "Cannot deselect tabs").
 func set_disasm_hidden(on: bool) -> void:
 	if on == disasm_hidden:
 		return
 	disasm_hidden = on
-	tabs.current_tab = 1 if on else 0
-	tabs.set_tab_hidden(0, on)
+	if on:
+		tabs.set_tab_hidden(1, false)
+		tabs.current_tab = 1
+		tabs.set_tab_hidden(0, true)
+	else:
+		tabs.set_tab_hidden(0, false)
+		tabs.current_tab = 0
+		tabs.set_tab_hidden(1, not Level.at_least(2))
 	if not on and Backend.state.get("loaded", false):
 		update_state(Backend.state)
 
 
 ## The Memory tab, the Raw column and the OS rows appear from level 2
-## (Memory & I/O); level 1 shows only the student's own program.
+## (Memory & I/O); level 1 shows only the student's own program.  Below
+## level 3 there is no CPU diagram, so the Disassembly comes back too.
 func set_level(n: int) -> void:
-	tabs.set_tab_hidden(1, n < 2)
-	if n < 2 and not disasm_hidden:
+	if n < 3:
+		set_disasm_hidden(false)
+	if n < 2:
 		tabs.current_tab = 0
+	tabs.set_tab_hidden(1, n < 2)
 	if tree != null:
 		_size_columns()
 		if not _prog.is_empty():
@@ -145,6 +157,7 @@ func _build_disasm() -> Control:
 	top.add_child(HelpButton.new("memory", "Disassembly"))
 
 	tree = Tree.new()
+	tree.allow_search = false          # letters are step keys (S, B, O, C), not a search
 	tree.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	tree.columns = COLUMNS.size()
 	tree.hide_root = true

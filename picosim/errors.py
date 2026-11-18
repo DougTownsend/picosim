@@ -41,13 +41,27 @@ HINTS = [
      "This instruction only takes R0-R7."),
 ]
 
+# A character constant with more than one character in it: #'Hello'
+_MULTI_CHAR = re.compile(r"#\s*'([^'\\]{2,})'")
+MULTI_CHAR_HINT = ("A character in quotes is one character: #'H' is the number 72, the code for H. "
+                   "A register holds one character at a time, so put each letter in R0 and print it "
+                   "before the next (movs r0, #'H' then bl putchar).")
+TOOL_HINT = ("Install the ARM toolchain as installation.md says (or ask your teacher). Then check it "
+             "in a terminal: picosim --run examples/01_hello.s should print Hi!")
+
 _LINE = re.compile(r"^(?P<file>[^:\n]+\.s):(?P<line>\d+): (?:Error|Warning): (?P<msg>.*)$")
 _UNDEF = re.compile(r"undefined reference to [`'](?P<name>[^'`]+)'")
 _NOISE = re.compile(r"Assembler messages:|cannot find entry symbol|collect2: error|"
                     r"ld returned \d+ exit status|in function `")
 
 
-def hint_for(msg):
+def hint_for(msg, source=""):
+    """The hint for an assembler message; `source` (the line it is about)
+    makes it more exact where the message alone is not enough."""
+    code = source.split("@")[0]
+    m = _MULTI_CHAR.search(code)
+    if m and re.search(r"garbage following instruction|bad expression|syntax error|bad arguments", msg):
+        return MULTI_CHAR_HINT
     for pat, hint in HINTS:
         if re.search(pat, msg):
             return hint
@@ -68,6 +82,9 @@ def explain(raw, s_path):
 
     out = []
     seen = set()
+    if re.search(r"arm-none-eabi-gcc not found", raw):
+        return [{"line": 0, "source": "", "message": "the ARM assembler (arm-none-eabi-gcc) was not found on this computer",
+                 "hint": TOOL_HINT}]
     for row in raw.splitlines():
         row = row.strip()
         m = _LINE.match(row)
@@ -76,7 +93,7 @@ def explain(raw, s_path):
             msg = m.group("msg").strip()
             if (n, msg) not in seen:
                 seen.add((n, msg))
-                out.append({"line": n, "source": text(n), "message": msg, "hint": hint_for(msg)})
+                out.append({"line": n, "source": text(n), "message": msg, "hint": hint_for(msg, text(n))})
             continue
         u = _UNDEF.search(row)
         if u:

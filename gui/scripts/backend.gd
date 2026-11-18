@@ -27,6 +27,10 @@ signal settings_error(message: String)
 signal facts_received
 ## Testing (picosim vs. a real RP2040): every {"type": "hw"} message.
 signal hw_message(msg: Dictionary)
+## The 2-stage pipeline was asked for partway through an instruction: it
+## starts between instructions, so the machine did not change (picosim/server.py
+## cmd_set_machine).  {machine, insn, done, total}
+signal machine_waiting(msg: Dictionary)
 
 var tcp := StreamPeerTCP.new()
 var port := 0
@@ -34,6 +38,7 @@ var buf := PackedByteArray()
 var state: Dictionary = {}
 var facts: Dictionary = {}       # from picosim/teaching.py; empty until the server sends them
 var program: Dictionary = {}
+var load_error: Dictionary = {}   # the last load_error message, kept while the build is stale
 var online := false
 var _server_pid := -1
 var _retry := 0.0
@@ -112,6 +117,7 @@ func _handle(msg: Variant) -> void:
 			state_changed.emit(msg)
 		"program":
 			program = msg
+			load_error = {}
 			program_loaded.emit(msg)
 		"console":
 			console_output.emit(msg["text"], msg["source"])
@@ -120,7 +126,10 @@ func _handle(msg: Variant) -> void:
 		"error":
 			error_received.emit(msg["message"])
 		"load_error":
+			load_error = msg
 			load_failed.emit(msg["path"], msg["message"], msg.get("errors", []))
+		"machine_wait":
+			machine_waiting.emit(msg)
 		"serial_ports":
 			serial_ports_listed.emit(msg["ports"])
 		"flash_done":

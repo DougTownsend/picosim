@@ -15,10 +15,14 @@ extends PanelContainer
 ## the ● breakpoint column and Skip to main.
 ##
 ## The steps come from the backend's walkthrough command (picosim/
-## walkthrough.py, compact form), which runs a fresh copy of the program with
-## the keys typed so far.  Values typed in by hand can make the live run
-## differ; the panel says so when the instruction it expects is not the one
-## the machine is on.
+## walkthrough.py, compact form), which runs a copy of the build that is
+## loaded with the keys typed so far.  They come a page at a time (the first
+## at once); each request has a number (req) and pages for an older one are
+## dropped, so a reload or a machine switch never mixes two walkthroughs.
+## Values typed in by hand can make the live run differ; the panel says so
+## when the instruction it expects is not the one the machine is on.  While
+## the newest save does not build, a line says the walkthrough is of the
+## last build that worked.
 
 const HelpButton := preload("res://scripts/help_button.gd")
 
@@ -30,6 +34,7 @@ const PIPE_KEYS := {"FETCH": "stage_f", "EXECUTE": "stage_e", "DECODE": "stage_d
 var title: Label
 var info: Label
 var note: Label
+var stale_note: Label                 # the newest save does not build: this is the last good build
 var tree: Tree
 var detail: RichTextLabel
 var fold_btn: Button
@@ -41,6 +46,8 @@ var is_open := true
 var _wt: Dictionary = {}              # the compact walkthrough message
 var _want := ""                       # what the walkthrough on hand was asked for (path|machine|keys)
 var _waiting := false
+var _req := 0                         # the walkthrough asked for last; older pages are dropped
+var _passes := {}                     # label -> times its code has run, for the list's headers
 var _items: Array = []                # TreeItem per step
 var _cur := -1                        # step the machine is on (-1: none)
 var _cur_k := 0                       # cycles of it already run
@@ -104,6 +111,11 @@ func _ready() -> void:
 	note.add_theme_font_size_override("font_size", 12)
 	note.visible = false
 	body.add_child(note)
+	stale_note = Label.new()
+	stale_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	stale_note.add_theme_font_size_override("font_size", 12)
+	stale_note.visible = false
+	body.add_child(stale_note)
 
 	var split := VSplitContainer.new()
 	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -124,6 +136,7 @@ func _ready() -> void:
 	tree.add_theme_font_override("font", Backend.mono_font())
 	tree.add_theme_font_size_override("font_size", 13)
 	tree.focus_mode = Control.FOCUS_CLICK
+	tree.allow_search = false          # letters are step keys (S, B, O, C), not a search
 	tree.item_selected.connect(_on_item_selected)
 	tree.item_activated.connect(func(): _goto(_sel, 0))
 	tree.gui_input.connect(_on_tree_input)
@@ -184,13 +197,21 @@ func _on_state(st: Dictionary) -> void:
 		detail.text = "[color=%s]Load a program and its walkthrough appears here.[/color]" % Palette.hex("dim")
 		return
 	btn_main.visible = Level.at_least(2) and st.get("at_boot", false) and not st.get("running", false)
+	var b = st.get("build")
+	var stale = b.get("stale") if b is Dictionary else null
+	stale_note.visible = stale is Dictionary
+	if stale is Dictionary:
+		stale_note.text = "These are the steps of the last build that worked (saved %s): your newest save%s has a mistake." % [
+			str(stale.get("loaded_saved", "")), (" of " + str(stale["file"])) if not stale.get("same", true) else ""]
 	if st.get("running", false) and not st.get("waiting_input", false):
 		return                      # explained where Run stops
 	var want := "%s|%s|%d" % [st.get("path", ""), st.get("machine", ""), int(st.get("keys_typed", 0))]
 	if want != _want and not _waiting:
 		_want = want
 		_waiting = true
-		Backend.send("pipe_walkthrough" if _pipe() else "walkthrough", {"compact": true, "limit": LIMIT})
+		_req += 1
+		Backend.send("pipe_walkthrough" if _pipe() else "walkthrough",
+			{"compact": true, "limit": LIMIT, "stream": true, "req": _req})
 		if _wt.is_empty():
 			detail.text = "[color=%s]Working through %s…[/color]" % [Palette.hex("dim"), str(st.get("path", "")).get_file()]
 		return
@@ -198,11 +219,23 @@ func _on_state(st: Dictionary) -> void:
 
 
 func _on_walkthrough(data: Dictionary) -> void:
-	_waiting = false
 	if not data.get("compact", false):
 		return                      # asked for by someone else (tests, older guide)
-	_wt = data
-	_build_tree()
+	if data.get("req") != null and int(data["req"]) != _req:
+		return                      # a page of a walkthrough no longer wanted
+	_waiting = false
+	if int(data.get("start", 0)) == 0:
+		_wt = data
+		_build_tree()
+	elif not _wt.is_empty() and int(data["start"]) == _wt["steps"].size():
+		var from: int = _wt["steps"].size()
+		_wt["steps"].append_array(data["steps"])
+		for k in ["done", "stopped", "output"]:
+			_wt[k] = data.get(k, _wt.get(k))
+		_add_rows(from)
+		_show_info()
+	else:
+		return                      # a page out of order: wait for the next request
 	_cur = -2                       # force _follow to re-mark
 	_follow(Backend.state)
 	# typed keys or the machine changed while this one was being made (the
@@ -254,6 +287,8 @@ func _follow(st: Dictionary) -> void:
 			_note("The program has finished: every step above has run. Reload to run it again.")
 		elif st.get("waiting_input", false):
 			_note("The program is waiting for a key: type one in the serial console and the walkthrough carries on from here.")
+		elif not _wt.get("done", true):
+			_note("Working out the next steps…")
 		else:
 			_note("You're past the end of this walkthrough. " + str(_wt.get("stopped", "")))
 		if moved:
@@ -271,26 +306,32 @@ func _note(t: String) -> void:
 func _build_tree() -> void:
 	tree.clear()
 	_items.clear()
-	var root := tree.create_item()
+	_passes = {}
+	tree.create_item()
+	_add_rows(0)
+	_bps_key = null
+	_show_info()
+
+
+## Rows for steps[from..]: a header row for each label, then the step.
+func _add_rows(from: int) -> void:
+	var root := tree.get_root()
 	var steps: Array = _wt.get("steps", [])
-	var total := 0
-	var passes := {}
 	var called := {}
-	for i in range(1, steps.size()):
+	for i in range(maxi(1, from), steps.size()):
 		if str(steps[i - 1]["text"]).strip_edges().get_slice(" ", 0).to_lower() in ["bl", "blx"]:
 			called[int(steps[i]["addr"])] = true
-	for i in steps.size():
+	for i in range(from, steps.size()):
 		var s: Dictionary = steps[i]
-		total += s["cycles"].size()
 		var lab := str(s["label"])
 		if lab != "":
-			passes[lab] = passes.get(lab, 0) + 1
+			_passes[lab] = _passes.get(lab, 0) + 1
 			var h := tree.create_item(root)
 			var what := "function" if called.has(int(s["addr"])) else ("built-in OS" if Backend.in_os(int(s["addr"])) else "label")
-			h.set_text(2, lab + ("  · pass %d" % passes[lab] if passes[lab] > 1 else "   " + what))
+			h.set_text(2, lab + ("  · pass %d" % _passes[lab] if _passes[lab] > 1 else "   " + what))
 			h.set_tooltip_text(2, "%s: %s%s" % [lab, "a function in your program" if what == "function" else (
 				"part of the built-in OS" if what == "built-in OS" else "a label in your program"),
-				" · its code runs again (pass %d)" % passes[lab] if passes[lab] > 1 else ""])
+				" · its code runs again (pass %d)" % _passes[lab] if _passes[lab] > 1 else ""])
 			h.set_custom_color(2, Palette.c("label"))
 			for c in 4:
 				h.set_selectable(c, false)
@@ -308,8 +349,16 @@ func _build_tree() -> void:
 			it.set_custom_color(2, Palette.c("muted"))
 		_items.append(it)
 	_bps_key = null
+
+
+func _show_info() -> void:
+	var steps: Array = _wt.get("steps", [])
+	var total := 0
+	for s in steps:
+		total += s["cycles"].size()
 	var n := steps.size()
-	info.text = ("  %d steps · %d %s" % [n, total, "cycles" if _pipe() else "clock cycles"]) if n > 0 else ""
+	var more := "" if _wt.get("done", true) else " so far…"
+	info.text = ("  %d steps · %d %s%s" % [n, total, "cycles" if _pipe() else "clock cycles", more]) if n > 0 else ""
 	info.tooltip_text = str(_wt.get("stopped", ""))
 
 
@@ -469,6 +518,7 @@ func _apply_palette() -> void:
 	add_theme_stylebox_override("panel", Palette.panel_box("panel", 6, 10))
 	info.add_theme_color_override("font_color", Palette.c("dim"))
 	note.add_theme_color_override("font_color", Palette.c("yellow"))
+	stale_note.add_theme_color_override("font_color", Palette.c("error"))
 	tree.add_theme_stylebox_override("panel", Palette.panel_box("surface", 4, 4))
 	tree.add_theme_color_override("font_color", Palette.c("text"))
 	if not _wt.is_empty():

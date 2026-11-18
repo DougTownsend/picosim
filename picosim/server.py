@@ -52,8 +52,16 @@ STACK_SHOWN = 128        # bytes of the stack sent with each state (SP up to the
 PICO_VID = 0x2E8A
 MACHINES = ('multicycle', 'm0plus')
 PIPE_SYNC = 256          # lay out the pipeline at least this often at max speed
+WALK_FIRST = 40          # the walkthrough's first page: rows sent as soon as they are made
+WALK_PAGE = 200          # rows per later page
+WALK_SLICE = 0.008       # seconds of walkthrough building between looks at the GUI's commands
 
 _BRANCH = re.compile(r'^(b|bl|b(?:eq|ne|hs|cs|lo|cc|mi|pl|vs|vc|hi|ls|ge|lt|gt|le|al))(\s+)#(0x[0-9a-f]+|\d+)$')
+
+
+def _saved(mtime):
+    """When a file was saved, as the GUI shows it: 10:42:13."""
+    return time.strftime('%H:%M:%S', time.localtime(mtime)) if mtime else ''
 
 
 def _mtime(path):
@@ -159,6 +167,15 @@ class Server:
         self.mem_notes = {}
         self._push_k = 0             # which register of the current PUSH is being written
         self._hw = None              # Testing: picosim vs. a real RP2040 (picosim/hwtest)
+        # Which build is loaded: rev counts successful loads, saved is when the
+        # file it came from was saved.  After a save that does not build, the
+        # last good build stays loaded but stale (see _stale_msg), and Run and
+        # Step are refused until the file builds or the student picks it.
+        self.rev = 0
+        self.saved = ''
+        self.stale = None
+        self.symbols = {}            # label name -> address, for the challenge's mem32 checks
+        self.walk_job = None         # a walkthrough being sent a page at a time (poll_walk)
 
     # ── transport ────────────────────────────────────────────────────────────
 
@@ -208,6 +225,7 @@ class Server:
                 self.poll_file()
                 if busy:
                     self.run_slice()
+                self.poll_walk(0.003 if busy else WALK_SLICE)
                 if self.dirty:
                     self._send_state_now()
             except Exception as e:     # keep the server alive for the GUI
@@ -223,6 +241,8 @@ class Server:
         flat out, until the next clock cycle is due at a set speed, otherwise
         a short poll (serial, flash, file changes).  A command from the GUI
         wakes it at once, so sleeping never delays a key press."""
+        if self.walk_job is not None:
+            return 0                       # the walkthrough's next page is being built
         if not self.running or self.waiting_input:
             return IDLE_POLL
         if self.cps == MAX_SPEED or self.stop_at is not None:
@@ -271,7 +291,7 @@ class Server:
         c = self.core
         if c is None:
             return self.send({'type': 'state', 'loaded': False, 'mode': self.mode, 'path': self.path or '',
-                              'serial': self.serial.port if self.serial else None})
+                              'serial': self.serial.port if self.serial else None, 'build': None})
         pc = c.pc
         sp = c.sp
         hx_addr, hx_len = self.hexview
@@ -289,6 +309,8 @@ class Server:
             'datapath': c.datapath,
             'pc': pc, 'halted': c.halted, 'exit_code': self.exit_code, 'fault': self.fault,
             'steps': c.steps, 'cycles': c.cycles, 'boot_steps': self.boot_steps,
+            'os_steps': self.os_steps() if self.step_over_os else None,
+            'build': {'rev': self.rev, 'saved': self.saved, 'stale': self._stale_msg()},
             'at_boot': self.at_boot(),
             'can_back': self.mode == 'sim' and (c.in_insn or c.steps > (self.boot_steps if self.skip_boot else 0)),
             'in_insn': c.in_insn, 'next_state': c.next_state(),
@@ -314,6 +336,7 @@ class Server:
             'serial': self.serial.port if self.serial else None,
             'machine': self.machine,
             'pipe': self.pipe.view() if self.machine == 'm0plus' else None,
+            'pipe_from': self.pipe.seq0 if self.machine == 'm0plus' else None,
             'explain': self._explanation(),
         })
 
@@ -337,13 +360,61 @@ class Server:
 
     def _checks(self):
         """The challenge's results once the program has finished (not after a
-        fault), else None.  Worked out once per halt; Step back clears them."""
+        fault), else None.  Worked out once per halt; Step back clears them.
+        A mem32 check reads SRAM without running anything."""
         c = self.core
         if not (self.challenge and c.halted and self.fault is None and self.mode == 'sim'):
             self.check_results = None
         elif self.check_results is None:
-            self.check_results = challenges.run(self.challenge, c.regs, self.out_text)
+            peek = lambda a: int.from_bytes(c.get_mem_slice(a, 4), 'little')
+            self.check_results = challenges.run(self.challenge, c.regs, self.out_text, self.symbols, peek)
         return self.check_results
+
+    def os_steps(self):
+        """Instructions run inside the built-in OS so far (its start-up and
+        every putchar / getchar): at Level 1 the count shown is the
+        program's own instructions, so a Step over putchar adds one."""
+        return sum(r['execs'] for r in self.core.profile() if in_os(r['addr']))
+
+    # ── which build is loaded ────────────────────────────────────────────────
+
+    def _stale_msg(self):
+        """None, or what the GUI says when the newest save did not build: the
+        file and when it was saved, its first mistake, and the build still
+        loaded (`accepted`: the student chose to run that one)."""
+        st = self.stale
+        if not st:
+            return None
+        return dict(st, loaded=os.path.basename(self.prog.path) if self.prog else '',
+                    loaded_saved=self.saved)
+
+    def _blocked(self, what='run'):
+        """Run, Step and the rest are refused while the newest save does not
+        build (until it does, or the student picks the last good build)."""
+        st = self.stale
+        if not st or st.get('accepted'):
+            return False
+        self.error(f"{st['file']} (saved {st['saved']}) has a mistake, so there is nothing new to {what}. "
+                   "Fix it and save, or click Use the last build.")
+        self.send_state()
+        return True
+
+    def cmd_use_last_build(self, msg):
+        """The stale strip's Use the last build: go on with the build that is
+        still loaded.  For another file that failed, that means going back
+        to the loaded program's own file."""
+        if not self.stale or not self.prog:
+            return self.send_state()
+        if self.stale['path'] != self.prog.path:
+            self.path = self.prog.path
+            self.watch_mtime = _mtime(self.path)
+            self.stale = None
+            self.console(f"[back to {os.path.basename(self.path)}]\n", 'system')
+        else:
+            self.stale['accepted'] = True
+            self.console(f"[running the last build of {os.path.basename(self.path)} that worked "
+                         f"(saved {self.saved}); your newest save still has a mistake]\n", 'system')
+        self.send_state()
 
     def send_program(self):
         p = self.prog
@@ -377,7 +448,9 @@ class Server:
                    'listing': listing, 'settings': prog_settings.describe(p.path),
                    'regions': self.regions(), 'uses_io': uses_io,
                    'challenge': self.challenge and {'task': self.challenge['task'],
-                                                    'checks': [t for t, _ in self.challenge['checks']]},
+                                                    'checks': [t for t, _ in self.challenge['checks']],
+                                                    'hint': self.challenge.get('hint', '')},
+                   'rev': self.rev, 'saved': self.saved,
                    # every label, data ones too, for the Memory tab's Go to box
                    'labels': {**{name: addr for addr, name in p.sym_map.items()},
                               **p.label_map}})
@@ -707,6 +780,8 @@ class Server:
         path = os.path.abspath(os.path.expanduser(path))
         self.path = path                  # kept after a failed load: Reload and auto-reload retry it
         self.watch_mtime = _mtime(path)
+        saved = _saved(self.watch_mtime)
+        src = path
         try:
             # assemble with the student's program settings filled in (if any)
             src = prog_settings.effective_source(path)
@@ -714,14 +789,26 @@ class Server:
         except LoadError as e:
             from . import errors
             raw = str(e)
+            found = errors.explain(raw, src if src.endswith('.s') else path)
+            self._failed(path, saved, found)
             self.send({'type': 'load_error', 'path': path, 'message': errors.clean(raw) or raw,
-                       'errors': errors.explain(raw, src if src.endswith('.s') else path)})
+                       'errors': found, 'saved': saved, 'stale': self._stale_msg()})
             self.send_state()             # so the GUI's Reload can retry
             return
         except OSError as e:
-            self.send({'type': 'load_error', 'path': path, 'message': str(e)})
+            self._failed(path, saved, [])
+            self.send({'type': 'load_error', 'path': path, 'message': str(e), 'saved': saved,
+                       'stale': self._stale_msg()})
+            self.send_state()
             return
         prog.path = path
+        self.rev += 1
+        self.saved = saved
+        self.stale = None
+        self.walk_job = None              # a walkthrough of the old build is not finished: drop it
+        # every name the ELF defines when the loader keeps them (aliases too)
+        self.symbols = {**{name: addr for addr, name in prog.sym_map.items()}, **prog.label_map,
+                        **(getattr(prog, 'names', None) or {})}
         prog.cpu._core.itrace_enable(heat.TRACE_CAP)   # the heat map's timeline
         self.heat_overview = heat.Overview()
         self.prog, self.path = prog, path
@@ -760,7 +847,24 @@ class Server:
             self.console(f"[loaded {os.path.basename(path)}{note}]\n", 'system')
         if challenge_error:
             self.console(f"[the challenge in this file cannot be checked: {challenge_error}]\n", 'system')
+        for name in (challenges.labels(self.challenge) if self.challenge else []):
+            if name not in self.symbols:
+                self.console(f"[the challenge checks mem32[{name}], but this program has no label "
+                             f"called {name}]\n", 'system')
         self.send_state()
+
+    def _failed(self, path, saved, found):
+        """A load that did not build.  With a program still loaded, that
+        program is now stale: the GUI says so and Run and Step wait."""
+        self.running = False
+        self.stop_at = None
+        if self.prog is None:
+            self.stale = None
+            return
+        first = next((e for e in found if e.get('line')), None)
+        self.stale = {'path': path, 'file': os.path.basename(path), 'saved': saved,
+                      'line': first['line'] if first else 0,
+                      'same': path == self.prog.path, 'accepted': False}
 
     def cmd_reload(self, msg):
         self.cmd_load({'path': self.path})
@@ -793,7 +897,7 @@ class Server:
             self.run_slice()
 
     def cmd_step_cycle(self, msg):
-        if not self.core:
+        if not self.core or self._blocked('step'):
             return
         self._settle()
         self.running = False
@@ -805,7 +909,7 @@ class Server:
         self.send_state()
 
     def cmd_step_insn(self, msg):
-        if not self.core:
+        if not self.core or self._blocked('step'):
             return
         self._settle()
         if self.step_over_os and self.machine != 'm0plus':
@@ -835,7 +939,7 @@ class Server:
 
     def cmd_run(self, msg):
         c = self.core
-        if not c or (c.halted and not self._pipe_draining()):
+        if not c or (c.halted and not self._pipe_draining()) or self._blocked():
             return self.send_state()
         self.cps = max(0, int(msg.get('cps', self.cps)))
         self._begin_action('run')
@@ -950,7 +1054,7 @@ class Server:
     def cmd_step_back(self, msg):
         """Undo one instruction (or one clock cycle, partway through one)."""
         c = self.core
-        if c is None or self.mode != 'sim':
+        if c is None or self.mode != 'sim' or self._blocked('step back through'):
             return
         self.running = False
         self.stop_at = None
@@ -1008,7 +1112,7 @@ class Server:
         cycle would, so the CPU diagram shows the last one.  The student
         carries on stepping from there."""
         c = self.core
-        if c is None or self.mode != 'sim':
+        if c is None or self.mode != 'sim' or self._blocked('go to'):
             return
         self._settle()
         self.running = False
@@ -1056,7 +1160,7 @@ class Server:
         (so the step and cycle counts stay honest)."""
         self._settle()
         c = self.core
-        if not self.at_boot():
+        if not self.at_boot() or self._blocked():
             return self.send_state()
         self.running = False
         self._begin_action(kind='run')
@@ -1106,7 +1210,7 @@ class Server:
         a getchar waiting for a key and faults all stop it as Run does."""
         self._settle()
         c = self.core
-        if not c or c.halted:
+        if not c or c.halted or self._blocked('step'):
             return self.send_state()
         call = self.call_at_pc()
         if call is None:
@@ -1135,19 +1239,39 @@ class Server:
 
     def cmd_set_machine(self, msg):
         """Choose what Step Cycle / Step Insn / Run step: the multi-cycle
-        datapath's clock cycles or the RP2040's 2-stage pipeline cycles."""
+        datapath's clock cycles or the RP2040's 2-stage pipeline cycles.
+
+        The pipeline starts between instructions.  Partway through one on
+        the multi-cycle machine, the switch waits: nothing runs, and the
+        GUI is told why (it switches when the instruction has finished).
+        With `finish`, the student chose to finish it now: its last cycles
+        run, and the console says so.  Either way the pipeline's cycle
+        count starts at 0 where the switch happens."""
         m = msg.get('machine', 'multicycle')
         if m not in MACHINES:
             return self.error(f"bad machine {m}")
         if m != self.machine:
-            self.running = False
             c = self.core
             if c and m == 'm0plus' and c.in_insn:
+                if not msg.get('finish'):
+                    text = self.prog.asm_map.get(c.insn_addr, '???')
+                    self.send({'type': 'machine_wait', 'machine': m, 'insn': ' '.join(text.split()),
+                               'done': c.cycle_index, 'total': c.insn_total})
+                    return self.send_state()
+                self.running = False
+                left = c.insn_total - c.cycle_index
+                text = ' '.join(self.prog.asm_map.get(c.insn_addr, '???').split())
                 self._begin_action()
                 self.one_insn(record=True)    # the pipeline starts between instructions
+                self.console(f"[finished {text} first ({left} more clock cycle{'s' if left != 1 else ''}): "
+                             "the 2-stage pipeline starts between instructions]\n", 'system')
+            self.running = False
             self.machine = m
             if self.pipe:
                 self.pipe.reset()
+            if c and m == 'm0plus' and c.steps > (self.boot_steps if self.skip_boot else 0):
+                self.console(f"[2-stage pipeline from instruction {c.steps + 1}: its cycle count starts at 0 here; "
+                             f"the multi-cycle count was {c.cycles}]\n", 'system')
         self.send_state()
 
     def cmd_set_speed(self, msg):
@@ -1348,29 +1472,79 @@ class Server:
 
     def _walk_msg(self, msg, pipe):
         """The walkthrough of the loaded program (picosim/walkthrough.py), for
-        the walkthrough panel beside the CPU diagram.  It runs a fresh copy
-        with the keys the student has typed so far, so it follows the same
-        run; the machine the GUI shows is not changed.  `compact` leaves out
-        the machine snapshots the panel does not need."""
+        the walkthrough panel beside the CPU diagram.  It runs a copy of the
+        build that is loaded (no assembling, so it always matches it, even
+        after a save that does not build) with the keys the student has typed
+        so far, so it follows the same run; the machine the GUI shows is not
+        changed.  `compact` leaves out the machine snapshots the panel does
+        not need; with `stream` as well, the rows come a page at a time
+        (poll_walk), the first at once, and `req` is echoed so the GUI can
+        drop pages of a walkthrough it no longer wants."""
         kind = 'pipe_walkthrough' if pipe else 'walkthrough'
-        if not self.path:
-            return self.send({'type': kind, 'path': '', 'steps': [], 'stopped': 'No program is loaded.',
-                              'output': '', 'limit': 0})
+        if not self.prog:
+            return self.send({'type': kind, 'path': self.path or '', 'steps': [], 'stopped': 'No program is loaded.',
+                              'output': '', 'limit': 0, 'req': msg.get('req'), 'start': 0, 'done': True})
         from . import walkthrough
         limit = int(msg.get('limit', walkthrough.DEFAULT_LIMIT))
         keys = list(self.keys_used) + list(self.inp)
-        src = prog_settings.effective_source(self.path)
-        wt = (walkthrough.build_pipeline if pipe else walkthrough.build)(src, limit, keys)
+        head = {'type': kind, 'path': self.prog.path, 'limit': limit, 'keys': len(keys),
+                'edited': bool(self.journal),        # values changed by hand: the live run may differ
+                'rev': self.rev, 'saved': self.saved, 'stale': self._stale_msg(), 'req': msg.get('req')}
         if msg.get('compact'):
-            wt = walkthrough.compact(wt)
-        if self.prog:
-            for st in wt.get('steps', []):          # bl #0x10000120 → bl twice, as the Disassembly shows it
-                if 'text' in st:
-                    st['shown'] = symbolic(st['text'], self.prog.sym_map)
-        wt['path'] = self.path
-        wt['keys'] = len(keys)
-        wt['edited'] = bool(self.journal)        # values changed by hand: the live run may differ
-        self.send(wt)
+            w, gen = walkthrough.compact_steps(self.prog, pipe, limit, keys)
+            job = {'w': w, 'gen': gen, 'head': head, 'steps': [], 'sent': 0,
+                   'machine': self.machine, 'rev': self.rev}
+            if msg.get('stream'):
+                self.walk_job = job
+                return self.poll_walk(WALK_SLICE)
+            for st in gen:
+                job['steps'].append(self._shown(st))
+            return self.send(dict(head, steps=job['steps'], stopped=w.stopped, output=w.output,
+                                  compact=True, start=0, done=True))
+        wt = (walkthrough.build_pipeline if pipe else walkthrough.build)(self.prog.path, limit, keys, self.prog)
+        for st in wt.get('steps', []):
+            self._shown(st)
+        self.send(dict(wt, **head))
+
+    def _shown(self, step):
+        """bl #0x10000120 → bl twice, as the Disassembly shows it."""
+        if 'text' in step:
+            step['shown'] = symbolic(step['text'], self.prog.sym_map)
+        return step
+
+    def poll_walk(self, budget):
+        """Build more of the walkthrough being streamed, for up to `budget`
+        seconds, and send what is ready: the first WALK_FIRST rows as soon as
+        they exist, then WALK_PAGE at a time, and the rest when it ends.  A
+        walkthrough of a build or machine no longer shown is dropped."""
+        job = self.walk_job
+        if job is None:
+            return
+        if job['rev'] != self.rev or job['machine'] != self.machine or not self.prog:
+            self.walk_job = None
+            return
+        end = time.monotonic() + budget
+        steps = job['steps']
+        done = False
+        while True:
+            try:
+                steps.append(self._shown(next(job['gen'])))
+            except StopIteration:
+                done = True
+                break
+            ready = len(steps) - job['sent']
+            if (job['sent'] == 0 and ready >= WALK_FIRST) or ready >= WALK_PAGE:
+                break
+            if time.monotonic() > end:
+                break
+        ready = len(steps) - job['sent']
+        if done or (job['sent'] == 0 and ready >= WALK_FIRST) or ready >= WALK_PAGE:
+            w = job['w']
+            self.send(dict(job['head'], steps=steps[job['sent']:], start=job['sent'], done=done, compact=True,
+                           stopped=w.stopped if done else '', output=w.output if done else ''))
+            job['sent'] = len(steps)
+        if done:
+            self.walk_job = None
 
     def cmd_walkthrough(self, msg):
         """The walkthrough on the multi-cycle datapath (see _walk_msg)."""

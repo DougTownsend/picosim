@@ -468,10 +468,11 @@ func _add_topics() -> void:
 		"Indentation and capital letters do not matter ([code]MOVS R0, #5[/code] is fine), but commas between operands do. " + _link("instructions", "Instructions") + " lists what each instruction does.\n" + \
 		_sub("Edit and save") + \
 		"picosim runs your file but does not edit it. Use any plain-text code editor (VS Code, for example).\n" + \
-		"1. Start from an example: click it under " + _k("Examples") + ". picosim saves your own copy of it in [code]Documents/picosim[/code], loads that copy and opens it in a text editor (VS Code if you have it). Your copy is kept, so clicking the example again brings back your changes; " + _k("Examples") + " → [b]Start … over from the original[/b] undoes them. The original examples are never changed.\n" + \
+		"1. Start from an example. Clicking it (on the welcome page or under " + _k("Examples") + ") runs it as it is. To change it, click [b]Edit my copy[/b] beside it on the welcome page (or, with the example open, " + _k("Examples") + " → [b]Edit my copy of …[/b]): picosim saves your own copy in [code]Documents/picosim[/code], says where, loads that copy and opens it in a text editor (VS Code if you have it). Your copy is kept, so [b]Open my copy[/b] brings back your changes later; " + _k("Examples") + " → [b]Start … over from the original[/b] undoes them. The original examples are never changed. If that folder cannot be written, picosim asks for another one, or runs the example as it is.\n" + \
 		"2. For a program of your own, save it with a name ending in [code].s[/code] (a copy of an example in [code]Documents/picosim[/code] is a good start), then in picosim click " + _k("Open…") + " (" + _k("Ctrl/Cmd+O") + ") and pick it.\n" + \
 		"3. Change the file in your editor and save it. picosim notices and loads it again by itself, from the beginning (the console says [code][lb]… changed on disk: reloading][/code]). " + _k("Reload") + " (" + _k("Ctrl/Cmd+R") + ") does the same by hand.\n" + \
 		"If the assembler finds a mistake, a [b]Could not load program[/b] box lists each one: the line number, that line of your file, what is wrong and what usually causes it. Fix the line and save; picosim tries again as soon as you save. " + _link("trouble", "Troubleshooting") + " explains the common messages.\n" + \
+		"Until the file builds again, a red strip under the toolbar says which save has the mistake (and when you saved it), and picosim keeps the last build that worked on screen with Run and Step off, so you never run old code by accident. Its " + _k("Use the last build") + " button runs that build anyway.\n" + \
 		_sub("Entry point and ending") + \
 		"Execution starts at [code]main:[/code] (the label [code]asm_main:[/code] also works, and is what the Pico build uses). The built-in OS calls [code]main[/code] like a function, so it should begin with [code]push {…, lr}[/code] and end with [code]pop {…, pc}[/code]. When it returns, the OS runs [code]BKPT[/code] and the simulator halts. Press " + _k("Reload") + " to run it again. See " + _link("running", "How a program runs") + ".\n" + \
 		_sub("Input and output") + \
@@ -488,7 +489,7 @@ func _add_topics() -> void:
 			"• [code]0x10000000–0x100000FF[/code] — flash: the built-in OS\n" + \
 			"• [code]0x10000100[/code] upward — flash: your code and its constants ([code].text[/code]); a store here stops the program, because flash cannot be written\n" + \
 			"• [code]0x20000000–0x20041FFF[/code] — SRAM: your variables ([code].data[/code], [code].bss[/code]) from [code]0x20000000[/code], and the stack, which starts at the top ([code]SP = 0x20042000[/code]) and grows down\n" + \
-			"• Everything else is memory-mapped I/O. The GPIO registers of the RP2040 are here: SIO at [code]0xD0000000[/code], IO_BANK0 at [code]0x40014000[/code], PADS_BANK0 at [code]0x4001C000[/code] (and RESETS at [code]0x4000C000[/code]). Writing them changes the " + _link("pico", "Pico board") + "'s pins. A pin follows the SIO registers only after its IO_BANK0 CTRL register is set to function 5 (SIO), as on the real chip. Any other address stops the program with a bus fault.\n"
+			"• Everything else is memory-mapped I/O. The GPIO registers of the RP2040 are here: SIO at [code]0xD0000000[/code], IO_BANK0 at [code]0x40014000[/code], PADS_BANK0 at [code]0x4001C000[/code] (and RESETS at [code]0x4000C000[/code]). Writing them changes the " + _link("pico", "Pico board") + "'s pins. A pin follows the SIO registers only after its IO_BANK0 CTRL register is set to function 5 (SIO), as on the real chip. ([code]0x21000000–0x2103FFFF[/code] is SRAM again, bank by bank, as on the RP2040.) Any other address stops the program: with a bus fault where the Pico has nothing either, or with [b]Not simulated[/b] where the Pico has a part picosim does not simulate.\n"
 	programs += _sub("Like the real chip")
 	if not Level.at_least(2):
 		programs += "picosim runs only the instructions the Pico's Cortex-M0+ processor has, and stops with a [b]CPU fault[/b] message in the console wherever a real Pico would crash. See " + _link("trouble", "Troubleshooting") + ".\n"
@@ -497,7 +498,7 @@ func _add_topics() -> void:
 	_topic("programs", "Writing programs", programs)
 
 	var chal := _h("Challenges") + \
-		"Some examples end their opening comment with a [b]challenge[/b]: a small change to make, which picosim checks for you. The task is shown in a strip under the toolbar. When the program finishes, the strip turns [color=" + _c("green") + "]green[/color] if you did it. If not, it lists each check: what was wanted and what your program did instead. Clicking the example opened your own copy of it in a text editor: change it there, save it (picosim reloads it) and run it again. A stock example fails its own challenge, because you have not changed it yet.\n" + \
+		"Some examples end their opening comment with a [b]challenge[/b]: a small change to make, which picosim checks for you. The task is shown in a strip under the toolbar. When the program finishes, the strip turns [color=" + _c("green") + "]green[/color] if you did it. If not, it lists each check: what was wanted and what your program did instead, and a hint if the challenge has one. Use [b]Edit my copy[/b] to change the example in a text editor, save it (picosim reloads it) and run it again. A stock example fails its own challenge, because you have not changed it yet. While your newest save does not build, the strip says so instead of showing the old result.\n" + \
 		"Not every example has one: the LED and button programs never finish, so there is nothing to check at the end. " + _k("About challenges") + " opens this page and " + _k("✕") + " hides the strip until you load another program.\n" + \
 		_sub("Writing your own (for teachers)") + \
 		"Put the lines in the comment at the top of the file, before the first instruction:\n" + \
@@ -506,6 +507,8 @@ func _add_topics() -> void:
 			["[code]@ Challenge: …[/code]", "The task the strip shows. Optional; without it, the strip lists the checks."],
 			["[code]@ Expect: output \"…\"[/code]", "Everything the program printed, from start to finish, must be exactly this text. Write it in quotes; [code]\\n[/code] is a new line (what [code]movs r0, #10[/code] + [code]bl putchar[/code] prints)."],
 			["[code]@ Expect: R2 = 7[/code]", "The register's value when the program finishes. R0–R12, SP and LR; the value may be decimal, hex ([code]0x64[/code]), negative ([code]-1[/code]) or a character ([code]'H'[/code])."],
+			["[code]@ Expect: mem32[lb]total] = 150[/code]", "The word stored in memory at a label when the program finishes, so a value only computed in a register does not count. The label must be in SRAM (after [code].data[/code]) and a multiple of 4; [code]mem32[lb]total + 4][/code] is the next word. picosim reads it without running anything."],
+			["[code]@ Hint: …[/code]", "Shown under the checks after a try that did not pass. Optional."],
 		], 1) + \
 		"Use as many Expect lines as you like; all must pass. Checks run only in the simulator, and not when the program stops with a CPU fault. A line picosim cannot read is reported in the console when the file loads, and the rest of the program still runs.\n"
 	_topic("challenges", "Challenges", chal)
@@ -1055,7 +1058,7 @@ func _summaries() -> Dictionary:
 		(" At Level 1 the OS's own instructions are hidden, so ▶ starts on [code]main[/code] and each [code]bl putchar[/code] is one step." if not l2 else " From Level 2 you also step through the OS's instructions: three at the start and two inside each putchar; " + _k("Step over") + " (" + _k("O") + ") runs a whole call in one step.") + "\n\n" + \
 		_k("Step instruction") + " runs one instruction. " + _k("Run") + " keeps going until the program ends, reaches a [b]breakpoint[/b] (" + _bp_click() + ") or you press " + _k("Pause") + ". " + _k("◀ Step back") + " undoes a step, and " + _k("Reload") + " starts again. The full details walk through Say hello line by line, with the real values."
 	d["programs"] = "A program is a plain text file whose name ends in [code].s[/code]. It starts with three lines ([code].syntax unified[/code], [code].cpu cortex-m0plus[/code], [code].thumb[/code]), then the label [code]main:[/code] and one instruction per line; anything after [code]@[/code] is a comment. [code]main[/code] begins with [code]push {r7, lr}[/code] and ends with [code]pop {r7, pc}[/code], and [code]bl putchar[/code] prints the character in R0.\n\n" + \
-		"Write and save the file in any text editor (VS Code, for example); picosim reloads it by itself when you save. Clicking an example opens your own copy of it in a text editor, ready to change. " + _k("Open…") + " (" + _k("Ctrl/Cmd+O") + ") loads a file. If the assembler finds a mistake, a box lists each wrong line and what usually fixes it. The easiest start is a copy of an example."
+		"Write and save the file in any text editor (VS Code, for example); picosim reloads it by itself when you save. Clicking an example runs it; [b]Edit my copy[/b] beside it saves your own copy and opens it in a text editor, ready to change. " + _k("Open…") + " (" + _k("Ctrl/Cmd+O") + ") loads a file. If the assembler finds a mistake, a box lists each wrong line and what usually fixes it. The easiest start is a copy of an example."
 	d["challenges"] = "Some examples set a [b]challenge[/b]: a small change for you to make, shown in a strip under the toolbar. The example opens in a text editor when you click it: change it there, save it and run the program to the end: the strip turns [color=" + _c("green") + "]green[/color] if your program did it, or lists what is still wrong. Teachers can add their own with [code]@ Challenge:[/code] and [code]@ Expect:[/code] comment lines (see the details)."
 	d["numbers"] = "The CPU stores everything as bits (0s and 1s), and picosim shows them in [b]hexadecimal[/b]: base 16, with the digits 0–9 and A–F and [code]0x[/code] in front. One hex digit is exactly 4 bits, so a 32-bit register is 8 hex digits. For example [code]0x2A[/code] = 2 × 16 + 10 = 42. Hover a register to see its value in decimal and binary too.\n\n" + \
 		"Characters are numbers as well ([b]ASCII[/b]): 'H' is 72 ([code]0x48[/code]) and the digits '0' to '9' are 48 to 57. That is why printing the number 7 needs the character '7': add [code]'0'[/code] (48) before calling putchar."
@@ -1136,15 +1139,17 @@ func _first_steps() -> String:
 	var t := _sub("Your first five minutes")
 	t += "1. Click " + _k("Examples") + " in the toolbar and pick [b]Say hello[/b]. Your program appears in the Disassembly list on the left; the row marked ▶ is the instruction that runs next. The [b]Source[/b] column shows the line of your file that each row came from.\n"
 	if not Level.at_least(2):
-		t += "2. ▶ is on [code]main[/code], the first line of your program. Press " + _k("Step instruction") + " (" + _k("S") + ") once: [code]push {r7, lr}[/code] runs and SP changes.\n"
+		t += "2. ▶ is on [code]main[/code], the first line of your program. Press " + _k("Step instruction") + " (" + _k("S") + ") once: [code]push {r7, lr}[/code] runs and SP changes. Every function starts with a line like this: it saves the return address, so [code]main[/code] can go back to the OS at the end (" + _link("stack", "The stack and functions") + " explains it, if you are curious).\n"
 		t += "3. Step once more and look at the " + _link("registers", "Registers") + ": the one that just changed turns [color=" + _c("changed") + "]yellow[/color]. After [code]movs r0, #'H'[/code], R0 holds [code]0x00000048[/code], the " + _link("numbers", "ASCII code") + " for the letter H.\n"
-		t += "4. Step again. [code]bl putchar[/code] calls the function that prints the character in R0, and an [b]H[/b] appears in the " + _link("serial", "serial console") + " on the right.\n"
+		t += "4. Step again. [code]bl putchar[/code] calls the function that prints the character in R0, and an [b]H[/b] appears in the " + _link("serial", "serial console") + " on the right. The instruction count at the top goes up by just 1: putchar's own instructions run inside picosim's built-in OS, which Level 1 hides (hover the count to see how many).\n"
 	else:
-		t += "2. Press " + _k("Step instruction") + " (" + _k("S") + ") three times. These first three instructions belong to picosim's small [b]built-in OS[/b], which starts your program: R0 briefly holds [code]0x100000FC[/code] and then [code]0x10000101[/code]. Now ▶ is on [code]main[/code], the first line of [i]your[/i] program.\n"
+		t += "2. Press " + _k("Step instruction") + " (" + _k("S") + ") three times (or " + _k("Skip to main") + " to skip them). These first three instructions belong to picosim's small [b]built-in OS[/b], which starts your program: R0 briefly holds [code]0x100000FC[/code] and then [code]0x10000101[/code]. Now ▶ is on [code]main[/code], the first line of [i]your[/i] program. Its [code]push {r7, lr}[/code] is how every function starts: it saves the return address (" + _link("stack", "The stack and functions") + ").\n"
 		t += "3. Step twice more and look at the " + _link("registers", "Registers") + ": the one that just changed turns [color=" + _c("changed") + "]yellow[/color]. After [code]movs r0, #'H'[/code], R0 holds [code]0x00000048[/code], the " + _link("numbers", "ASCII code") + " for the letter H.\n"
 		t += "4. Step three more times. [code]bl putchar[/code] jumps into the OS's [code]putchar[/code] (address [code]10000010[/code]), [code]svc #2[/code] prints the [b]H[/b] in the " + _link("serial", "serial console") + " on the right, and [code]bx lr[/code] comes back to the next line of your program. (" + _k("Step over") + " does all three at once.)\n"
 	t += "5. Press " + _k("Run") + " (" + _k("Space") + ") to let the rest go by itself. When the status text at the top says [b]halted[/b], the program has finished; press " + _k("Reload") + " to watch it again.\n"
 	t += "Each time you step, the " + _link("explain", "Explain this step") + " panel at the top right says what that instruction did and what the next one will do, so you can follow along without guessing.\n"
+	t += _note("Try it", "Three small steps, after a " + _k("Reload") + ": [b]1.[/b] Step until ▶ is on [code]movs r0, #'H'[/code] and guess what R0 will hold. Step and check: [code]0x48[/code], the code for H. [b]2.[/b] Step over [code]bl putchar[/code] and watch the H appear in the console. [b]3.[/b] Press " + _k("◀ Step back") + " (" + _k("B") + "): the H goes away and R0 goes back. Step back undoes any step, so try things freely.")
+	t += "Every button works from the keyboard too: " + _k("S") + " steps, " + _k("B") + " steps back, " + _k("Space") + " runs, and on the welcome page " + _k("Tab") + " moves between the examples and " + _k("Enter") + " opens one.\n"
 	return t
 
 
@@ -1426,11 +1431,11 @@ func _examples() -> String:
 	t += "• R4 is the counter. It is kept in R4, not R0–R3, because putchar may change those; that is why [code]main[/code] pushes R4.\n"
 	t += "• In the Disassembly, the row labelled [code]loop[/code] is where [code]bne loop[/code] jumps back to; it shows as [code]bne #0x10000104[/code].\n"
 	t += "• After [code]cmp r4, #6[/code]: while R4 is less than 6, N = 1 and Z = 0, so [code]bne[/code] jumps back. When R4 reaches 6, Z = 1 and the loop ends. The table in " + _link("branches", "Flags and branches") + " shows the values.\n"
-	t += "[b]Try it:[/b] put a breakpoint on the [code]bne[/code] row and press Run several times to see the flags on each pass. Then make it count to 9 (change [code]#6[/code] to [code]#10[/code]).\n"
+	t += "[b]Try it:[/b] put a breakpoint on the [code]bne[/code] row and press Run several times to see the flags on each pass. Then the challenge, counting to 9: first predict the value [code]cmp[/code] compares that is never printed (now it is 6, because the loop stops before printing it). Which number should [code]cmp[/code] compare with so that 9 is the last one printed?\n"
 	if Level.at_least(2):
 		t += "\n" + _link("examples2", "Level 2 examples") + " covers the rest: memory ([code]ldr[/code] / [code]str[/code]), an LED, typing, functions and buttons.\n"
 	else:
-		t += "\n" + _note("Later", "Five more examples (memory, an LED, typing, functions, buttons) are marked [i](Level 2)[/i] in the Examples menu. They open at Level 1 too, but some of what they show only appears at Level 2.")
+		t += "\n" + _note("Later", "Five more examples (memory, an LED, typing, functions, buttons) are marked [i](Level 2)[/i] in the Examples menu. Opening one asks first: open it at Level 2, or stay at Level 1, where it runs too but some of what it shows stays hidden.")
 	return t
 
 
@@ -1603,11 +1608,12 @@ func _memmap() -> String:
 		["[code]0x20000000[/code] upward", "[b]SRAM[/b] (264 KB): your program's variables, [code].data[/code] then [code].bss[/code]."],
 		["… up to [code]0x20041FFF[/code]", "Free SRAM. The stack starts at the top and grows [i]down[/i] towards your variables."],
 		["[code]0x20042000[/code]", "SP's starting value: just past the end of SRAM. The first [code]push[/code] stores below it."],
+		["[code]0x21000000[/code] – [code]0x2103FFFF[/code]", "The first 256 KB of SRAM again, as on the RP2040: its four 64 KB banks one after another, where [code]0x20000000[/code] takes them a word at a time from each in turn. Rarely used."],
 		["[code]0x4000C000[/code]", "RESETS (see " + _link("gpio", "GPIO") + ")."],
 		["[code]0x40014000[/code]", "IO_BANK0: which part of the chip controls each pin."],
 		["[code]0x4001C000[/code]", "PADS_BANK0: each pin's pull-up and pull-down resistors."],
 		["[code]0xD0000000[/code]", "SIO: set, clear and read the pins."],
-		["anything else", "Nothing: reading or writing it stops the program with a [b]bus fault[/b]."],
+		["anything else", "Reading or writing it stops the program. Where the Pico has nothing either, it is a [b]bus fault[/b] (a HardFault on the Pico). Where the Pico has a part picosim does not simulate (a timer, a UART, SysTick…), the stop says [b]Not simulated[/b]: a limit of picosim, not a mistake in your program."],
 	], 1)
 	t += _sub("Variables go in .data, not next to the code")
 	t += "Flash holds the program, and a running program cannot write flash: a [code]str[/code] to an address in flash (or in ROM) stops the program with a [b]Write to read-only memory[/b] fault, at the store. On a real Pico the store would simply not change the value, which is harder to find. So a number your program changes must not sit among the instructions:\n"
