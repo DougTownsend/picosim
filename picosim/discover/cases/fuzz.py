@@ -21,6 +21,20 @@ trace test (only from a real chip: the stand-in's go to the cache).
 
 Seeds are fixed: round k always makes the same 1000 blocks, so an overnight
 run (--hours) resumes where it stopped.  Output: fuzz.json.
+
+Address edges: each round also runs EDGE_CASES_PER_ROUND read-only loads
+(LDR, LDRH, LDRB of one address, nothing else; a stage of its own,
+round-<k>-edges, so the blocks' R4-scratch design is untouched) at
+addresses drawn, with the round's seed, from where the chip's answer
+changes: the edges of campaign A's measured coverage table (or, before the
+sweep has run, the regions, the SVD peripherals and the known holes),
+their first and last words, the word just past, and 1-3 bytes off for
+misalignment, at every width.  Every address passes safety.check_read and
+the sweep's guards (coverage.why_not_read).  The chip's answer (a value,
+or a fault) is compared with picosim's (coverage.picosim_access): it works,
+or stops with a HardFault, or says the Pico has something it does not
+simulate; the value too where it is fixed (the boot ROM).  A new kind of
+difference is written to fuzz.json with the other differences.
 """
 
 import os
@@ -33,6 +47,8 @@ from .. import runner as R
 from ..campaign import h, timing_case
 
 NAME, TITLE, AGENT_BASED = 'fuzz', 'Random programs: differential fuzzing with shrinking', True
+EDGE_CASES_PER_ROUND = 64
+EDGE_ID = 50000                             # edge case k * 100000 + EDGE_ID + i
 LAY = F.LAYOUTS['hi']
 BASE = LAY['SCRATCH'] + 0x100              # R4: the blocks' memory base
 SCRATCH_WORDS = 0x200 // 4 + 0x80 // 4      # covers base .. base + 0x80, and the words below it
@@ -157,6 +173,64 @@ def round_cases(k, n=BLOCKS_PER_ROUND):
         ops = make_block(rng)
         cases.append(block_case(k * 100000 + 1 + i, ops, f"E|{k}|{i}"))
     return cases
+
+
+def edge_cases(k, n=EDGE_CASES_PER_ROUND, coverage=None):
+    """Round k's address-edge loads (read-only ldr_probe cases)."""
+    from .. import coverage as COV
+    from ..campaign import ldr_probe
+    cov = COV.recorded() if coverage is None else (coverage or None)
+    return [ldr_probe(a, w, 'hi', id=k * 100000 + EDGE_ID + i, target_addr=a, access_width=w)
+            for i, (a, w) in enumerate(COV.seeded_edges(k, n, cov))]
+
+
+LOAD_WIDTH = {0x68: 4, 0x88: 2, 0x78: 1}
+
+
+def compare_edge(c, r):
+    """(key, detail) if the chip and picosim answer a load differently,
+    else None.  key: what makes two differences the same kind."""
+    from .. import coverage as COV
+    from ... import cpu as CPU
+    a, w = c['r1'], LOAD_WIDTH[c['code_bytes'][1]]
+    end = R.ending(c, r, LAY)[0]
+    chip = 'ok' if end == 'fell-through' else end
+    sim, what = COV.picosim_access(a, w)
+    if chip == 'ok' and sim == 'works':
+        hv = r['f_r0'] & ((1 << (8 * w)) - 1)
+        if a < 0x4000 and hv != what:                       # the boot ROM: a fixed value
+            return (('value', 'rom', w), f"a {8 * w}-bit load at 0x{a:08X}: the chip reads 0x{hv:0{2 * w}X}, "
+                                         f"picosim 0x{what:0{2 * w}X}")
+        return None
+    if COV.agrees(chip, sim) and not (chip == 'fault' and sim == CPU.TEACHING_STOP):
+        return None
+    said = {CPU.HARDWARE_FAULT: 'stops with a HardFault', CPU.MODEL_LIMIT: 'says the Pico has something it '
+            'does not simulate', CPU.TEACHING_STOP: 'stops to teach', 'works': 'reads it'}.get(sim, sim)
+    return ((chip, sim, a >> 12), f"a {8 * w}-bit load at 0x{a:08X}: the chip "
+            f"{'reads it' if chip == 'ok' else 'faults' if chip == 'fault' else 'ends with ' + chip}; "
+            f"picosim {said}" + (f" ({str(what).splitlines()[0][:160]})" if sim != 'works' else ''))
+
+
+def check_edges(ctx, k, found, recs):
+    """Compare round k's edge loads; new kinds of difference go in found."""
+    seen = {tuple(x) for x in found.setdefault('edge_keys', [])}
+    edges = found.setdefault('address_edges', {'cases': 0, 'differences': 0})
+    for c, r in recs:
+        edges['cases'] += 1
+        d = compare_edge(c, r)
+        if not d:
+            continue
+        edges['differences'] += 1
+        key = [str(x) for x in d[0]]
+        if tuple(key) in seen:
+            found['explained'] = found.get('explained', 0) + 1
+            continue
+        seen.add(tuple(key))
+        found['edge_keys'].append(key)
+        ctx.log(f"address edge, round {k}: {d[1]}")
+        found['differences'].append({'class': 'address', 'detail': d[1], 'case': c['id'],
+                                     'address': f"0x{c['r1']:08X}", 'width': LOAD_WIDTH[c['code_bytes'][1]],
+                                     'round': k})
 
 
 # ── comparing one block ─────────────────────────────────────────────────────
@@ -317,7 +391,8 @@ def write_test(ctx, ops, case, cls, detail, number):
 # ── the campaign ────────────────────────────────────────────────────────────
 
 def dry_cases(ctx):
-    return [('round-0', round_cases(0), {'scratch_words': SCRATCH_WORDS, 'timing': True})]
+    return [('round-0', round_cases(0), {'scratch_words': SCRATCH_WORDS, 'timing': True}),
+            ('round-0-edges', edge_cases(0), {'flags': F.HF_NO_SCRATCH})]
 
 
 def run(ctx):
@@ -358,14 +433,19 @@ def run(ctx):
             test = write_test(ctx, small, src, d[0], d[1], len(found['differences']) + 1)
             found['differences'].append({'class': d[0], 'pattern': pattern, 'detail': d[1], 'block': c['id'],
                                          'ops': len(src['ops']), 'shrunk_to': len(small), 'test': test})
+        erecs, _ = ctx.stage(NAME, f"round-{k:05d}-edges", edge_cases(k), flags=F.HF_NO_SCRATCH)
+        check_edges(ctx, k, found, erecs)
         k += 1
         rounds -= 1
         found['next_round'] = k
         with open(log_path, 'w') as f:
             json.dump(found, f, indent=1)
     fs = [FX.fact('fuzz.blocks', found['blocks']), FX.fact('fuzz.differences', len(found['differences']))]
+    if found.get('address_edges'):
+        fs.append(FX.fact('fuzz.address_edges.cases', found['address_edges']['cases']))
     prov = ctx.provenance(state, campaign='E')
-    path = ctx.write_facts('fuzz.json', 'fuzz', prov, fs, differences=found['differences'], rounds=k)
+    path = ctx.write_facts('fuzz.json', 'fuzz', prov, fs, differences=found['differences'], rounds=k,
+                           address_edges=found.get('address_edges'))
     ctx.status(NAME, 'done' if not hours else 'partial', facts=path, differences=len(found['differences']),
                done=found['blocks'])
     return path

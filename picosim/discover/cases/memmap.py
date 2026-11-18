@@ -16,6 +16,15 @@ Campaign A: the memory map, as the chip has it.
    give the striping function; SRAM4/5 aliases; what is past 0x20042000.
 5. Access timing: 32 loads (and stores where allowed) to each region class,
    and 32 NOPs run from each kind of SRAM, between two SysTick reads.
+6. Sweep (stage `sweep`, discover/coverage.py): the whole 4 GB, so every
+   address belongs to a measured range: a grid of debugger and core reads,
+   every place two neighbours differ bisected to the word, then 8/16/32-bit
+   core loads on both sides of each boundary.  Never-read spans (flash,
+   side-effect registers and their aliases and possible mirrors) are
+   recorded as "not read: <why>".  Output: memory_map.json "coverage".
+   `--stages sweep` runs only this stage and adds its table to the
+   memory_map.json already there.  On the stand-in it runs a sparse grid
+   (coverage.SMOKE) unless --sweep physical; a chip always runs the full one.
 
 This runs with the agent linked low (layout 'lo'), so SRAM4 and SRAM5 are
 free to probe and to run code in.  Output: memory_map.json.
@@ -146,10 +155,59 @@ def timing_cases():
     return cases
 
 
+STAGES = ('core-probes', 'timing', 'sweep')
+
+
+def _stages(ctx):
+    """The stages asked for with --stages (other campaigns' names are left
+    out; none of ours means all).  Only `sweep` can run alone: it adds its
+    table to the memory_map.json already there."""
+    want = getattr(ctx.opts, 'stages', None) if ctx else None
+    mine = [x.strip() for x in (want or '').split(',') if x.strip() in STAGES or x.strip().startswith('sweep')]
+    for x in mine:
+        if x != 'sweep':
+            raise ValueError(f"campaign A runs stage {x} only as part of the whole campaign; "
+                             "--stages takes 'sweep' (or leave --stages out)")
+    return mine or list(STAGES)
+
+
+def sweep_profile(ctx):
+    """coverage.PHYSICAL on a chip, always; coverage.SMOKE on the stand-in
+    unless --sweep physical."""
+    from .. import coverage as COV
+    want = getattr(ctx.opts, 'sweep', None) if ctx else None
+    if ctx is None or ctx.kind != 'standin':
+        if want not in (None, 'physical'):
+            raise ValueError("the reduced sweep is for the stand-in only: a chip capture always runs "
+                             "the physical sweep")
+        return COV.PHYSICAL
+    return COV.PHYSICAL if want == 'physical' else COV.SMOKE
+
+
+def sweep_grid_cases(profile):
+    """The sweep's first round as core cases (its later rounds depend on
+    what the chip answers, so --dry-run checks this one)."""
+    from .. import coverage as COV
+    return [ldr_probe(a, 4, LAYOUT, id=i, target_addr=a, access_width=4)
+            for i, a in enumerate(COV.grid_addresses(profile))]
+
+
 def dry_cases(ctx):
-    return [('core-probes', core_cases(probes()), {'layout': LAYOUT, 'max_cases': MAX_CASES}),
-            ('timing', timing_cases(), {'layout': LAYOUT, 'max_cases': MAX_CASES,
-                                        'sites': list(SITES.values())})]
+    out = []
+    stages = _stages(ctx)
+    if 'core-probes' in stages:
+        out.append(('core-probes', core_cases(probes()), {'layout': LAYOUT, 'max_cases': MAX_CASES}))
+    if 'timing' in stages:
+        out.append(('timing', timing_cases(), {'layout': LAYOUT, 'max_cases': MAX_CASES,
+                                               'sites': list(SITES.values())}))
+    if 'sweep' in stages:
+        from .. import coverage as COV
+        prof = sweep_profile(ctx)
+        cases = sweep_grid_cases(prof)
+        if getattr(ctx, 'log', None):
+            ctx.log(f"sweep ({prof['name']}): {len(cases)} grid samples; {COV.estimate_text(prof, len(cases))}")
+        out.append(('sweep-0', cases, {'layout': LAYOUT, 'max_cases': MAX_CASES}))
+    return out
 
 
 # ── the debugger's part ────────────────────────────────────────────────────
@@ -273,6 +331,9 @@ def run(ctx):
     from .. import facts as FX
     from .. import runner as R
     t = ctx.t
+    stages = _stages(ctx)
+    if stages == ['sweep']:
+        return run_sweep_only(ctx)
     ctx.status(NAME, 'partial', step='debugger probes')
     t.reset_halt()
     t.vector_catch('none')
@@ -332,10 +393,12 @@ def run(ctx):
                                  sites=list(SITES.values()), timing=True, on_prepare=hook)
     timing = _timing_table(tim_recs)
     regions = _regions(dbg, core)
+    ctx.status(NAME, 'partial', step='sweep')
+    cov = sweep(ctx)
     fs = [FX.fact(f"memmap.{k}", v) for k, v in (
         ('sram.striping_as_datasheet', sram['confirmed']),
         ('debugger.hangs', len(hung)),
-        ('probes', len(probe)))]
+        ('probes', len(probe)))] + _coverage_facts(cov)
     for row in timing:
         fs.append(FX.fact(f"timing.access.{row['region']}.{row['op']}{row.get('width', '')}",
                           row['per_access'], unit='cycles', raw=row['raw']))
@@ -343,9 +406,131 @@ def run(ctx):
     path = ctx.write_facts('memory_map.json', 'memory_map', prov, fs, regions=regions,
                            probes={f"0x{a:08X}": {'why': probe[a], 'debugger': dbg[a],
                                                  'core': core.get(f"0x{a:08X}")} for a in sorted(probe)},
-                           sram=sram, holes=holes, gap_scan=gaps, timing=timing,
+                           sram=sram, holes=holes, gap_scan=gaps, timing=timing, coverage=cov,
                            core_writes={k: v for k, v in core.items() if any(x.startswith('write') for x in v)})
     ctx.status(NAME, 'done', facts=path, differences=None)
+    return path
+
+
+# ── the sweep (stage 6) ────────────────────────────────────────────────────
+
+class TargetProber:
+    """coverage.Sweep's reads on a target: the debugger (each answer kept
+    in <cache>/memmap-sweep/debugger.json, so a stopped sweep resumes
+    without reading again) and the core (one runner stage per round)."""
+
+    def __init__(self, ctx):
+        import json
+        import os
+        self.ctx, self.t = ctx, ctx.t
+        self.path = os.path.join(ctx.root, 'memmap-sweep', 'debugger.json')
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        self.cache = {}
+        if os.path.exists(self.path) and not getattr(ctx.opts, 'fresh', False):
+            with open(self.path) as f:
+                self.cache = json.load(f)
+        self.states = []
+
+    def _save(self):
+        import json
+        import os
+        with open(self.path + '.tmp', 'w') as f:
+            json.dump(self.cache, f)
+        os.replace(self.path + '.tmp', self.path)
+
+    def debugger(self, addrs):
+        from .. import runner as R
+        todo = [a for a in addrs if f"0x{a:08X}" not in self.cache]
+        for i, a in enumerate(todo):
+            if self.ctx.stop_flag and self.ctx.stop_flag.is_set():
+                self._save()
+                raise R.RunError("the sweep was stopped (its debugger reads so far are kept)")
+            v = debugger_read(self.t, a)
+            self.cache[f"0x{a:08X}"] = v
+            if v == 'hang':
+                self.ctx.log(f"sweep: the debugger hung reading 0x{a:08X} (reconnected; the core will not try it)")
+            if i % 2000 == 1999:
+                self._save()
+                self.ctx.log(f"sweep: {i + 1} of {len(todo)} debugger reads")
+        self._save()
+        return {a: self.cache[f"0x{a:08X}"] for a in addrs}
+
+    def core(self, name, pairs):
+        from .. import runner as R
+        cases = [ldr_probe(a, w, LAYOUT, id=i, target_addr=a, access_width=w) for i, (a, w) in enumerate(pairs)]
+        hook = lambda tt: release(tt, IO_PADS)            # noqa: E731
+        recs, state = self.ctx.stage(NAME, name, cases, layout=LAYOUT, max_cases=MAX_CASES,
+                                     flags=F.HF_NO_SCRATCH, on_prepare=hook)
+        self.states.append(state)
+        by_id = {c['id']: (c, r) for c, r in recs}
+        out = {}
+        for i, (a, w) in enumerate(pairs):
+            c, r = by_id[i]
+            end = R.ending(c, r, LAY)[0]
+            out[(a, w)] = f"ok:0x{r['f_r0'] & ((1 << (8 * w)) - 1):0{2 * w}X}" if end == 'fell-through' else end
+        return out
+
+
+def sweep(ctx):
+    """Stage 6: the coverage table (coverage.run_sweep on this target)."""
+    import time
+    from .. import coverage as COV
+    from .. import runner as R
+    profile = sweep_profile(ctx)
+    prober = TargetProber(ctx)
+    t0 = time.monotonic()
+    try:
+        cov, sw = COV.run_sweep(prober, profile, ctx.log)
+    except COV.SweepError as e:
+        raise R.RunError(f"sweep: {e}")
+    cov['provenance'] = {'date': time.strftime('%Y-%m-%d %H:%M:%S'), 'picosim': R.picosim_commit(),
+                         'target': ctx.kind, 'chip': R.chip_identity(ctx.t),
+                         'run_ids': [s['run_id'] for s in prober.states if s],
+                         'seconds': round(time.monotonic() - t0, 1),
+                         'estimate_seconds': round(COV.estimate(profile))}
+    ctx.log(f"sweep: {len(cov['ranges'])} ranges from {cov['samples']} samples in {cov['rounds']} rounds, "
+            f"{cov['provenance']['seconds']} s; " + ('complete' if cov['complete'] else
+                                                     f"PROBLEMS: {'; '.join(cov['problems'][:5])}"))
+    return cov
+
+
+def _coverage_facts(cov):
+    from .. import facts as FX
+    if not cov:
+        return []
+    return [FX.fact('memmap.coverage.complete', cov['complete']),
+            FX.fact('memmap.coverage.ranges', len(cov['ranges'])),
+            FX.fact('memmap.coverage.samples', cov['samples'])]
+
+
+def run_sweep_only(ctx):
+    """`--stages sweep`: the sweep alone, its table added to the
+    memory_map.json already there (everything else in it kept)."""
+    from .. import facts as FX
+    t = ctx.t
+    ctx.status(NAME, 'partial', step='sweep')
+    t.reset_halt()
+    t.vector_catch('none')
+    release(t, IO_PADS)
+    cov = sweep(ctx)
+    name = 'memory_map.json' if ctx.label == 'chip1' else f"chips/{ctx.label}/memory_map.json"
+    old = FX.read(name, ctx.kind)
+    if old:
+        if old['provenance'].get('chip') and cov['provenance']['chip'] != old['provenance']['chip']:
+            ctx.log("sweep: this chip's identity differs from the one memory_map.json was measured on "
+                    f"({cov['provenance']['chip']} against {old['provenance']['chip']})")
+        tables = {k: v for k, v in old.items() if k not in ('schema', 'kind', 'provenance', 'facts')}
+        prov = dict(old['provenance'])
+        fs = [f for f in old['facts'] if not f['id'].startswith('memmap.coverage.')]
+    else:
+        tables, prov, fs = {}, ctx.provenance(None, campaign='A'), []
+    prov['coverage'] = {k: cov['provenance'][k] for k in ('date', 'picosim', 'run_ids', 'seconds')}
+    tables['coverage'] = cov
+    path = ctx.write_facts('memory_map.json', 'memory_map', prov, fs + _coverage_facts(cov), **tables)
+    from ..campaign import read_status
+    prev = read_status(NAME, ctx.kind, ctx.label)
+    ctx.status(NAME, prev.get('state') if prev.get('state') == 'done' else 'partial', facts=path, differences=None,
+               **({} if prev.get('state') == 'done' else {'step': 'sweep done; the other stages not yet'}))
     return path
 
 

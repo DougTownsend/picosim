@@ -34,7 +34,11 @@ alone, each ending on a BKPT:
 
 On the stand-in there is no flash: the guard, the build and the writes are
 skipped and the snippets run in the reset state (most measurements then
-record errors), which checks the code paths.  Output: environment.json.
+record errors), which checks the code paths, and G's GPIO pull-latency
+sweep runs a few, time-bounded delays (peripherals.STANDIN_SWEEP; `--sweep
+physical` runs every one).  A chip always runs the full sweep.  Output:
+environment.json, whose 'stages' says how each measurement stage ended and
+how long it took (and the GPIO sweep's 'calls' and 'coverage', every call).
 """
 
 import os
@@ -439,8 +443,9 @@ def run(ctx):
             syms = {}
         sn = Snippets(t, ctx.log)
         ctx.status(NAME, 'partial', step='measure')
+        stage = _stages(ctx, env.setdefault('stages', []))
         env['pc_at_bkpt'] = f"0x{t.rsp.read_core_regs()[15]:08X}"
-        env['clocks_khz'] = measure_clocks(t)
+        env['clocks_khz'] = stage('clocks', lambda: measure_clocks(t))
         env['ssi'] = {n: _hx(_read(t, a)) for n, a in SSI_READ}
         env['xip_ctrl'] = {'CTRL': _hx(_read(t, XIP_CTRL)), 'STAT': _hx(_read(t, XIP_STAT))}
         env['nvic'] = {'ISER': _hx(_read(t, 0xE000E100)),
@@ -455,10 +460,10 @@ def run(ctx):
         old_csr = _read(t, SYST_CSR)
         _w(t, SYST_RVR, 0xFFFFFF)
         _w(t, SYST_CSR, 5)
-        env['xip_cache'] = xip_cache(sn, t, ctx.log)
-        env['flash_loop'] = flash_loop(sn, t, syms.get('flash_loop'), ctx.log)
-        env['interference'] = interference(sn, t)
-        env['real_time'] = real_time(sn, t)
+        env['xip_cache'] = stage('xip_cache', lambda: xip_cache(sn, t, ctx.log))
+        env['flash_loop'] = stage('flash_loop', lambda: flash_loop(sn, t, syms.get('flash_loop'), ctx.log))
+        env['interference'] = stage('interference', lambda: interference(sn, t))
+        env['real_time'] = stage('real_time', lambda: real_time(sn, t))
         if old_csr is not None:
             _w(t, SYST_CSR, old_csr)
         try:
@@ -466,11 +471,12 @@ def run(ctx):
             if hasattr(peripherals, 'flashed_part'):
                 ck = {k: v for k, v in (env.get('clocks_khz') or {}).items()
                       if k in ('clk_sys', 'clk_peri') and isinstance(v, (int, float)) and v > 0}
-                env['peripherals'] = peripherals.flashed_part(ctx, t, ck if len(ck) == 2 else None)
+                env['peripherals'] = stage('peripherals', lambda: peripherals.flashed_part(
+                    ctx, t, ck if len(ck) == 2 else None))
         except Exception as e:                 # noqa: BLE001
             env['peripherals'] = {'error': str(e)}
         if not standin:
-            env['old_checks'] = old_checks(ctx, t, True)
+            env['old_checks'] = stage('old_checks', lambda: old_checks(ctx, t, True))
     finally:
         if guard is not None and flashguard.load_state() and flashguard.load_state().get('state') == 'written':
             ctx.status(NAME, 'partial', step='restore')
@@ -537,6 +543,31 @@ def keep_run(ctx, env_path, started):
     except Exception as e:                   # noqa: BLE001 - never lose the run over its copy
         ctx.log(f"could not keep this run's facts files: {e}")
         return None
+
+
+def _stages(ctx, record):
+    """A runner for F's measurement stages: each one's outcome (ok, error,
+    or its sweep's coverage) and time go in `record` (environment.json's
+    'stages') and the log as it ends, so a stopped or slow run shows where.
+    A stage that raises is recorded, and the error goes on (the flash is
+    restored in run()'s finally)."""
+    from .peripherals import stage_outcome
+
+    def stage(name, fn):
+        t0 = time.monotonic()
+        try:
+            res = fn()
+        except Exception as e:
+            record.append(stage_outcome(name, {'error': f"{type(e).__name__}: {e}"}, t0))
+            ctx.log(f"F stage {name}: {record[-1]['outcome']} after {record[-1]['seconds']} s")
+            raise
+        out = stage_outcome(name, res, t0)
+        if name == 'peripherals' and isinstance(res, dict):
+            out['parts'] = res.get('stages', [])
+        record.append(out)
+        ctx.log(f"F stage {name}: {out['outcome']} ({out['seconds']} s)")
+        return res
+    return stage
 
 
 def _hx(v):

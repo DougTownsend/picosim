@@ -1479,6 +1479,37 @@ FLASHED_SYNC_COARSE = range(0, 8001, 32)
 FLASHED_SYNC_FINE = 40                     # D from first_coarse - FINE to first_coarse + 2
 FLASHED_SYNC_REPEATS = 3
 FLASHED_SYNC_SETTLE = 250000               # cycles (2 ms at 125 MHz) between the rise and the fall
+# The sweep a chip capture runs: every D above, with both synchroniser
+# settings (476 calls each on 2026-11-17).  Never reduced on a chip.
+PHYSICAL_SWEEP = {'name': 'physical', 'coarse': FLASHED_SYNC_COARSE, 'fine': FLASHED_SYNC_FINE,
+                  'repeats': FLASHED_SYNC_REPEATS, 'settle': FLASHED_SYNC_SETTLE, 'call_timeout': 2.0,
+                  'budget_s': None}
+# The stand-in's routine run (no board; PERF-03): a few D below, across and
+# well past the chip's edges (rise 49-52, fall 67-69), the fine sweep and a
+# repeat as on the chip but narrower, and a shorter settle (the stand-in's
+# pull model settles in under 100 cycles; 2 ms is for the real pad, and at
+# about 100k emulated cycles a second it made one call take 5.5 s, past the
+# 2 s timeout, so every call timed out).  A time budget bounds the whole
+# sweep; calls it leaves out are listed in the result's coverage.
+STANDIN_SWEEP = {'name': 'stand-in smoke', 'coarse': (0, 16, 32, 48, 64, 80, 96, 128, 8000), 'fine': 16,
+                 'repeats': 2, 'settle': 1000, 'call_timeout': 2.0, 'budget_s': 60.0}
+
+
+NOT_FACTS = ('error', 'calls', 'coverage')    # kept in a result table, never made facts
+
+
+def stage_outcome(name, res, t0, clock=time.monotonic):
+    """One stage's outcome for campaign F's record: ok, error (and what),
+    or how its coverage ended; and how long it took."""
+    out = {'stage': name, 'seconds': round(clock() - t0, 3)}
+    if isinstance(res, dict) and res.get('error'):
+        out['outcome'] = 'error'
+        out['detail'] = str(res['error'])[:300]
+    elif isinstance(res, dict) and isinstance(res.get('coverage'), dict):
+        out['outcome'] = res['coverage']['status']
+    else:
+        out['outcome'] = 'ok'
+    return out
 
 
 def flashed_part(ctx, target, clocks=None):
@@ -1511,6 +1542,7 @@ def flashed_part(ctx, target, clocks=None):
     clocks = clocks or {}
     ratio = (clocks['clk_sys'] / clocks['clk_peri']) if clocks.get('clk_sys') and clocks.get('clk_peri') else 1.0
     out = {}
+    stages = []
     try:
         m.setup()
         _dw(t, SYST, 0, pins)
@@ -1518,10 +1550,13 @@ def flashed_part(ctx, target, clocks=None):
         _dw(t, SYST + 8, 0, pins)
         _dw(t, SYST, 5, pins)
         for name, fn in (('timer', _flashed_timer), ('uart', _flashed_uart), ('gpio', _flashed_gpio)):
+            t0 = time.monotonic()
             try:
                 out[name] = fn(ctx, t, m, ratio)
+                stages.append(stage_outcome(name, out[name], t0))
             except Exception as e:                               # noqa: BLE001 - recorded, the rest goes on
                 out[name] = {'error': str(e)[:300]}
+                stages.append(stage_outcome(name, out[name], t0))
                 ctx.log(f"peripherals (flashed) {name}: {e}")
     finally:
         m.restore()
@@ -1533,7 +1568,7 @@ def flashed_part(ctx, target, clocks=None):
         d = res.pop('_differences', [])
         diffs += len(d)
         fs = [FX.fact(f"{name}.{k.replace(' ', '_')}", v.get('value') if isinstance(v, dict) and 'value' in v else v)
-              for k, v in res.items() if not k.startswith('_') and k != 'error']
+              for k, v in res.items() if not k.startswith('_') and k not in NOT_FACTS]
         if 'error' in res:
             fs.append(FX.fact(f"{name}.error", res['error']))
         fs.append(FX.fact(f"{name}.differences", d))
@@ -1547,7 +1582,7 @@ def flashed_part(ctx, target, clocks=None):
     extra['flashed'] = {'facts': paths, 'differences': diffs, 'when': time.strftime('%Y-%m-%d %H:%M:%S')}
     extra['differences'] = (s.get('differences') or 0) + diffs
     ctx.status(NAME, s.get('state') if s.get('state') == 'done' else 'partial', **extra)
-    return {'paths': paths, 'differences': diffs, **out}
+    return {'paths': paths, 'differences': diffs, 'stages': stages, **out}
 
 
 def _wait_edge(c, base_reg, off, prev, cur):
@@ -1810,31 +1845,69 @@ def _flashed_uart(ctx, t, m, ratio):
     return res
 
 
-def pull_latency_code(d):
+def pull_latency_code(d, settle=FLASHED_SYNC_SETTLE):
     """The routine _flashed_gpio runs: pull-up, wait d cycles, read GPIO_IN
     (r4); settle; pull-down, wait d cycles, read GPIO_IN (r5).
     r0 = SIO, r1 = the pad, r2 = PAD_UP, r3 = PAD_DOWN.  From the start of
-    each STR to the start of its LDR: 5 (an APB store) + d cycles."""
+    each STR to the start of its LDR: 5 (an APB store) + d cycles.  `settle`
+    is the chip's 2 ms unless a sweep profile says otherwise (the stand-in's)."""
     c = Code(declare=False)
-    c.str(2, 1).wait_cycles(7, d).ldr(4, 0, GPIO_IN).wait_cycles(7, FLASHED_SYNC_SETTLE)
-    c.str(3, 1).wait_cycles(7, d).ldr(5, 0, GPIO_IN).wait_cycles(7, FLASHED_SYNC_SETTLE)
+    c.str(2, 1).wait_cycles(7, d).ldr(4, 0, GPIO_IN).wait_cycles(7, settle)
+    c.str(3, 1).wait_cycles(7, d).ldr(5, 0, GPIO_IN).wait_cycles(7, settle)
     return c.bkpt(Mini.DONE).assemble()
 
 
-def _flashed_gpio(ctx, t, m, ratio):
+def sweep_profile(ctx):
+    """The pull-latency sweep campaign F runs: PHYSICAL_SWEEP on a chip,
+    always (a capture never gets fewer cases), and STANDIN_SWEEP on the
+    stand-in unless `--sweep physical` asks for every D there too."""
+    want = getattr(ctx.opts, 'sweep', None)
+    if ctx.kind != 'standin':
+        if want not in (None, 'physical'):
+            raise ValueError("the reduced pull-latency sweep is for the stand-in only: "
+                             "a chip capture always runs the physical sweep")
+        return PHYSICAL_SWEEP
+    return PHYSICAL_SWEEP if want == 'physical' else STANDIN_SWEEP
+
+
+def sweep_text(delays):
+    """A delay list in a few words: 0..8000 step 32 (251), or the list."""
+    ds = list(delays)
+    if len(ds) > 12 and len({b - a for a, b in zip(ds, ds[1:])}) == 1:
+        return f"{ds[0]}..{ds[-1]} step {ds[1] - ds[0]} ({len(ds)})"
+    return ', '.join(str(d) for d in ds)
+
+
+def _flashed_gpio(ctx, t, m, ratio, profile=None, clock=time.monotonic):
     """The pull-change latency on SYNC_PIN at the firmware's clocks, with
     the synchroniser on and bypassed (SYSCFG is out of reset in the flashed
-    state), to the cycle: see pull_latency_code."""
+    state), to the cycle: see pull_latency_code.
+
+    `profile` (sweep_profile(ctx) by default) says which D run.  Every call
+    is recorded ('calls': [setting, phase, d, how it ended, ms]) and the
+    result's 'coverage' says what ran: the profile, the calls and how they
+    ended, and, when the profile's time budget ran out (the stand-in's
+    only), the calls left out.  The pad and the bypass are always put back."""
+    profile = profile or sweep_profile(ctx)
     pins = ctx.pins
     pad = pad_addr(SYNC_PIN)
     orig_pad, orig_bypass = _dr(t, pad), _dr(t, SYSCFG_BYPASS)
     if orig_pad is None:
         return {'error': 'PADS_BANK0 is not readable'}
     res, bad = {}, []
+    calls, not_run = [], []
+    started = clock()
+    budget = profile.get('budget_s')
 
-    def once(d, rise, fall, ends):
+    def once(setting, phase, d, rise, fall, ends):
+        if budget is not None and clock() - started > budget:
+            not_run.append([setting, phase, d])
+            return
         _dw(t, pad, PAD_DOWN, pins)
-        r = m.call(pull_latency_code(d), {0: SIO, 1: pad, 2: PAD_UP, 3: PAD_DOWN}, timeout=2.0)
+        t0 = clock()
+        r = m.call(pull_latency_code(d, profile['settle']), {0: SIO, 1: pad, 2: PAD_UP, 3: PAD_DOWN},
+                   timeout=profile['call_timeout'])
+        calls.append([setting, phase, d, r['end'], round((clock() - t0) * 1000)])
         ends[r['end']] = ends.get(r['end'], 0) + 1
         if r['end'] == 'done':
             up = bool(r['regs'][4] >> SYNC_PIN & 1)
@@ -1844,30 +1917,31 @@ def _flashed_gpio(ctx, t, m, ratio):
 
     try:
         for bypass in (False, True):
+            setting = 'bypass' if bypass else 'synchronised'
             if bypass:
                 if orig_bypass is None:
                     res['bypass'] = {'value': None, 'error': 'SYSCFG is not readable'}
                     break
                 _dw(t, SYSCFG_BYPASS, orig_bypass | 1 << SYNC_PIN, pins)
             ends, rise_c, fall_c = {}, {}, {}
-            for d in FLASHED_SYNC_COARSE:
-                once(d, rise_c, fall_c, ends)
+            for d in profile['coarse']:
+                once(setting, 'coarse', d, rise_c, fall_c, ends)
             rise, fall, edges = {}, {}, {}
             for name, coarse in (('rise', rise_c), ('fall', fall_c)):
                 edges[name] = first_from(coarse)
             fine = set()
             for e in edges.values():
                 if e is not None:
-                    fine.update(range(max(0, e - FLASHED_SYNC_FINE), e + 3))
-            for _ in range(FLASHED_SYNC_REPEATS):
+                    fine.update(range(max(0, e - profile['fine']), e + 3))
+            for _ in range(profile['repeats']):
                 for d in sorted(fine):
-                    once(d, rise, fall, ends)
+                    once(setting, 'fine', d, rise, fall, ends)
             value = {'rise_seen_from_d': first_from(rise) if rise else edges['rise'],
                      'fall_seen_from_d': first_from(fall) if fall else edges['fall'],
                      'coarse_rise_from_d': edges['rise'], 'coarse_fall_from_d': edges['fall'],
                      'unsteady_d': sorted(set(d for d, v in list(rise.items()) + list(fall.items()) if v is None)),
                      'store_to_load_cycles': '5 + d', 'clock_ratio': ratio}
-            res['bypass' if bypass else 'synchronised'] = {
+            res[setting] = {
                 'value': value, 'ends': ends, 'rise': rise, 'fall': fall,
                 'coarse_rise': rise_c, 'coarse_fall': fall_c}
         a = res.get('synchronised', {}).get('value', {}) or {}
@@ -1885,5 +1959,39 @@ def _flashed_gpio(ctx, t, m, ratio):
                 _dw(t, SYSCFG_BYPASS, orig_bypass, pins)
         except Exception as e:                                         # noqa: BLE001
             ctx.log(f"GPIO not fully restored: {e}")
+        res['calls'] = calls
+        res['coverage'] = _sweep_coverage(profile, calls, not_run, clock() - started)
+        missing = {k: res[k].get('error', 'not reached') if isinstance(res.get(k), dict) else 'not reached'
+                   for k in ('synchronised', 'bypass') if not (res.get(k) or {}).get('value')}
+        if missing:
+            res['coverage']['settings_not_run'] = missing
+            res['coverage']['status'] += '; not run: ' + ', '.join(f"{k} ({v})" for k, v in missing.items())
+        ctx.log(f"peripherals (flashed) gpio: {res['coverage']['status']}")
     res['_differences'] = bad
     return res
+
+
+def _sweep_coverage(profile, calls, not_run, seconds):
+    """What a pull-latency sweep covered, in plain words and numbers."""
+    ends = {}
+    for c in calls:
+        ends[c[3]] = ends.get(c[3], 0) + 1
+    done = ends.get('done', 0)
+    if not_run:
+        status = (f"budget exhausted: {len(not_run)} calls not run after {profile['budget_s']:g} s "
+                  f"({len(calls)} ran, {done} finished)")
+    elif calls and not done:
+        status = f"no call finished ({', '.join(f'{n} {k}' for k, n in sorted(ends.items()))}): no result"
+    elif profile is PHYSICAL_SWEEP or profile.get('name') == 'physical':
+        status = f"complete: {len(calls)} calls, {done} finished"
+    else:
+        status = (f"reduced ({profile['name']}): {len(calls)} calls, {done} finished; coarse D "
+                  f"{sweep_text(profile['coarse'])} of the physical {sweep_text(PHYSICAL_SWEEP['coarse'])}")
+    if calls and done < len(calls) and not not_run and done:
+        status += f"; {len(calls) - done} calls did not finish"
+    return {'status': status, 'profile': profile['name'], 'coarse_d': sweep_text(profile['coarse']),
+            'fine_below_edge': profile['fine'], 'repeats': profile['repeats'],
+            'settle_cycles': profile['settle'], 'call_timeout_s': profile['call_timeout'],
+            'budget_s': profile.get('budget_s'), 'calls': len(calls), 'ends': ends,
+            'seconds': round(seconds, 3), 'not_run': not_run,
+            'slowest_ms': max((c[4] for c in calls), default=None)}

@@ -79,6 +79,9 @@ class ShrinkTest(unittest.TestCase):
         with open(os.path.join(root, 'standin', 'fuzz', 'found.json')) as f:
             found = json.load(f)
         self.assertTrue(found['differences'], "the planted LDR slowdown was not found")
+        # the round's address-edge loads ran too (a stage of their own), and were compared
+        self.assertEqual(found['address_edges']['cases'], 60)
+        self.assertTrue(os.path.isdir(os.path.join(root, 'standin', 'fuzz-round-00000-edges')))
         d = found['differences'][0]
         self.assertEqual(d['class'], 'timing')
         self.assertLessEqual(d['shrunk_to'], 2, d)

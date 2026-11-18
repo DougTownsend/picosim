@@ -29,7 +29,22 @@ on purpose, Stage 2).
 
 hwfacts/known_differences.json lists differences that are understood, each
 with a reason and a to-do; anything else is new, and tests/test_hwfacts.py
-fails on it.
+fails on it.  Known and new differences are counted case by case (the
+order the cases come in does not matter), each kind with a case id and the
+dataset it came from, so it can be found again.
+
+The verdict, and `check`'s exit status:
+
+    0  pass              at least one case compared, and no new difference
+                         (known differences only still pass: they are listed,
+                         with their reasons, in the report)
+    1  new differences   at least one case differs in a way not yet known
+    3  nothing compared  no replay files, an empty run, or no case that
+                         could be compared (all pending or skipped)
+
+The report names its evidence (recorded chip captures, the stand-in, or one
+run from the cache) and every input dataset with its run, SHA-256 and
+counts; `--json FILE` writes the same as plain data (Result.summary()).
 """
 
 import glob
@@ -241,37 +256,132 @@ def is_known(cls, name, detail, table, code=''):
 
 # ── whole sets ──────────────────────────────────────────────────────────────
 
-class Result:
-    def __init__(self):
-        self.counts = Counter()
-        self.groups = OrderedDict()     # (status, class, name) -> {'n': , 'example': }
-        self.new = []                   # differences not in the known list
-        self.notes = Counter()          # NOTE_UNSET, NOTE_ROM: compared only in part
+# What a set of results was compared against.  A report and its summary say
+# which, so a stand-in run can never read as a comparison with the chip.
+EVIDENCE = {
+    'recorded': "recorded RP2040 captures (hwfacts/replay: measured on the chip, replayed with no board)",
+    'standin': "the stand-in (Unicorn emulator, not the RP2040): it checks the code, not the chip",
+    'run': "one capture run, read straight from the cache",
+}
+TITLES = {'recorded': "picosim against recorded RP2040 captures",
+          'standin': "picosim against the stand-in (not the RP2040)",
+          'run': "picosim against one capture run"}
 
-    def add(self, status, cls, name, detail, c, r, known_entry):
+# The verdict and the exit status of `check` (python3 -m picosim.discover check)
+PASS, NEW, EMPTY = 'pass', 'new differences', 'nothing compared'
+EXIT = {PASS: 0, NEW: 1, EMPTY: 3}
+
+
+class Result:
+    """Every case's outcome, counted.  Known and new differences are counted
+    case by case, whatever order the cases come in: a group of differences
+    is (status, class, encoding, verdict), verdict 'known' or 'new' for a
+    difference (None otherwise), so a new case is never hidden in a group a
+    known one opened first."""
+
+    def __init__(self, evidence=None):
+        self.counts = Counter()
+        self.groups = OrderedDict()     # (status, class, name, verdict) -> {'n': , 'example': , 'known': }
+        self.new = []                   # the keys of groups of differences not in the known list
+        self.differs_known = 0          # cases
+        self.differs_new = 0            # cases
+        self.notes = Counter()          # NOTE_UNSET, NOTE_ROM: compared only in part
+        self.in_part = 0                # cases with at least one note
+        self.calibration = 0            # timing calibration cases (an empty body: nothing to compare)
+        self.first = OrderedDict()      # status -> the first case with it: {'source', 'id', 'name'}
+        self.by_source = OrderedDict()  # dataset -> Counter of statuses, 'known', 'new', 'in part', 'calibration'
+        self.sources = []               # the input datasets: {'name', 'campaign', 'run_id', 'sha256', 'cases'}
+        self.evidence = evidence        # an EVIDENCE key
+        self.next_step = None           # what to do when there was nothing to compare
+
+    def add(self, status, cls, name, detail, c, r, known_entry, source=None, notes=(), calibration=False):
         self.counts[status] += 1
+        per = self.by_source.setdefault(source or '', Counter())
+        per[status] += 1
+        if notes:
+            self.in_part += 1
+            per['in part'] += 1
+        if calibration:
+            self.calibration += 1
+            per['calibration'] += 1
+        verdict = None
+        if status == 'differs':
+            verdict = 'known' if known_entry else 'new'
+            per[verdict] += 1
+            if verdict == 'new':
+                self.differs_new += 1
+            else:
+                self.differs_known += 1
+        fk = f"{status} ({verdict})" if verdict else status
+        if fk not in self.first:
+            self.first[fk] = {'source': source, 'id': c['id'], 'name': name}
         if status == 'match' or status == 'skipped':
             return
-        key = (status, cls, name)
+        key = (status, cls, name, verdict)
         g = self.groups.get(key)
         if g is None:
-            g = self.groups[key] = {'n': 0, 'example': _example(c, r, detail),
-                                    'known': known_entry and known_entry.get('reason')}
-            if status == 'differs' and not known_entry:
+            g = self.groups[key] = {'n': 0, 'example': _example(c, r, detail, source),
+                                    'known': known_entry.get('reason') if known_entry else None}
+            if verdict == 'new':
                 self.new.append(key)
         g['n'] += 1
 
+    @property
+    def total(self):
+        return sum(self.counts.values())
 
-def _example(c, r, detail):
-    return {'code': c['code_bytes'].hex(), 'name': name_of(c['code_bytes']), 'id': c['id'],
+    @property
+    def compared(self):
+        """Cases picosim was compared on (a match or a difference; not the
+        timing calibration, which has nothing to compare)."""
+        return self.counts['match'] + self.counts['differs'] - self.calibration
+
+    def verdict(self):
+        if self.differs_new:
+            return NEW
+        if not self.compared:
+            return EMPTY
+        return PASS
+
+    def exit_code(self):
+        return EXIT[self.verdict()]
+
+    def summary(self):
+        """The result as plain data (JSON), for regression checks."""
+        def counts(cn):
+            d = {k: cn[k] for k in ('match', 'differs', 'known', 'new', 'in part', 'calibration') + PENDING
+                 + (NOT_COMPARED, 'skipped')}
+            d['compared'] = cn['match'] + cn['differs'] - cn['calibration']
+            d['total'] = sum(cn[k] for k in ('match', 'differs', 'skipped', NOT_COMPARED) + PENDING)
+            return d
+        allc = Counter(self.counts)
+        allc.update({'known': self.differs_known, 'new': self.differs_new, 'in part': self.in_part,
+                     'calibration': self.calibration})
+        return {'verdict': self.verdict(), 'exit_code': self.exit_code(),
+                'evidence': self.evidence, 'evidence_text': EVIDENCE.get(self.evidence),
+                'sources': self.sources, 'counts': counts(allc),
+                'by_source': {k or '(records)': counts(v) for k, v in self.by_source.items()},
+                'compared_in_part': dict(self.notes),
+                'first_case_by_status': dict(self.first),
+                'new': [{'status': k[0], 'class': k[1], 'encoding': k[2], 'cases': self.groups[k]['n'],
+                         'example': self.groups[k]['example']} for k in self.new],
+                'known': [{'class': k[1], 'encoding': k[2], 'cases': g['n'], 'case_id': g['example']['id'],
+                           'source': g['example'].get('source'), 'reason': g['known']}
+                          for k, g in self.groups.items() if k[3] == 'known'],
+                'next_step': self.next_step}
+
+
+def _example(c, r, detail, source=None):
+    return {'code': c['code_bytes'].hex(), 'name': name_of(c['code_bytes']), 'id': c['id'], 'source': source,
             'regs': [f"0x{c[f'r{i}']:08X}" for i in range(13)], 'nzcv': f"{c['xpsr'] >> 28:04b}",
             'psp': f"0x{c['psp']:08X}", 'primask': c['primask'], 'detail': detail}
 
 
-def check_records(records, lay, scratch_words, result=None, table=None, progress=None, every=25000):
+def check_records(records, lay, scratch_words, result=None, table=None, progress=None, every=25000, source=None):
     """Every record run through picosim and compared.  `progress(done,
-    total)` is called every `every` records (it may raise to stop)."""
-    result = result or Result()
+    total)` is called every `every` records (it may raise to stop).
+    `source` names the dataset the records came from (a replay file)."""
+    result = result if result is not None else Result()
     table = known() if table is None else table
     ov = overheads(records)
     total = len(records)
@@ -281,45 +391,119 @@ def check_records(records, lay, scratch_words, result=None, table=None, progress
         notes = []
         status, cls, detail = compare(c, r, lay, scratch_words, ov.get(c.get('batch', 0), ov.get('run')), notes)
         result.notes.update(notes)
-        first = c['code_bytes'][2:] if c['kind'] == F.KINDS['timing'] else c['code_bytes']
+        timing = c['kind'] == F.KINDS['timing']
+        first = c['code_bytes'][2:] if timing else c['code_bytes']
         name = name_of(first)
         code = first[:4 if len(first) >= 4 and v6m.is_prefix32(int.from_bytes(first[:2], 'little')) else 2].hex()
         k = is_known(cls, name, detail, table, code) if status == 'differs' else None
-        result.add(status, cls, name, detail, c, r, k)
+        result.add(status, cls, name, detail, c, r, k, source=source, notes=notes,
+                   calibration=timing and status == 'match' and c['code_len'] <= 4)
     return result
 
 
+def replay_folder(standin=False):
+    from .facts import root
+    return os.path.join(root('standin' if standin else 'openocd'), 'replay')
+
+
+def replay_manifests(folder=None, standin=False):
+    """The replay files' settings (their .json manifests), in name order."""
+    folder = folder or replay_folder(standin)
+    out = []
+    for p in sorted(glob.glob(os.path.join(folder, '*.json'))):
+        try:
+            with open(p) as f:
+                meta = json.load(f)
+        except (OSError, ValueError):
+            continue
+        meta['path'] = p
+        out.append(meta)
+    return out
+
+
 def check_replays(folder=None, standin=False):
-    from .facts import read_replay, root
-    folder = folder or os.path.join(root('standin' if standin else 'openocd'), 'replay')
-    result = Result()
+    from .facts import read_replay
+    folder = folder or replay_folder(standin)
+    result = Result('standin' if standin else 'recorded')
     files = sorted(glob.glob(os.path.join(folder, '*.json')))
     for p in files:
         records, meta = read_replay(p)
         for c, _ in records:
             c['watchdog'] = bool(meta['flags'] & F.HF_WATCHDOG)
+        result.sources.append({'name': meta['name'], 'file': os.path.basename(p), 'campaign': meta.get('campaign'),
+                               'run_id': meta.get('run_id'), 'sha256': meta.get('sha256'), 'cases': len(records),
+                               'fraction': meta.get('fraction')})
         check_records(records, F.LAYOUTS[meta['layout']], 0 if meta['flags'] & F.HF_NO_SCRATCH
-                      else meta['scratch_words'], result)
+                      else meta['scratch_words'], result, source=meta['name'])
+    if not files:
+        if standin:
+            result.next_step = (f"The stand-in has no replay files yet (in {folder}). Make some with "
+                                "`python3 -m picosim.discover encodings --target standin` (or `timing --target "
+                                "standin`), then run `python3 -m picosim.discover check --standin` again.")
+        else:
+            result.next_step = (f"No replay files in {folder}. They come with the repository "
+                                "(hwfacts/replay/*.json and .bin.gz): check that the checkout is complete.")
+    elif not result.compared:
+        result.next_step = (f"None of the {result.total} cases could be compared (all pending, skipped or "
+                            "not compared): there is no evidence to check picosim against.")
     return result, files
 
 
 def check_run(path):
     from .runner import load
     records, state = load(path)
-    return check_records(records, F.LAYOUTS[state['layout']],
-                         0 if state['flags'] & F.HF_NO_SCRATCH else state['scratch_words'])
+    target = state.get('target')
+    res = Result('standin' if target == 'standin' else 'run')
+    res.sources.append({'name': os.path.basename(os.path.normpath(path)), 'campaign': state.get('campaign'),
+                        'run_id': state.get('run_id'), 'target': target, 'cases': len(records)})
+    check_records(records, F.LAYOUTS[state['layout']],
+                  0 if state['flags'] & F.HF_NO_SCRATCH else state['scratch_words'], res,
+                  source=state.get('run_id') or os.path.basename(os.path.normpath(path)))
+    if not res.compared:
+        res.next_step = (f"The run in {path} has no case picosim could be compared on "
+                         f"({res.total} cases read)." + (" Is it unfinished?" if not res.total else ''))
+    return res
 
 
-def report(result, title="picosim against the RP2040", sources=()):
+def report(result, title=None, sources=()):
     c = result.counts
-    lines = [f"# {title}", "",
-             f"{sum(c.values())} cases: {c['match']} match, {c['differs']} differ "
-             f"({len(result.new)} kinds not yet known), "
-             + ', '.join(f"{c[p]} {p}" for p in PENDING) + f", {c[NOT_COMPARED]} {NOT_COMPARED}, "
-             f"{c['skipped']} skipped.", ""]
+    title = title or TITLES.get(result.evidence, "picosim against the RP2040")
+    verdict = result.verdict()
+    lines = [f"# {title}", ""]
+    if result.evidence:
+        lines += [f"Evidence: {EVIDENCE[result.evidence]}.", ""]
+    if verdict == NEW:
+        v = (f"**FAIL**: {result.differs_new} cases differ in {len(result.new)} kinds not yet known "
+             f"(hwfacts/known_differences.json).")
+    elif verdict == EMPTY:
+        v = "**NOTHING COMPARED**: " + (result.next_step or "no case could be compared.")
+    else:
+        v = ("**PASS**: no new differences" + (f" ({result.differs_known} known differences)."
+                                               if result.differs_known else "."))
+    lines += [f"Verdict: {v}", ""]
+    lines += [f"{result.total} cases: {c['match']} match"
+              + (f" ({result.calibration} of them timing calibration)" if result.calibration else '')
+              + f", {c['differs']} differ ({result.differs_known} known, {result.differs_new} new"
+              f" in {len(result.new)} kinds not yet known), "
+              + ', '.join(f"{c[p]} {p}" for p in PENDING) + f", {c[NOT_COMPARED]} {NOT_COMPARED}, "
+              f"{c['skipped']} skipped. Compared: {result.compared} of {result.total}.", ""]
     if result.notes:
-        lines += ["Compared in part: " + '; '.join(f"{n} cases {what}" for what, n in sorted(result.notes.items())) + ".", ""]
-    if sources:
+        lines += [f"Compared in part ({result.in_part} cases): "
+                  + '; '.join(f"{n} cases {what}" for what, n in sorted(result.notes.items())) + ".", ""]
+    if result.sources:
+        lines += ["## Sources", "",
+                  "| Dataset | Run | SHA-256 | Cases | Compared | Match | Differ (known / new) | In part "
+                  "| Pending | Not compared | Skipped | Calibration |",
+                  "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+        for s in result.sources:
+            n = result.by_source.get(s['name'], Counter())
+            lines.append(f"| {s.get('file') or s['name']} | {s.get('run_id') or ''} | "
+                         f"{(s.get('sha256') or '')[:12]} | {s['cases']} | "
+                         f"{n['match'] + n['differs'] - n['calibration']} | {n['match']} | "
+                         f"{n['differs']} ({n['known']} / {n['new']}) | {n['in part']} | "
+                         f"{sum(n[p] for p in PENDING)} | {n[NOT_COMPARED]} | {n['skipped']} | {n['calibration']} |")
+        lines.append("")
+    elif sources:
         lines += ["Sources: " + ', '.join(os.path.basename(s) for s in sources), ""]
     for status in ('differs',) + PENDING + (NOT_COMPARED,):
         rows = [(k, g) for k, g in result.groups.items() if k[0] == status]
@@ -331,9 +515,11 @@ def report(result, title="picosim against the RP2040", sources=()):
             if not sub:
                 continue
             lines += [f"### {cls}", "", "| Encoding | Cases | Example | What | Known |", "|---|---|---|---|---|"]
-            for (st, cl, name), g in sorted(sub, key=lambda x: -x[1]['n']):
+            for (st, cl, name, verdict), g in sorted(sub, key=lambda x: (x[0][3] != 'new', -x[1]['n'])):
                 e = g['example']
+                where = f"case {e['id']}" + (f" of {e['source']}" if e.get('source') else '')
                 lines.append(f"| {name} | {g['n']} | `{e['code']}` r0–r3 {', '.join(e['regs'][:4])} NZCV {e['nzcv']} "
-                             f"| {e['detail']} | {g['known'] or ('**new**' if st == 'differs' else 'not compared yet')} |")
+                             f"({where}) | {e['detail']} | "
+                             f"{g['known'] or ('**new**' if verdict == 'new' else 'not compared yet')} |")
             lines.append("")
     return '\n'.join(lines) + '\n'

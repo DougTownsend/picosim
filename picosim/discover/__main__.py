@@ -4,8 +4,11 @@ Level 5 discovery from the command line (docs/level5-discovery.md).
     python3 -m picosim.discover <campaign> [--target openocd|gdb|standin] [--fresh] [--repeat]
                                            [--pins N,N] [--dry-run] [--limit N] [--chip-label L]
     python3 -m picosim.discover encodings|timing|peripherals --offline   (facts again from the saved runs, no board)
-    python3 -m picosim.discover check [--standin] [--run DIR] [--report FILE]
-    python3 -m picosim.discover status [--standin]
+    python3 -m picosim.discover check [--standin] [--run DIR] [--report FILE] [--json FILE]
+                      exit status: 0 pass (known differences only still pass), 1 new
+                      differences, 3 nothing compared (no replay files or no comparable case)
+    python3 -m picosim.discover status [--standin]   (this computer's runs, and the published
+                                                       captures in hwfacts/ with how to replay them)
     python3 -m picosim.discover verify-raw            (the raw captures against raw_index.json, both copies)
     python3 -m picosim.discover preflight             (before a board session: what is in the way, what Resume does)
     python3 -m picosim.discover backup-flash | restore-flash
@@ -47,11 +50,16 @@ def parser():
     ap.add_argument('--standin', action='store_true', help="check/status: the stand-in's facts (= --target standin)")
     ap.add_argument('--run', help="check: one run folder instead of the replay files")
     ap.add_argument('--report', help="check: write the report here (default hwfacts/report.md)")
+    ap.add_argument('--json', help="check: also write the result as JSON (counts, datasets, new and known kinds)")
     ap.add_argument('--hours', type=float, help="fuzz: keep going for this long (resumable)")
     ap.add_argument('--rounds', type=int, help="fuzz: this many rounds of 1000 blocks")
     ap.add_argument('--a', default='chip1')
     ap.add_argument('--b', default='chip2')
     ap.add_argument('--yes', action='store_true', help="flashed: don't ask before writing the flash")
+    ap.add_argument('--sweep', choices=('physical', 'smoke'),
+                    help="flashed: the GPIO pull-latency sweep; memmap: the address sweep (stage 'sweep'): "
+                         "physical (every delay / the full grid; always on a chip) or smoke (a few delays / a "
+                         "sparse grid; the stand-in's default)")
     ap.add_argument('--offline', action='store_true',
                     help="encodings, timing, peripherals (SIO part): no board; rebuild the facts from the finished runs on disk "
                          "(after picosim's comparison changed)")
@@ -67,6 +75,9 @@ def connect(a):
 def main(argv=None):
     a = parser().parse_args(argv)
     a.standin = a.standin or a.target == 'standin'      # either spelling, for check/status/compare-chips
+    if a.sweep == 'smoke' and a.target != 'standin':
+        print("--sweep smoke is for the stand-in only: a chip capture always runs the physical sweep")
+        return 2
     if a.command == 'check':
         return cmd_check(a)
     if a.command == 'status':
@@ -167,6 +178,8 @@ def cmd_offline(a):
 
 
 def cmd_check(a):
+    """Replay and compare; the exit status is check.EXIT[verdict] (0 pass,
+    1 new differences, 3 nothing compared: see check.py)."""
     from . import check
     from .replay import HWFACTS
     if a.run:
@@ -174,14 +187,33 @@ def cmd_check(a):
     else:
         res, sources = check.check_replays(standin=a.standin)
     text = check.report(res, sources=sources)
-    out = a.report or (os.path.join(HWFACTS, 'report.md') if not a.standin and not a.run else None)
+    out = a.report
+    if not out and not a.standin and not a.run:
+        out = os.path.join(HWFACTS, 'report.md')
+        if res.verdict() == check.EMPTY:
+            out = None                  # an empty replay never replaces the published report
     if out:
         with open(out, 'w') as f:
             f.write(text)
         print(f"report: {out}")
+    if a.json:
+        import json
+        with open(a.json, 'w') as f:
+            json.dump(res.summary(), f, indent=1)
+        print(f"summary: {a.json}")
     c = res.counts
-    print(f"{sum(c.values())} cases: {c['match']} match, {c['differs']} differ, {len(res.new)} kinds new")
-    return 1 if res.new else 0
+    print(f"evidence: {check.EVIDENCE.get(res.evidence, 'not stated')}")
+    if res.sources:
+        print("datasets: " + ', '.join(f"{s['name']} ({s['cases']})" for s in res.sources))
+    print(f"{res.total} cases: {c['match']} match, {c['differs']} differ ({res.differs_known} known, "
+          f"{res.differs_new} new in {len(res.new)} kinds), compared {res.compared}")
+    for k in res.new:
+        e = res.groups[k]['example']
+        print(f"  NEW {k[1]} {k[2]}: {res.groups[k]['n']} cases, e.g. case {e['id']} of {e.get('source')}: "
+              f"{e['detail']}")
+    verdict = res.verdict()
+    print(f"verdict: {verdict}" + (f": {res.next_step}" if res.next_step else ''))
+    return res.exit_code()
 
 
 def cmd_verify_raw(a):
@@ -198,8 +230,17 @@ def cmd_verify_raw(a):
 
 
 def cmd_status(a):
-    from .campaign import read_status
+    """Two things side by side: the campaigns run on THIS computer (its
+    cache: a fresh checkout has none), and the evidence published in the
+    checkout (hwfacts/: measured on a real chip, with the replay files any
+    checkout can compare picosim against with no board)."""
+    from .build import cache_dir
+    from .campaign import read_status, _sub
+    from .facts import published
     kind = 'standin' if a.standin else 'openocd'
+    pub = {} if a.standin else published()
+    print(f"Local runs on this computer ({cache_dir(_sub(kind, a.chip_label))})"
+          + ("" if a.standin else ", and the RP2040 captures published in this checkout") + ":")
     for name in ORDER:
         s = read_status(name, kind, a.chip_label)
         extra = ''
@@ -212,8 +253,49 @@ def cmd_status(a):
             extra += f", {s['differences']} differences from picosim"
         elif s.get('state') == 'done':
             extra += ", measured (no picosim comparison)"
-        print(f"{LETTERS[name]:>2}  {name:12} {s.get('state', 'not run')}{extra}")
+        local = s.get('state', 'not run')
+        if local == 'not run':
+            local = 'not run here'
+        print(f"{LETTERS[name]:>2}  {name:12} local: {local}{extra}")
+        if not a.standin:
+            p = pub.get(name)
+            print(f"{'':17}published: {_published_text(p) if p else 'none in this checkout'}")
+    if a.standin:
+        print("\nThe stand-in's results stay in this computer's cache; nothing from it is published in hwfacts/.")
+        return 0
+    replays = [r for p in pub.values() for r in p['replays']]
+    if pub:
+        print(f"\nPublished in this checkout ({pub_root()}): measured on the RP2040 and kept with the "
+              "repository, whatever ran on this computer.")
+    else:
+        print(f"\nNo published evidence in this checkout ({pub_root()}).")
+    if replays:
+        print(f"{len(replays)} replay files ({sum(r['cases'] for r in replays)} cases) can be compared with "
+              "picosim here, with no board:\n"
+              "    python3 -m picosim.discover check --report /tmp/picosim-replay.md --json /tmp/picosim-replay.json\n"
+              "(without --report it rewrites hwfacts/report.md; the published one is "
+              f"{os.path.join(pub_root(), 'report.md')})")
     return 0
+
+
+def pub_root():
+    from .replay import HWFACTS
+    return HWFACTS
+
+
+def _published_text(p):
+    out = []
+    fs = p['facts']
+    if len(fs) > 2:
+        dates = sorted((d.get('date') or '?')[:10] for d in fs)
+        out.append(f"{len(fs)} facts files in {os.path.dirname(fs[0]['file']) or '.'}/ "
+                   f"({sum(d['facts'] for d in fs)} facts, measured {dates[0]} to {dates[-1]})")
+    else:
+        for d in fs:
+            out.append(f"{d['file']} ({d['facts']} facts, measured {(d.get('date') or '?')[:10]})")
+    if p['replays']:
+        out.append(f"{len(p['replays'])} replay files, {sum(r['cases'] for r in p['replays'])} cases")
+    return '; '.join(out)
 
 
 if __name__ == '__main__':

@@ -4,10 +4,11 @@ Replay one recorded case in picosim's core and say how picosim ends it.
 picosim has the chip's memory map (memmap.py), so a case runs at its chip
 addresses: the ROM (hwfacts/rom.bin if present, else zeros), the sled
 around the slot (slot-0x4000 .. slot+0x4000), the scratch window and the PSP
-area, all in SRAM.  The one exception is a window picosim does not have (the
-non-striped SRAM alias at 0x21000000, a D1 code site): it is moved to SPARE,
-a free part of SRAM, keeping its offset in its word so an address keeps its
-alignment (word loads, PC-relative literals).  A register value inside a
+area, all in SRAM, and the non-striped SRAM view at 0x21000000 (a D1 code
+site), which picosim has had since 2026-11-18.  A window picosim does not have
+would be moved to SPARE, a free part of SRAM, keeping its offset in its word
+so an address keeps its alignment (word loads, PC-relative literals); no
+recorded case needs that any more.  A register value inside a
 moved window is mapped on the way in; on the way out a chip value and a
 picosim value are the same if they are equal or if the chip's maps to
 picosim's (same()).

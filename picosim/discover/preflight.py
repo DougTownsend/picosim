@@ -136,6 +136,16 @@ def run(label='chip1', check_raw=True):
                 out.append((WARN, 'raw data', f"{k} is not indexed or backed up"))
         else:
             out.append((OK, 'raw data', f"{r['ok']} runs intact in both copies"))
+    from . import coverage as COV
+    cov = COV.recorded()
+    if cov:
+        out.append((OK if cov.get('complete') else WARN, 'address coverage',
+                    f"{len(cov['ranges'])} measured ranges cover the 4 GB" if cov.get('complete') else
+                    f"incomplete: {'; '.join(cov.get('problems', [])[:3])}"))
+    else:
+        out.append((WARN, 'address coverage',
+                    "hwfacts/memory_map.json has none yet: run `python3 -m picosim.discover memmap --stages "
+                    f"sweep` ({COV.estimate_text(COV.PHYSICAL)}); tests/test_address_coverage.py skips until then"))
     for name in ORDER:
         st = read_status(name, 'openocd', label).get('state', 'not run')
         try:

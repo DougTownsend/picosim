@@ -26,7 +26,8 @@ backup over USB) and you, once, to hold BOOTSEL while plugging the target in.
 
 ```bash
 python3 -m picosim.discover identity            # 0: which chip, ROM dump (1 min)
-python3 -m picosim.discover memmap              # A: the memory map (~5 min)
+python3 -m picosim.discover memmap              # A: the memory map and the address sweep (~10 min)
+python3 -m picosim.discover memmap --stages sweep   # A's address sweep alone (~5 min; see below)
 python3 -m picosim.discover registers           # C: every register (~5 min)
 python3 -m picosim.discover encodings --repeat  # B: every encoding, twice (~1 h)
 python3 -m picosim.discover timing              # D: cycles and exceptions (~15 min)
@@ -45,11 +46,12 @@ Options every campaign takes:
 | `--target standin` | No hardware: the Unicorn stand-in (checks the code, not the chip) |
 | `--dry-run` | Make every case and run every safety check; nothing is sent to the board |
 | `--limit N` | At most N cases per stage (a quick trial); the campaign stays "partial" |
-| `--stages B1,D4` | Only these stages (B1–B5, D1–D5); each campaign takes its own, and stays "partial" |
+| `--stages B1,D4` | Only these stages (B1–B5, D1–D5, and A's `sweep`); each campaign takes its own, and stays "partial" |
 | `--repeat` | Run each stage a second time with its batches reordered, and compare |
 | `--fresh` | Start the campaign's runs again instead of carrying on |
 | `--pins 21,22` | GPIOs this run may drive. Default: none. GP23/24/25/29 are always refused |
 | `--chip-label chip2` | Which board this is (campaign H) |
+| `--sweep physical\|smoke` | Campaign F's GPIO pull-latency sweep and campaign A's address sweep. A chip always runs `physical` (the full sweep; asking for `smoke` on a chip stops with exit 2). The stand-in defaults to `smoke`: for F a few representative delays within a 60 s budget, with the calls it left out listed in the results; for A a sparse grid (about 25 s) |
 
 A campaign that stops part-way (a pulled cable, Ctrl-C, a power cut) loses
 at most one batch: run the same command again and it carries on. It refuses
@@ -57,12 +59,31 @@ to carry on with a different chip or a changed agent. The stages it finished
 keep their facts (campaign B writes `encodings.json` after each stage).
 
 ```bash
-python3 -m picosim.discover status              # every campaign: not run, partial, done
+python3 -m picosim.discover status              # every campaign: local runs, and the published facts in hwfacts/
 python3 -m picosim.discover check               # picosim against hwfacts/ (writes hwfacts/report.md)
+python3 -m picosim.discover check --report /tmp/r.md --json /tmp/r.json   # same, without touching hwfacts/
 python3 -m picosim.discover preflight           # before a board session: what is in the way, what Resume will do
 python3 -m picosim.discover verify-raw          # every raw capture, in both copies, against its SHA-256
 python3 -m picosim.discover encodings --offline # facts again from the finished runs on disk (no board)
 ```
+
+`status` shows two things per campaign: `local:` is what this computer has
+run (`not run here` on a fresh checkout), and `published:` is what this
+checkout already holds in `hwfacts/` (facts files, measurement dates, replay
+files and cases). The published replays need no board: `check` replays them.
+
+`check` says where its evidence came from (`recorded` replays, a `standin`
+cache or a `run`), lists each dataset it used (name, run id, SHA-256,
+cases) and ends with a verdict. Its exit status:
+
+| Exit | Verdict |
+|---|---|
+| 0 | PASS: every compared case matches, or differs only in a known way (`known_differences.json`) |
+| 1 | FAIL: at least one new difference (each new kind is printed with a case id) |
+| 3 | NOTHING COMPARED: no replay files, an empty run, or only pending, skipped or calibration cases |
+
+The counts do not depend on the order of the cases: known and new
+differences are counted case by case.
 
 `--offline` is for after picosim's comparison changes: campaigns B
 (`encodings`), D (`timing`) and the SIO part of G (`peripherals`) compare
@@ -79,6 +100,60 @@ the beginning** (the command line's `--fresh`); on a campaign that is
 partial or done, the window asks first and offers Resume instead. Tick
 **Run twice** for `--repeat`.
 
+### The address sweep (campaign A, stage `sweep`)
+
+So that picosim never has to guess what the Pico does at an address, the
+sweep measures all 4 GB and writes a `coverage` table into
+`memory_map.json`: contiguous ranges from 0x00000000 to 0xFFFFFFFF, each
+with what the debugger read there and what an 8-, 16- and 32-bit core load
+did (it works, it faults, it hangs), and how it was measured.
+
+1. A grid of samples (`picosim/discover/coverage.py`): every 4 KB in and
+   next to the regions and peripherals the datasheet lists, every 64 KB in
+   the 256 MB blocks that hold devices, every 1 MB in the big empty spans,
+   about 29,500 in all. Each is read by the debugger first (a hang is
+   recorded, the debugger reconnected, and the core never tries it; after
+   16 hangs the sweep stops so you can look), then by a core load.
+2. Wherever two neighbouring samples answer differently, the sweep reads
+   between them, round after round, until the boundary is found to the
+   word (about 18 rounds).
+3. On both sides of each boundary, and at the first, middle and last sample
+   of each range, it loads 8, 16 and 32 bits.
+
+Never read, and recorded as `not read: <why>` ranges, so they are known and
+justified rather than unknown: flash (0x10000000–0x13FFFFFF, read only in
+campaign F's flashed state), XIP_AUX (0x50400000–0x504FFFFF, the stream
+FIFO), every register whose read has a side effect and its atomic aliases,
+DHCSR and SSI DR0, and the words that would be such a register if its
+peripheral repeated itself inside its bus slot. The debugger never reads
+the SIO (core-local). Every read also passes `safety.check_read`; the sweep
+writes nothing.
+
+It takes about 4–5 minutes on the chip (the estimate is printed at the
+start; even at half the measured debugger and agent rates it is under 10
+minutes) and resumes where it stopped: the debugger's answers are kept in
+`~/.cache/picosim/discover/chip1/memmap-sweep/debugger.json` and each
+round is a stage of its own. `--stages sweep` runs it alone and adds its
+table to the `memory_map.json` already there, keeping everything else.
+
+With the table in `hwfacts/`, picosim answers from it: a stop at an address
+picosim does not simulate says whether a load there faulted or worked on a
+Pico, without "most likely". `tests/test_address_coverage.py` checks, for
+every range (its first and last words, the words next to them and its
+middle, at every width), that picosim does what the chip did (works, or
+"not simulated" where the chip works; a HardFault where the chip faults),
+and that the ranges cover the whole 4 GB with no gap and no unknown answer.
+Until the sweep has run it skips with the command to run.
+
+Campaign E also runs **address edges** each round: 64 read-only loads (a
+stage of its own, `round-<k>-edges`, so the random blocks' R4 scratch
+design is untouched) at the coverage table's range edges (or, before the
+sweep, the regions', the SVD peripherals' and the known holes'), the word
+on each side and the one past it, and 1–3 bytes off for misalignment, at
+every width, seeded like the blocks. The chip's answer is compared with
+picosim's (fault or not, and the value in the boot ROM); a new kind of
+difference goes into `fuzz.json` with the others.
+
 ### Before a board session
 
 `preflight` reads only this computer. It stops you if an OpenOCD is
@@ -87,6 +162,17 @@ flash restore is pending, checks that openocd and picotool are installed
 and that the raw captures are intact, and says for every stage what a Resume
 will do: reuse a finished run (no board time), resume one at its next batch,
 or start a new run because the cases or the agent changed since.
+
+Checklist:
+
+1. `python3 -m picosim.discover preflight`
+2. `python3 -m picosim.discover memmap --dry-run --stages sweep` (the
+   sweep's first round through every safety check, and its time estimate)
+3. If `hwfacts/memory_map.json` has no `coverage` table yet
+   (`tests/test_address_coverage.py` skips), run the sweep first:
+   `python3 -m picosim.discover memmap --stages sweep`, then
+   `python3 -m unittest tests.test_address_coverage tests.test_faults`, and
+   commit `hwfacts/memory_map.json`.
 
 ### Where the results go
 
@@ -178,6 +264,7 @@ The `.uf2` backup can also be dragged onto the RPI-RP2 drive in BOOTSEL mode.
 | γ | Leave it connected overnight | E (`--hours 8`) | overnight |
 | δ | Hold BOOTSEL and plug the target in once; watch for its USB port at the end | F (and G's clock-dependent part) | ~40 min |
 | ε | Swap the boards (debugprobe firmware on the other Pico) | 0, A, C, B1 + 10 % of B2–B5, D with `--chip-label chip2`, then `compare-chips` | ~1 h |
+| ζ | Wire the probe as for Testing | A's address sweep alone (`memmap --stages sweep`), then E with its address edges (`fuzz --rounds 10`) | ~10 min |
 
 ## How picosim is checked
 

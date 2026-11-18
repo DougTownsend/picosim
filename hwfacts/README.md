@@ -10,7 +10,7 @@ taken for a measurement.
 |---|---|---|
 | `identity.json` | 0 | CHIP_ID, ROM version, CPUID, debug parts, SWD speed |
 | `rom.bin` | 0 | The 16 KiB boot ROM (picosim's replay loads it at 0x0) |
-| `memory_map.json` | A | Every region and probe: debugger and core, 8/16/32-bit, writes, striping, access timing |
+| `memory_map.json` | A | Every region and probe: debugger and core, 8/16/32-bit, writes, striping, access timing; `coverage` (stage `sweep`): the whole 4 GB as contiguous measured ranges, each with the debugger's and the core's answer, or "not read" and why. picosim's fault messages and `tests/test_address_coverage.py` use it |
 | `registers.json` | C | Every SVD register: reset values (S1, S3), writable bits, aliases, next to the SVD's prediction |
 | `read_side_effects.json` | C | Registers never read blindly (campaign G reads them on purpose) |
 | `encodings.json` | B | Every 16-bit encoding and sampled 32-bit: how each ended, picosim's differences |

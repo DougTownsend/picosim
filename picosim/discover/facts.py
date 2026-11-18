@@ -291,3 +291,58 @@ def verify_raw(target_kind='openocd'):
                     if json.load(f).get('done'):
                         unindexed.append(f"{label}/{camp}/{rid}")
     return {'ok': ok, 'problems': problems, 'unindexed': unindexed}
+
+
+# ── what the checkout publishes ────────────────────────────────────────────
+
+def published(folder=None):
+    """The real chip's evidence kept with the repository (hwfacts/), by
+    campaign name: {'identity': {'facts': [{'file', 'kind', 'facts', 'date',
+    'campaign'}], 'replays': [{'name', 'cases', 'run_id', 'sha256'}]}}.
+    Read from the files themselves, so a fresh checkout (no runs in this
+    computer's cache) still shows what it can replay.  Nothing is checked
+    here: test_hwfacts_integrity and `check` do that."""
+    from .cases import LETTERS
+    folder = folder or HWFACTS
+    by_letter = {v: k for k, v in LETTERS.items()}
+    out = {}
+
+    def slot(campaign):
+        return out.setdefault(campaign, {'facts': [], 'replays': []})
+
+    paths = sorted(glob_json(folder)) + sorted(glob_json(os.path.join(folder, 'peripherals')))
+    for p in paths:
+        try:
+            with open(p) as f:
+                doc = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(doc, dict) or 'provenance' not in doc or 'facts' not in doc:
+            continue                    # raw_index, known_differences, read_side_effects
+        prov = doc.get('provenance') or {}
+        letter = str(prov.get('campaign') or '').split(' ')[0]
+        name = by_letter.get(letter)
+        if name is None:
+            continue
+        slot(name)['facts'].append({'file': os.path.relpath(p, folder), 'kind': doc.get('kind'),
+                                    'facts': len(doc.get('facts') or []), 'date': prov.get('date'),
+                                    'campaign': prov.get('campaign')})
+    for p in sorted(glob_json(os.path.join(folder, 'replay'))):
+        try:
+            with open(p) as f:
+                meta = json.load(f)
+        except (OSError, ValueError):
+            continue
+        name = str(meta.get('campaign') or meta.get('name') or '').split('-')[0]
+        if name not in LETTERS:
+            continue
+        slot(name)['replays'].append({'name': meta.get('name'), 'cases': meta.get('cases', 0),
+                                      'run_id': meta.get('run_id'), 'sha256': meta.get('sha256')})
+    return out
+
+
+def glob_json(folder):
+    try:
+        return [os.path.join(folder, n) for n in os.listdir(folder) if n.endswith('.json')]
+    except OSError:
+        return []
