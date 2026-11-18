@@ -1016,7 +1016,7 @@ func _add_topics() -> void:
 		"• [b]Undefined instruction[/b] — not a Cortex-M0+ instruction (for example code written for a Cortex-M4), or the program ran into data.\n" + \
 		"• [b]Bus fault[/b] — the address is not memory (ROM [code]0x00000000[/code], flash [code]0x10000000[/code] or SRAM [code]0x20000000[/code]–[code]0x20041FFF[/code])" + (" or a simulated I/O register" if Level.at_least(2) else "") + ". The two most common causes at first: [code]main[/code] has no [code]pop {…, pc}[/code] at the end, so the CPU runs on through whatever follows it in flash; or [code]main[/code] pops without a matching [code]push {…, lr}[/code] at the start, so the pop reads past the top of SRAM ([code]0x20042000[/code]). Later on, a pointer that went wrong or a stack that grew too far (too many PUSHes without POPs) do the same.\n"
 	if Level.at_least(2):
-		tr += "• [b]… with bit 0 clear[/b] — BX, BLX or POP {PC} jumped to an even address. Put [code].thumb_func[/code] on the line before a label whose address you load with [code]ldr r0, =label[/code].\n"
+		tr += "• [b]… with bit 0 clear[/b] — BX, BLX or POP {PC} jumped to an even address. Like the Pico, picosim makes the jump and stops at the target, where the Pico faults; the message names the branch that went there. Put [code].thumb_func[/code] on the line before a label whose address you load with [code]ldr r0, =label[/code].\n"
 		tr += "• [b]Unaligned access[/b] — LDR/STR need an address that is a multiple of 4, LDRH/STRH a multiple of 2. Use LDRB/STRB for single bytes, and put [code].align 2[/code] before word data.\n"
 	tr += "Press " + _k("Reload") + " to start again."
 	_topic("trouble", "Troubleshooting", tr)

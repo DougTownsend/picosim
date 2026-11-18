@@ -165,6 +165,13 @@ public:
     uint64_t rom_stores_dropped = 0;
     // System registers that live outside the datapath (MRS / MSR / CPS).
     uint32_t PRIMASK = 0, CONTROL = 0, PSP = 0;
+    // A BX/BLX/POP/LDM to an address with bit 0 clear: as on the RP2040
+    // (Level 5, B4) the branch completes and the stop (the chip's INVSTATE
+    // HardFault) comes when the target would run.  Dropped if the PC is
+    // moved before then.
+    bool        invstate_pending = false;
+    uint32_t    invstate_pc = 0;
+    std::string invstate_msg;
 
     // Python callbacks
     // peripheral_read(addr, nbytes) -> int
@@ -509,15 +516,40 @@ public:
 
     // BXWritePC: a BX, BLX or POP {PC} target must have bit 0 set (Thumb).
     // Bit 0 clear asks for ARM state, which the Cortex-M0+ does not have.
-    void bx_write_pc(uint32_t target, const char* how) {
-        if (strict && !(target & 1))
-            throw std::runtime_error(
-                std::string(how) + " at " + hexs(_insn_addr) + " jumps to " + hexs(target) +
-                " with bit 0 clear. The Cortex-M0+ only runs Thumb code, so the Pico would stop "
-                "with a HardFault here. A code address you jump to through a register needs "
-                "bit 0 set: put .thumb_func (or .type name, %function) before the label, so "
-                "that ldr Rn, =name gives name + 1.");
+    // Measured on the RP2040 (Level 5, B4): the branch completes (PC = the
+    // target, LR set for BLX) and the HardFault (INVSTATE) is taken at the
+    // target, so picosim stops there, naming the branch that went there.
+    void bx_write_pc(uint32_t target, const std::string& how) {
         regs[15] = target & 0xFFFFFFFEu;
+        if (strict && !(target & 1)) {
+            invstate_pending = true;
+            invstate_pc = regs[15];
+            invstate_msg =
+                how + " at " + hexs(_insn_addr) + " jumped to " + hexs(target) +
+                " with bit 0 clear. The Cortex-M0+ only runs Thumb code: like the Pico, picosim "
+                "made the jump and stops here, where the Pico takes a HardFault (INVSTATE). A code "
+                "address you jump to through a register needs bit 0 set: put .thumb_func (or "
+                ".type name, %function) before the label, so that ldr Rn, =name gives name + 1.";
+        }
+    }
+
+    // BX PC / BLX PC: the RP2040 faults AT the instruction (B4: all 16 cases;
+    // no branch to PC+4, unlike a BX to another even address).
+    std::string bx_pc_msg(bool link) const {
+        return std::string(link ? "BLX" : "BX") + " PC at " + hexs(_insn_addr) +
+               ": the PC as a branch register (UNPREDICTABLE on the Cortex-M0+). The Pico takes a "
+               "HardFault at this instruction, so picosim stops here. To jump to a label, use "
+               "b label (or bl label to call it).";
+    }
+
+    // The stop a bad branch left for the next instruction (see bx_write_pc).
+    // Stays armed while the PC sits there, so stepping again stops again.
+    void invstate_stop() {
+        if (invstate_pending && regs[15] == invstate_pc) {
+            _insn_addr = regs[15];
+            throw std::runtime_error(invstate_msg);
+        }
+        invstate_pending = false;
     }
 
     std::string undefined_msg(uint32_t enc, bool wide) const {
@@ -649,6 +681,7 @@ public:
             while (in_insn && !halted) step_cycle();
             return;
         }
+        invstate_stop();
         steps++;
         _insn_addr = regs[15];
         begin_rec();
@@ -834,9 +867,10 @@ public:
             } else if (op == 2) { // MOV high reg
                 reg_write(rdn, reg_read(rm));
             } else {              // BX / BLX
+                if (rm == 15 && strict) throw std::runtime_error(bx_pc_msg(dn));
                 uint32_t target = reg_read(rm);
                 uint32_t ret = regs[15] | 1;   // BLX: pc already advanced
-                bx_write_pc(target, dn ? "BLX" : "BX");
+                bx_write_pc(target, std::string(dn ? "BLX " : "BX ") + REGN[rm] + " (= " + hexs(target) + ")");
                 if (dn) set_lr(ret);
             }
             return;
@@ -969,6 +1003,10 @@ public:
         if (top7 == 0b1011010) {
             int lr_bit = (hw >> 8) & 1;
             int rlist  =  hw       & 0xFF;
+            if (!lr_bit && !rlist) {   // PUSH {}: UNPREDICTABLE; the RP2040 stores LR at [SP], SP unchanged (B3)
+                write32(regs[13], regs[14]);
+                return;
+            }
             // push highest register first
             if (lr_bit) { regs[13] -= 4; write32(regs[13], regs[14]); }
             for (int i = 7; i >= 0; --i) {
@@ -993,6 +1031,10 @@ public:
         }
         if (top8 == 0b10111100) {  // POP {rlist} (no PC)
             int rlist = hw & 0xFF;
+            if (!rlist) {              // POP {}: UNPREDICTABLE; the RP2040 loads PC from [SP], SP unchanged (B1)
+                bx_write_pc(read32(regs[13]), "POP {} (an empty register list, UNPREDICTABLE)");
+                return;
+            }
             for (int i = 0; i < 8; ++i) {
                 if (rlist & (1 << i)) { reg_write(i, read32(regs[13])); regs[13] += 4; }
             }
@@ -1011,12 +1053,18 @@ public:
         if (top8 == 0b10111111 && !(hw & 0xF)) return;
 
         // ── CPSIE i / CPSID i: PRIMASK (no interrupts are simulated) ───────
-        if ((hw & 0xFFEF) == 0xB662) { PRIMASK = (hw >> 4) & 1; return; }
+        // The RP2040 ignores bits 3:0 (should be 0010): 0xB660-0xB67F all act (B1).
+        if ((hw & 0xFFE0) == 0xB660) { PRIMASK = (hw >> 4) & 1; return; }
 
         // ── STM / LDM ─────────────────────────────────────────────────────
         if (top5 == 0b11000) {   // STMIA
             int rn    = (hw >> 8) & 7;
             int rlist =  hw       & 0xFF;
+            if (!rlist) {              // STM Rn!,{}: UNPREDICTABLE; the RP2040 stores LR at [Rn] and
+                write32(regs[rn], regs[14]);   // adds 4 to Rn (B1: Rn + 4; B3: the word stored = LR, 2 of 2)
+                regs[rn] += 4;
+                return;
+            }
             uint32_t addr2 = regs[rn];
             for (int i = 0; i < 8; ++i) {
                 if (rlist & (1 << i)) { write32(addr2, regs[i]); addr2 += 4; }
@@ -1027,6 +1075,10 @@ public:
         if (top5 == 0b11001) {   // LDMIA
             int rn    = (hw >> 8) & 7;
             int rlist =  hw       & 0xFF;
+            if (!rlist) {              // LDM Rn!,{}: UNPREDICTABLE; the RP2040 loads PC from [Rn], Rn unchanged (B1)
+                bx_write_pc(read32(regs[rn]), "LDM " + std::string(REGN[rn]) + "!, {} (an empty register list, UNPREDICTABLE)");
+                return;
+            }
             uint32_t addr2 = regs[rn];
             for (int i = 0; i < 8; ++i) {
                 if (rlist & (1 << i)) { reg_write(i, read32(addr2)); addr2 += 4; }
@@ -1071,14 +1123,12 @@ public:
         if (is_barrier(hw1, hw2)) return;
         if (is_mrs(hw1, hw2)) {
             int rd = (hw2 >> 8) & 0xF;
-            if (rd == 13 || rd == 15) throw std::runtime_error(undefined_msg(word, true));
-            reg_write(rd, sysreg_read(hw2 & 0xFF));
+            mrs_write(rd, sysreg_read(hw2 & 0xFF));
             return;
         }
         if (is_msr(hw1, hw2)) {
             int rn = hw1 & 0xF;
-            if (rn == 13 || rn == 15) throw std::runtime_error(undefined_msg(word, true));
-            sysreg_write(hw2 & 0xFF, regs[rn]);
+            sysreg_write(hw2 & 0xFF, reg_read(rn));
             return;
         }
 
@@ -1268,14 +1318,50 @@ public:
     }
 
     // ── system instructions (ARMv6-M's other 32-bit encodings) ─────────────
+    // The RP2040's decode, measured (Level 5, B5, all 7,984 cases in
+    // 0xF380-0xF3FF): it ignores the should-be bits the ARM ARM fixes
+    // (UNPREDICTABLE when wrong) and runs the instruction:
+    //   MRS  0xF3E0-0xF3FF (hw1 bits 4:0), MSR 0xF380-0xF39F (hw1 bit 4),
+    //   barriers 0xF3B0-0xF3BF with hw2 bits 7:4 = 4/5/6 (hw2 bits 11:8),
+    //   and hw2 bit 13 in all three.  Every other form faults.
     static bool is_barrier(uint16_t hw1, uint16_t hw2) {     // DSB, DMB, ISB
         int op = (hw2 >> 4) & 0xF;
-        return hw1 == 0xF3BF && (hw2 & 0xFF00) == 0x8F00 && op >= 4 && op <= 6;
+        return (hw1 & 0xFFF0) == 0xF3B0 && (hw2 & 0xD000) == 0x8000 && op >= 4 && op <= 6;
     }
-    static bool is_mrs(uint16_t hw1, uint16_t hw2) { return hw1 == 0xF3EF && (hw2 & 0xF000) == 0x8000; }
-    static bool is_msr(uint16_t hw1, uint16_t hw2) { return (hw1 & 0xFFF0) == 0xF380 && (hw2 & 0xFF00) == 0x8800; }
+    static bool is_mrs(uint16_t hw1, uint16_t hw2) { return (hw1 & 0xFFE0) == 0xF3E0 && (hw2 & 0xD000) == 0x8000; }
+    static bool is_msr(uint16_t hw1, uint16_t hw2) { return (hw1 & 0xFFE0) == 0xF380 && (hw2 & 0xD000) == 0x8000; }
+    // The encodings GNU as writes (the should-be bits as the ARM ARM fixes them).
+    static bool is_canonical_sys(uint16_t hw1, uint16_t hw2) {
+        if (is_barrier(hw1, hw2)) return hw1 == 0xF3BF && (hw2 & 0xFF00) == 0x8F00;
+        if (is_mrs(hw1, hw2)) return hw1 == 0xF3EF && !(hw2 & 0x2000);
+        if (is_msr(hw1, hw2)) return !(hw1 & 0x10) && (hw2 & 0xFF00) == 0x8800;
+        return true;
+    }
 
-    static const char* sysreg_name(int sysm) {
+    // SYSm as the RP2040 decodes it (B5): bits 7:5 set -> nothing (reads 0,
+    // writes ignored); else bits 4:3 pick the group and only some low bits
+    // count: 0-3 APSR, 4-7 IPSR/EPSR (0 in Thread mode), 8-15 MSP (bit 0
+    // clear) or PSP (set), 16-19 PRIMASK, 20-23 CONTROL, 24-31 nothing.
+    // (16-19 as PRIMASK is inferred: PRIMASK was 0 in every case.)
+    static int sysm_alias(int sysm) {
+        if (sysm & 0xE0) return -1;
+        switch ((sysm >> 3) & 3) {
+        case 0:  return (sysm & 4) ? 5 : 0;
+        case 1:  return (sysm & 1) ? 9 : 8;
+        case 2:  return (sysm & 4) ? 20 : 16;
+        default: return -1;
+        }
+    }
+
+    // The name for the datapath view: the register SYSm reaches on the RP2040.
+    static std::string sysreg_name(int sysm) {
+        std::string canon = sysreg_name0(sysm);
+        if (canon != "?") return canon;
+        int a = sysm_alias(sysm);
+        return a < 0 ? "SYSm " + std::to_string(sysm) + " (no register)"
+                     : std::string(sysreg_name0(a)) + " (SYSm " + std::to_string(sysm) + ")";
+    }
+    static const char* sysreg_name0(int sysm) {
         switch (sysm) {
         case 0: return "APSR"; case 1: return "IAPSR"; case 2: return "EAPSR"; case 3: return "XPSR";
         case 5: return "IPSR"; case 6: return "EPSR"; case 7: return "IEPSR";
@@ -1284,8 +1370,18 @@ public:
         }
     }
 
+    // MRS Rd: UNPREDICTABLE for SP and PC; the RP2040 (B5) writes SP (bits
+    // 1:0 cleared) and ignores a write to PC (it falls through).
+    void mrs_write(int rd, uint32_t v) {
+        if (rd == 15) return;
+        if (rd == 13) { regs[13] = v & ~3u; return; }
+        regs[rd] = v;
+    }
+
     // MRS: picosim runs in Thread mode (IPSR = 0); the EPSR T bit reads as 0.
     uint32_t sysreg_read(int sysm) const {
+        sysm = sysm_alias(sysm);
+        if (sysm < 0) return 0;
         if (sysm < 8) return (sysm & 4) ? 0u : ((uint32_t)N << 31 | (uint32_t)Z << 30 | (uint32_t)C << 29 | (uint32_t)V << 28);
         if (sysm == 8) return regs[13];
         if (sysm == 9) return PSP;
@@ -1295,6 +1391,8 @@ public:
     }
 
     void sysreg_write(int sysm, uint32_t v) {
+        sysm = sysm_alias(sysm);
+        if (sysm < 0) return;
         if (sysm < 8) {
             if (!(sysm & 4)) { N = v >> 31 & 1; Z = v >> 30 & 1; C = v >> 29 & 1; V = v >> 28 & 1; }
         } else if (sysm == 8) regs[13] = v & ~3u;
@@ -1358,21 +1456,31 @@ public:
         if (top8 == 0b10111010 && ((hw >> 6) & 3) == 2)      { return p; }   // undefined
         if (top5 == 0b10101 || top8 == 0b10110000 ||
             top8 == 0b10110010 || top8 == 0b10111010)        { p.kind = K_ALU; return p; }
-        if ((top8 == 0b10111111 && !(hw & 0xF)) || (hw & 0xFFEF) == 0xB662) { p.kind = K_NOP; return p; }
+        if ((top8 == 0b10111111 && !(hw & 0xF)) || (hw & 0xFFE0) == 0xB660) { p.kind = K_NOP; return p; }
+        // Empty lists (UNPREDICTABLE) move one word as the RP2040 does, with
+        // no writeback (PUSH {} stores LR, POP {} loads PC); see exec16.
         if (top7 == 0b1011010) {
-            p.kind = K_PUSH; p.nregs = popcount(hw & 0x1FF); p.writeback = true; return p;
+            p.kind = K_PUSH; p.nregs = popcount(hw & 0x1FF); p.writeback = true;
+            if (!p.nregs) { p.nregs = 1; p.writeback = false; }
+            return p;
         }
         if (top8 == 0b10111101 || top8 == 0b10111100) {
             p.kind = K_POP; p.nregs = popcount(hw & 0x1FF); p.writeback = true;
-            p.pc_in_list = top8 == 0b10111101; return p;
+            p.pc_in_list = top8 == 0b10111101;
+            if (!p.nregs) { p.nregs = 1; p.writeback = false; p.pc_in_list = true; }
+            return p;
         }
         if (top8 == 0b10111110)                              { p.kind = K_BKPT; return p; }
         if (top5 == 0b11000) {
-            p.kind = K_STM; p.nregs = popcount(hw & 0xFF); p.writeback = true; return p;
+            p.kind = K_STM; p.nregs = popcount(hw & 0xFF); p.writeback = true;
+            if (!p.nregs) p.nregs = 1;                          // STM Rn!,{}: stores LR, Rn += 4
+            return p;
         }
         if (top5 == 0b11001) {
             int rn = (hw >> 8) & 7;
-            p.kind = K_LDM; p.nregs = popcount(hw & 0xFF); p.writeback = !((hw >> rn) & 1); return p;
+            p.kind = K_LDM; p.nregs = popcount(hw & 0xFF); p.writeback = !((hw >> rn) & 1);
+            if (!p.nregs) { p.nregs = 1; p.writeback = false; p.pc_in_list = true; }   // LDM {}: loads PC
+            return p;
         }
         if (top4 == 0b1101) {
             int cond = (hw >> 8) & 0xF;
@@ -1684,12 +1792,16 @@ public:
         if (wide) {
             static const char* bn[] = {"DSB", "DMB", "ISB"};
             ci.desc = std::string("Decode: ") + bn[((IR2 >> 4) & 0xF) - 4] +
-                      " (barrier); picosim has no buffers or caches to wait for, so nothing else happens";
+                      " (barrier); picosim has no buffers or caches to wait for, so nothing else happens" +
+                      (is_canonical_sys((uint16_t)IR, (uint16_t)IR2) ? "" :
+                       " (an UNPREDICTABLE encoding: bits the ARM ARM fixes are wrong; the Pico ignores them)");
             exec32(_insn_addr, word);
-        } else if ((IR & 0xFFEF) == 0xB662) {
+        } else if ((IR & 0xFFE0) == 0xB660) {
             exec16(_insn_addr, (uint16_t)IR);
             ci.desc = std::string("Decode: ") + (PRIMASK ? "CPSID i: PRIMASK <- 1 (interrupts off)" :
-                      "CPSIE i: PRIMASK <- 0 (interrupts on)") + "; picosim simulates no interrupts";
+                      "CPSIE i: PRIMASK <- 0 (interrupts on)") + "; picosim simulates no interrupts" +
+                      ((IR & 0xFFEF) == 0xB662 ? "" :
+                       " (an UNPREDICTABLE encoding: bits 3:0 should be 0010; the Pico ignores them)");
         } else {
             static const char* hn[] = {"NOP", "YIELD", "WFE", "WFI", "SEV"};
             int op = (IR >> 4) & 0xF;
@@ -1702,10 +1814,12 @@ public:
     void build_sys(CycleInfo& ci, bool mrs, uint32_t word) {
         uint16_t hw1 = (word >> 16) & 0xFFFF, hw2 = word & 0xFFFF;
         std::string nm = sysreg_name(hw2 & 0xFF);
+        std::string odd = is_canonical_sys(hw1, hw2) ? "" :
+            " (an UNPREDICTABLE encoding: bits the ARM ARM fixes are wrong; the Pico ignores them and runs it, as picosim does)";
         if (mrs) {
             int rd = (hw2 >> 8) & 0xF;
             ci.signals = {std::string("DR=") + REGN[rd], "SYSREG=" + nm};
-            ci.desc = "Decode: MRS " + std::string(REGN[rd]) + ", " + nm + "; read a system register";
+            ci.desc = "Decode: MRS " + std::string(REGN[rd]) + ", " + nm + "; read a system register" + odd;
             add("EXECUTE_COMMIT", "EXECUTE", [this, rd, nm, word](CycleInfo& c) {
                 exec32(_insn_addr, word);
                 c.signals = {"SYSREG=" + nm, "GateSYS", std::string("DR=") + REGN[rd], "LD.REG"};
@@ -1715,9 +1829,9 @@ public:
         } else {
             int rn = hw1 & 0xF;
             ci.signals = {std::string("SR1=") + REGN[rn], "SYSREG=" + nm};
-            ci.desc = "Decode: MSR " + nm + ", " + std::string(REGN[rn]) + "; write a system register";
+            ci.desc = "Decode: MSR " + nm + ", " + std::string(REGN[rn]) + "; write a system register" + odd;
             add("EXECUTE_COMMIT", "EXECUTE", [this, rn, nm, word](CycleInfo& c) {
-                uint32_t v = regs[rn];
+                uint32_t v = reg_read(rn);
                 exec32(_insn_addr, word);
                 c.signals = {std::string("SR1=") + REGN[rn], "ALUK=PASS", "GateALU", "SYSREG=" + nm, "LD.SYS"};
                 c.has_bus = true; c.bus = v;
@@ -1898,6 +2012,7 @@ public:
 
     void build_bx(CycleInfo& ci, bool link) {
         int rm = (IR >> 3) & 0xF;
+        if (rm == 15 && strict) throw std::runtime_error(bx_pc_msg(link));
         ci.signals = {std::string("SR1=") + REGN[rm]};
         ci.desc = std::string("Decode: ") + (link ? "BLX" : "BX") + " " + REGN[rm] + "; indirect branch";
         add("FETCH_OPERANDS", "FETCH OPERANDS", [this, rm](CycleInfo& c) {
@@ -1914,12 +2029,13 @@ public:
                 c.desc = "LR <- return address " + hex32(regs[15]) + " | 1 = " + hex32(regs[14]);
             });
         }
-        add("EXECUTE_PC", "EXECUTE", [this, link](CycleInfo& c) {
-            bx_write_pc(TMP, link ? "BLX" : "BX");
+        add("EXECUTE_PC", "EXECUTE", [this, link, rm](CycleInfo& c) {
+            bx_write_pc(TMP, std::string(link ? "BLX " : "BX ") + REGN[rm] + " (= " + hexs(TMP) + ")");
             c.signals = {"ALUK=PASS", "GateALU", "CLR THUMB BIT", "PCMUX=BUS", "LD.PC"};
             c.has_bus = true; c.bus = TMP;
             c.branch = 1;
-            c.desc = "PC <- " + hex32(TMP) + " & ~1 = " + hex32(regs[15]);
+            c.desc = "PC <- " + hex32(TMP) + " & ~1 = " + hex32(regs[15]) +
+                     (TMP & 1 ? "" : "; bit 0 was clear, so the Pico takes a HardFault (INVSTATE) at the target");
         });
     }
 
@@ -1957,8 +2073,15 @@ public:
         else if (p.kind == K_POP)  { list = (IR & 0xFF) | ((IR & 0x100) ? 0x8000 : 0); rn = 13; load = true; }
         else { list = IR & 0xFF; rn = (IR >> 8) & 7; load = p.kind == K_LDM; }
         bool down = p.kind == K_PUSH;
-        uint32_t total = 4u * (uint32_t)p.nregs;
+        // An empty list (UNPREDICTABLE): the RP2040 moves one word at Rn, LR
+        // for PUSH and STM, PC for POP and LDM; only STM changes Rn (+4).
+        bool empty = !wide && list == 0;
+        if (empty) list = load ? 0x8000u : 0x4000u;
+        uint32_t total = empty ? 0u : 4u * (uint32_t)p.nregs;
+        uint32_t wb = empty ? 4u : total;
         const char* nm = p.kind == K_PUSH ? "PUSH" : p.kind == K_POP ? "POP" : load ? "LDM" : "STM";
+        std::string pc_how = empty ? std::string(nm) + (p.kind == K_LDM ? std::string(" ") + REGN[rn] + "!" : "") +
+                                     ", {} (an empty register list, UNPREDICTABLE)" : std::string("POP {PC}");
         ci.signals = {std::string("SR1=") + REGN[rn]};
         ci.desc = std::string("Decode: ") + nm + " of " + std::to_string(p.nregs) + " register(s)";
         add("EVALUATE_ADDRESS", "EVALUATE ADDRESS", [this, rn, down, total](CycleInfo& c) {
@@ -1979,8 +2102,8 @@ public:
                     c.desc = "MDR <- M[" + hex32(MAR) + "] = " + hex32(MDR);
                 });
                 if (i == 15) {
-                    add("EXECUTE_PC", "EXECUTE", [this](CycleInfo& c) {
-                        bx_write_pc(MDR, "POP {PC}");
+                    add("EXECUTE_PC", "EXECUTE", [this, pc_how](CycleInfo& c) {
+                        bx_write_pc(MDR, pc_how);
                         MAR += 4;
                         c.signals = {"GateMDR", "CLR THUMB BIT", "PCMUX=BUS", "LD.PC", "MAR+4"};
                         c.has_bus = true; c.bus = MDR; c.branch = 1;
@@ -2011,8 +2134,8 @@ public:
             }
         }
         if (p.writeback) {
-            add("WRITEBACK", "STORE RESULT", [this, rn, down, total](CycleInfo& c) {
-                uint32_t v = down ? regs[rn] - total : regs[rn] + total;
+            add("WRITEBACK", "STORE RESULT", [this, rn, down, wb](CycleInfo& c) {
+                uint32_t v = down ? regs[rn] - wb : regs[rn] + wb;
                 regs[rn] = v;
                 c.signals = {std::string("ADDR1MUX=") + (rn == 13 ? "SP" : "SR1"),
                              down ? "ADDR2MUX=-4n" : "ADDR2MUX=+4n", "GateADDR",
@@ -2020,7 +2143,7 @@ public:
                              rn == 13 ? "LD.SP" : "LD.REG"};
                 c.has_bus = true; c.bus = v;
                 c.desc = std::string(REGN[rn]) + " <- " + REGN[rn] + (down ? " - " : " + ") +
-                         std::to_string(total) + " = " + hex32(v);
+                         std::to_string(wb) + " = " + hex32(v);
             });
         }
     }
@@ -2030,7 +2153,7 @@ public:
     CycleInfo step_cycle() {
         CycleInfo ci;
         if (halted) { ci.state = "HALTED"; ci.phase = "HALTED"; ci.desc = "Processor is halted"; return ci; }
-        if (!in_insn) begin_fetch();
+        if (!in_insn) { invstate_stop(); begin_fetch(); }
 
         uint32_t r0[16]; std::memcpy(r0, regs, sizeof r0);
         int f0[4] = {N, Z, C, V};

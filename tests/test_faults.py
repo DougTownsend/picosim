@@ -76,8 +76,8 @@ class FaultTest(unittest.TestCase):
         ("unaligned word store", [0x6001], {0: SRAM_BASE + 0x4002}, "Unaligned"),
         ("unaligned halfword load", [0x8801], {0: SRAM_BASE + 0x4001}, "Unaligned"),
         ("unaligned word load at the top of SRAM", [0x6801], {0: SRAM_END - 2}, "Unaligned"),
-        ("BX to an even address", [0x4700], {0: CODE + 0x10}, "bit 0 clear"),
-        ("BLX to an even address", [0x4780], {0: CODE + 0x10}, "bit 0 clear"),
+        ("BX PC (faults at the instruction, as on the chip)", [0x4778], {}, "BX PC at 0x10000100"),
+        ("BLX PC (faults at the instruction, as on the chip)", [0x47F8], {}, "BLX PC at 0x10000100"),
         ("UDF", [0xDE00], {}, "Undefined instruction 0xDE00 at 0x10000100"),
         ("store into flash", [0x6001], {0: CODE + 0x100}, "Write to read-only memory"),
         ("store into ROM", [0x7001], {0: 0x2FFC}, "Write to read-only memory"),
@@ -103,11 +103,46 @@ class FaultTest(unittest.TestCase):
                     self.assertEqual(c.pc, CODE, "the PC points at the faulting instruction")
                     self.assertFalse(c.in_insn)
 
+    def stops_at_target(self, c, how, cycle):
+        """A branch to an even address: as on the RP2040 (B4) the branch
+        completes and the HardFault (INVSTATE) comes at the target, so the
+        first step lands there and the next one stops there, naming the branch.
+        Stepping again stops again."""
+        target = CODE + 0x10
+        step = (lambda: [None for _ in iter(lambda: c.step_cycle()['last'], True)]) if cycle else c.step
+        step()
+        self.assertEqual(c.pc, target)
+        for _ in range(2):
+            with self.assertRaisesRegex(RuntimeError, how + ".*bit 0 clear") as cm:
+                step()
+            self.assertEqual(c.pc, target, "picosim stops at the target, where the Pico faults")
+            self.assertFalse(c.in_insn)
+        self.assertIn("at 0x10000100", str(cm.exception), "the message names the branch")
+
+    def test_bx_blx_even(self):
+        for hw, how in ((0x4700, "BX R0"), (0x4780, "BLX R0")):
+            for cycle in (False, True):
+                with self.subTest(how=how, cycle=cycle):
+                    c = core_with([hw], {0: CODE + 0x10})
+                    self.stops_at_target(c, how, cycle)
+                    if hw == 0x4780:
+                        self.assertEqual(c.lr, CODE + 2 | 1, "BLX sets LR, as on the chip")
+
     def test_pop_pc_even(self):
-        c = core_with([0xBD00])            # POP {PC}
-        c.write32(STACK, CODE + 0x10)      # bit 0 clear
-        with self.assertRaisesRegex(RuntimeError, "POP {PC}.*bit 0 clear"):
-            c.step()
+        for cycle in (False, True):
+            with self.subTest(cycle=cycle):
+                c = core_with([0xBD00])            # POP {PC}
+                c.write32(STACK, CODE + 0x10)      # bit 0 clear
+                self.stops_at_target(c, "POP {PC}", cycle)
+                self.assertEqual(c.sp, STACK + 4)
+
+    def test_moving_the_pc_away_drops_the_stop(self):
+        c = core_with([0x4700], {0: CODE + 0x10})
+        c.step()
+        c.write16(CODE + 0x20, 0xBF00)
+        c.pc = CODE + 0x20                 # e.g. the user moved the PC
+        c.step()
+        self.assertEqual(c.pc, CODE + 0x22)
 
     def test_not_strict(self):
         """Scratch cores (cycle tables, timing) may turn the checks off."""

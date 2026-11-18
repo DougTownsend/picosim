@@ -119,7 +119,7 @@ class CheckerTest(unittest.TestCase):
                  R.make_case(4, h(0xE01E)),                                       # b: matches
                  R.make_case(5, h(0xDF05)),                                       # svc: matches
                  R.make_case(6, h(0xF380, 0x8808), regs=[0x20000F00]),            # msr msp: picosim has one SP
-                 R.make_case(7, h(0x4700), regs=[lay['SLED'] + 0x200]),           # bx even
+                 R.make_case(7, h(0x4700), regs=[lay['SLED'] + 0x200]),           # bx even: matches (proposal 2)
                  R.make_case(8, h(0x683E, 0xBF00, 0x4348, 0x683D), kind='timing',
                              regs=[3, 4, 0, 0, 0, 0, 0, 0xE000E018]),
                  R.make_case(9, h(0x683E, 0x683D), kind='timing', regs=[0] * 7 + [0xE000E018])]
@@ -133,10 +133,11 @@ class CheckerTest(unittest.TestCase):
             t.close()
         recs, state = R.load(run.path)
         res = check.check_records(recs, lay, state['scratch_words'], table=[])
-        self.assertEqual(res.counts['match'], 7, check.report(res))
+        self.assertEqual(res.counts['match'], 8, check.report(res))
         kinds = {(k[0], k[1], k[2]) for k in res.groups}
         self.assertIn(('differs', 'decoder', 'MSR spec_reg,Rn'), kinds)        # MSP and PSP banked
-        self.assertIn(('differs', 'faults', 'BX Rm'), kinds)                   # picosim faults at the BX
+        # picosim branches and stops at the target, as the chip faults there (S19 proposal 2)
+        self.assertNotIn(('differs', 'faults', 'BX Rm'), kinds)
         # a known-differences entry silences it
         res2 = check.check_records(recs, lay, state['scratch_words'],
                                    table=[{'class': 'decoder', 'name': '^MSR'}, {'class': 'faults', 'name': '^BX'}])
