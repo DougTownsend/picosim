@@ -38,6 +38,7 @@ from .. import timing
 from ..memmap import in_os
 from . import image as img
 from . import oscalls
+from . import provenance
 from .lockstep import SimSide, TestError, effective, start_chip
 from .rsp import RSPError
 
@@ -93,7 +94,7 @@ class Bench:
         self.timeout = timeout
 
     def run(self):
-        src = effective(self.source)
+        src = self.effective = effective(self.source)
         if uses_bench(src):
             return self._run(src, calibrate(self.target, self.stop_flag))
         return self._run(src, calibrate_calls(self.target, self.stop_flag), stretches=True)
@@ -158,6 +159,7 @@ class Bench:
                 row['os'] = oscalls.bench_stretch(row, n_regions)
             else:
                 row['os'] = oscalls.bench_region(row, n_regions)
+            row['os'] = oscalls.on_target(row['os'], getattr(self.target, 'kind', ''))
             rows.append(row)
             self.emit('region', row)
         same = all(r.get('diff') == 0 for r in rows) and rows
@@ -186,6 +188,8 @@ class Bench:
                                "between OS calls is timed: from the start of main or the return "
                                "from putchar / getchar, up to and including the next call or "
                                "main's return. " + summary.get('note', '')).strip()
+        prov = provenance.stamp(summary, self.target, self.source, getattr(self, 'effective', None), cal)
+        summary['timing'] = provenance.timing_labels(prov, stretches, cal)
         self.emit('summary', summary)
         return summary
 
@@ -447,4 +451,6 @@ def _calibrate(target, source, stretches, predicted, stop_flag):
     return {'overhead': {k: min(v) for k, v in by_align.items()},
             'samples': {k: v for k, v in by_align.items()},
             'predicted': predicted,
-            'steady': all(len(set(v)) == 1 for v in by_align.values())}
+            'steady': all(len(set(v)) == 1 for v in by_align.values()),
+            'measured_at': provenance.now(),
+            'program': os.path.basename(source)}

@@ -32,6 +32,7 @@ from ..loader import load_program, LoadError
 from .. import settings as prog_settings
 from . import image as img
 from . import oscalls
+from . import provenance
 from .rsp import RSPError
 from .target import TargetError
 
@@ -160,7 +161,7 @@ class Lockstep:
     # ── the run ─────────────────────────────────────────────────────────────
 
     def run(self):
-        src = effective(self.source)
+        src = self.effective = effective(self.source)
         sim = self.sim = SimSide(src, self.input_text)
         try:
             hwimg = self.hwimg = img.build(src, sim.prog)
@@ -215,8 +216,8 @@ class Lockstep:
 
     def _row(self, n, pc, kind):
         line, src = self.sim.line(pc)
-        return {'n': n, 'addr': pc, 'text': self.sim.text(pc), 'line': line, 'src': src.strip(),
-                'kind': kind}
+        return {'n': n, 'addr': pc, 'chip_addr': img.to_hw(pc), 'text': self.sim.text(pc), 'line': line,
+                'src': src.strip(), 'kind': kind}
 
     def _step(self, n, pc):
         sim, t = self.sim, self.target
@@ -343,8 +344,9 @@ class Lockstep:
         row['status'] = 'call' if not diffs else 'diff'
         k = self.calls_made[name] = self.calls_made.get(name, 0) + 1
         line, src = sim.line(ret - 4)
-        row['os'] = oscalls.trace_call(name, k, line, ' '.join(src.split()), pc, ret, os_insns,
-                                       r0_in, sim_regs[0])
+        row['os'] = oscalls.on_target(oscalls.trace_call(name, k, line, ' '.join(src.split()), pc, ret,
+                                                         os_insns, r0_in, sim_regs[0]),
+                                      getattr(t, 'kind', ''))
         if diffs and not self.stop_on_diff:
             self._resync(hw_regs, hw_xpsr, [], [])
         return row
@@ -389,20 +391,34 @@ class Lockstep:
         summary['gpio'] = self._gpio_compare()
         summary['final'] = {'sim': {'regs': sim.regs(), 'flags': sim.flags()},
                             'hw': {'regs': [img.to_sim(v) for v in hw_regs], 'flags': _flags(hw_xpsr)}}
-        identical = (self.counts['diff'] == 0 and not diffs and
-                     summary['output']['sim'] == summary['output']['hw'] and
-                     not summary['gpio']['diffs'] and end in ('halted', 'limit', 'fault'))
-        summary['verdict'] = 'identical' if identical else 'different'
+        agree = (self.counts['diff'] == 0 and not diffs and
+                 summary['output']['sim'] == summary['output']['hw'] and
+                 not summary['gpio']['diffs'])
+        summary['verdict'] = verdict(agree, end, n)
+        summary['headline'] = headline(summary['verdict'], end, n, self.counts['diff'] + len(diffs))
         summary['diff_rows'] = [r for r in self.rows if r['status'] in ('diff', 'io')][:200]
         summary['note'] = {
             'halted': "The program ran to its end on both.",
-            'limit': f"Stopped after {n} steps (the step limit); everything up to there was compared.",
-            'stopped': "Stopped by you.",
+            'limit': (f"Stopped after {n} steps (the step limit). Everything up to there was compared, "
+                      "but the rest of the program was not run, so this is not a full result."),
+            'stopped': "Stopped by you before the program ended, so this is not a full result.",
             'fault': ("Both faulted at the same instruction, as they should. The exception "
                       "frame the chip pushed on the stack is left out of the memory comparison."
                       if self.fault_sp is not None else "Stopped at a fault."),
             'diff': "Stopped at the first difference.",
         }[end]
+        summary['stop'] = {'reason': end, 'text': STOP_TEXT[end]}
+        summary['rows_compared'] = n
+        summary['normalization'] = {
+            'os_calls': self.counts['call'],
+            'io_values_taken_from_target': self.counts['io'],
+            'resynced_after_difference': 0 if self.stop_on_diff else self.counts['diff'],
+            'code_address_words': mapped,
+            'code_offset': img.CODE_OFF,
+            'exception_frame_left_out': list(skip) if skip[1] else None,
+            'text': normalization_text(self.counts, mapped, self.stop_on_diff),
+        }
+        provenance.stamp(summary, self.target, self.source, self.effective)
         return summary
 
     def _gpio_compare(self):
@@ -444,3 +460,56 @@ class Lockstep:
 
 def fmt_flags(v):
     return _fmt_flags(v)
+
+
+# ── verdicts ────────────────────────────────────────────────────────────────
+#
+#   identical     complete agreement: the program ran to its end (or both
+#                 faulted at the same instruction) and nothing differed
+#   bounded       agreement through a prefix: nothing differed, but the step
+#                 limit stopped the run before the program ended
+#   inconclusive  nothing differed, but too little was compared to say
+#                 (stopped by the person, or no step was run)
+#   different     a disagreement (a step, the memory, the output or GPIO)
+
+VERDICTS = ('identical', 'bounded', 'inconclusive', 'different')
+STOP_TEXT = {'halted': "the program ended", 'limit': "step limit reached",
+             'stopped': "stopped by you", 'fault': "both faulted",
+             'diff': "stopped at the first difference"}
+
+
+def verdict(agree, end, n):
+    if not agree or end == 'diff':
+        return 'different'
+    if end in ('halted', 'fault'):
+        return 'identical'
+    if end == 'limit' and n > 0:
+        return 'bounded'
+    return 'inconclusive'
+
+
+def headline(v, end, n, ndiff=0):
+    """The one line a trace's result is known by (CLI, report, window)."""
+    steps = f"{n} step{'s' if n != 1 else ''}"
+    if v == 'identical':
+        return (f"Complete agreement · {steps} · both faulted at the same instruction" if end == 'fault'
+                else f"Complete agreement · {steps} · the program ended")
+    if v == 'bounded':
+        return f"Agreement through {steps} · step limit reached"
+    if v == 'inconclusive':
+        return (f"Inconclusive · {STOP_TEXT.get(end, end)} after {steps}" if n else
+                "Inconclusive · no steps were compared")
+    return (f"Different · {ndiff} difference{'s' if ndiff != 1 else ''} in {steps} · "
+            f"{STOP_TEXT.get(end, end)}")
+
+
+def normalization_text(counts, mapped, stop_on_diff):
+    parts = [f"{counts['call']} OS call{'s' if counts['call'] != 1 else ''} counted as one step each "
+             "(the test runner does the I/O on the target)"]
+    if counts['io']:
+        parts.append(f"{counts['io']} peripheral value(s) taken from the target")
+    if counts['diff'] and not stop_on_diff:
+        parts.append(f"picosim took the target's state after {counts['diff']} difference(s)")
+    parts.append(f"the target's code addresses are 0x{img.CODE_OFF:08X} higher and are compared as "
+                 "picosim's" + (f" ({mapped} memory word(s) held a code address)" if mapped else ''))
+    return '; '.join(parts)

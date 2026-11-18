@@ -29,6 +29,7 @@ import queue
 import threading
 import time
 
+from . import provenance
 from . import suite
 from .bench import Bench
 from .lockstep import Lockstep, TestError, fmt_flags
@@ -155,8 +156,12 @@ class Session:
         path, kind = t['path'], t.get('kind', 'trace')
         info = suite.header(path)
         inp = t.get('input', input_text) or info.get('input', '')
+        ev, _ = provenance.target_info(self.target)
+        # what the window labels the run with until its summary (and provenance) comes
+        labels = {'evidence': ev, 'side': provenance.SIDE[ev],
+                  'evidence_label': provenance.EVIDENCE[ev], 'address_map': provenance.address_map()}
         self.q.put({'type': 'hw', 'event': 'start', 'path': path, 'kind': kind,
-                    'title': t.get('title') or info['title']})
+                    'title': t.get('title') or info['title'], **labels})
 
         def emit(what, data):
             if what == 'step':
@@ -191,7 +196,7 @@ class Session:
                     try:
                         self.target.reconnect()
                         self.q.put({'type': 'hw', 'event': 'start', 'path': path, 'kind': kind,
-                                    'title': t.get('title') or info['title'], 'retry': True})
+                                    'title': t.get('title') or info['title'], 'retry': True, **labels})
                         continue
                     except (TargetError, RSPError) as e2:
                         e = e2
@@ -374,17 +379,21 @@ class Session:
 
     # ── the report ──────────────────────────────────────────────────────────
 
-    def export(self, path):
+    def export(self, path, local_paths=False):
         """Write the latest results: a Markdown report and the full data as JSON
-        next to it.  Returns the paths written."""
+        next to it.  Returns the paths written.
+
+        Each result carries the provenance it was stamped with when it ran
+        (provenance.py), so what is connected now does not change it.
+        Source files are named by their path in the picosim checkout or
+        their file name, with their SHA-256; local_paths adds each one's
+        full path on this computer (leave it off to share a report)."""
         if not self.results:
             raise ValueError("no results yet: run a test first")
         base = os.path.splitext(path)[0]
         md, js = base + '.md', base + '.json'
-        data = {'target': self.target.description if self.target else '',
-                'calibration': getattr(self.target, 'calibration', None) if self.target else None,
-                'when': time.strftime('%Y-%m-%d %H:%M:%S'),
-                'results': [self.results[p] for p in self.order]}
+        os.makedirs(os.path.dirname(os.path.abspath(md)), exist_ok=True)
+        data = report_data([self.results[p] for p in self.order], local_paths)
         with open(js, 'w') as f:
             json.dump(data, f, indent=1, default=str)
         with open(md, 'w') as f:
@@ -392,38 +401,137 @@ class Session:
         return [md, js]
 
 
+def shareable(result, local_paths=False):
+    """A copy of a result for a report: its provenance (or 'unknown' if it
+    has none), and its source named without the local path unless asked."""
+    r = dict(result)
+    prov = r.get('provenance') or provenance.unknown()
+    r['provenance'] = prov
+    path = r.get('source', '')
+    name = prov.get('source', {}).get('name')
+    r['source'] = (name if name and name != 'unknown' else provenance.source_name(path)) or 'unknown'
+    if local_paths and path:
+        r['source_path'] = os.path.abspath(path)
+    return r
+
+
+def report_data(results, local_paths=False):
+    rs = [shareable(r, local_paths) for r in results]
+    targets = []
+    for r in rs:
+        t = r['provenance'].get('target', {}).get('description', 'unknown')
+        if t not in targets:
+            targets.append(t)
+    return {'report': 'picosim Testing', 'format': 2,
+            'exported_at': provenance.now(),
+            'picosim': dict(provenance.picosim_build()),
+            'evidence': sorted({r['provenance'].get('evidence', 'unknown') for r in rs}),
+            # the targets the results ran on (each result says which is its own)
+            'targets': targets,
+            'target': targets[0] if len(targets) == 1 else 'several: see each result',
+            'local_paths': bool(local_paths),
+            'results': rs}
+
+
 def _hex(v):
     return f"0x{v & 0xFFFFFFFF:08X}"
 
 
+def _missing(v, what='not recorded'):
+    return what if v in (None, '', [], {}) else v
+
+
+def _build_text(b):
+    b = b or {}
+    commit = b.get('commit')
+    return (f"picosim {_missing(b.get('version'), 'version unknown')}, commit "
+            f"{commit[:12] if commit else 'unknown'}"
+            + {True: " (with uncommitted changes)", False: '', None: " (uncommitted changes: unknown)"}
+            .get(b.get('dirty'), ''))
+
+
+def _provenance_lines(r):
+    p = r['provenance']
+    t = p.get('target', {})
+    src = p.get('source', {})
+    out = [f"- Evidence: **{p.get('evidence_label', 'unknown')}**",
+           f"- Ran on: {t.get('description', 'unknown')}: {t.get('executed_on', 'unknown')}",
+           f"- Run: {p.get('run_id', 'unknown')} at {p.get('run_at', 'unknown')}",
+           f"- Source: `{r['source']}` (SHA-256 {_missing(src.get('sha256'), 'unknown')})"
+           + (" with settings changed in the GUI (assembled file SHA-256 "
+              f"{src.get('assembled_sha256')})" if src.get('settings_changed') else ''),
+           f"- Image: {_missing(p.get('image') or r.get('image'), 'unknown')} (SHA-1 of what was written to the target, first 12 hex digits)",
+           f"- Build: {_build_text(p.get('picosim'))}"]
+    if r.get('source_path'):
+        out.append(f"- Local path: `{r['source_path']}`")
+    cal = p.get('calibration')
+    if r['kind'] == 'bench':
+        if cal:
+            ov = ', '.join(f"{v} (bench_stop at offset {k} in its word)" for k, v in cal.get('overhead', {}).items())
+            out.append(f"- Calibration: {ov} cycles of measuring overhead, Table 81 predicts "
+                       f"{cal.get('predicted')}; {cal.get('status', 'status unknown')}; taken "
+                       f"{cal.get('measured_at', 'at an unknown time')}")
+        else:
+            out.append("- Calibration: unknown")
+        for k, v in (p.get('conditions') or {}).items():
+            out.append(f"- {k.replace('_', ' ').capitalize()}: {v}")
+    if p.get('compared'):
+        out.append(f"- Compared: {p['compared']}")
+    model = p.get('model') or {}
+    if model.get('assumptions'):
+        out.append("- Model assumptions: " + ' '.join(model['assumptions']))
+    return out
+
+
 def report_markdown(data):
-    out = [f"# picosim vs. RP2040: test report", "",
-           f"- Target: {data['target'] or 'not connected'}", f"- Date: {data['when']}"]
-    cal = data.get('calibration')
-    if cal:
-        out.append(f"- Benchmark calibration: {cal['overhead']} cycles of measuring overhead "
-                   f"(Table 81 predicts {cal['predicted']}); steady: {cal['steady']}")
+    results = data['results']
+    sides = []
+    for r in results:
+        sd = provenance.side(r.get('provenance'))
+        if sd not in sides:
+            sides.append(sd)
+    title = ' and '.join(sides) if sides else 'target'
+    out = [f"# picosim vs. {title}: test report", "",
+           f"- Exported: {data.get('exported_at', 'unknown')}",
+           f"- Report made by: {_build_text(data.get('picosim'))}",
+           f"- Targets: {', '.join(data.get('targets') or ['unknown'])} (each result below says which it ran on)"]
+    if 'standin' in data.get('evidence', []):
+        out.append("- The stand-in is an emulator, not the real chip: its results are not measurements of an RP2040.")
     out.append("")
-    out.append("| Test | Kind | Result | Detail |")
-    out.append("| --- | --- | --- | --- |")
-    for r in data['results']:
+    out.append("| Test | Kind | Ran on | Result | Detail |")
+    out.append("| --- | --- | --- | --- | --- |")
+    for r in results:
+        sd = provenance.side(r.get('provenance'))
         if r['kind'] == 'trace':
             c = r['counts']
             detail = (f"{r['steps']} steps: {c['same']} identical, {c['call']} OS calls, "
                       f"{c['io']} I/O differences, {c['diff']} differences; memory "
                       f"{r['memory']['different_words']} different words")
+            result = r.get('headline') or r['verdict']
         else:
             regs = r['regions']
             detail = f"{sum(1 for g in regs if g.get('diff') == 0)} of {len(regs)} regions exact"
-        out.append(f"| {r['title']} | {r['kind']} | {r['verdict']} | {detail} |")
-    for r in data['results']:
-        out += ["", f"## {r['title']}", "", f"`{r['source']}`", "", r.get('note', '')]
+            result = r['verdict']
+        out.append(f"| {r['title']} | {r['kind']} | {sd} | {result} | {detail} |")
+    for r in results:
+        sd = provenance.side(r.get('provenance'))
+        out += ["", f"## {r['title']}", ""]
+        if r['kind'] == 'trace' and r.get('headline'):
+            out += [f"**{r['headline']}**", ""]
+        out += _provenance_lines(r)
+        out += ["", r.get('note', '')]
         if r['kind'] == 'trace':
+            if r.get('stop') or r.get('normalization'):
+                out += ["", f"- Stop reason: {(r.get('stop') or {}).get('text', 'unknown')}",
+                        f"- Rows compared: {r.get('rows_compared', r.get('steps', 'unknown'))}",
+                        f"- Normalized: {(r.get('normalization') or {}).get('text', 'unknown')}"]
+            amap = (r['provenance'].get('address_map') or {})
+            out += ["", "Addresses: " + provenance.address_text(sd if sd != 'target' else 'target')
+                    if amap else "Addresses: unknown"]
             if r['output']['sim'] or r['output']['hw']:
-                out += ["", f"Output: picosim {r['output']['sim']!r}, RP2040 {r['output']['hw']!r}"]
-            diffs = r.get('diff_rows') or []
+                out += ["", f"Output: picosim {r['output']['sim']!r}, {sd} {r['output']['hw']!r}"]
             if r['memory']['different_words']:
-                out += ["", "Memory words that differ (picosim address: picosim / RP2040):", ""]
+                out += ["", f"Memory words that differ (picosim address: picosim / {sd}):", ""]
                 for d in r['memory']['first'][:20]:
                     out.append(f"- 0x{d['addr']:08X}: {_hex(d['sim'])} / {_hex(d['hw'])}")
             if r['gpio'].get('diffs'):
@@ -432,23 +540,45 @@ def report_markdown(data):
                 out += ["", "Registers the program did not write whose values differ (not counted): " +
                         ', '.join(r['gpio']['info'][:12]) + (' …' if len(r['gpio']['info']) > 12 else '')]
         else:
-            out += ["", "| Region | picosim cycles | RP2040 cycles | Difference | Per instruction | Notes |",
-                    "| --- | ---: | ---: | ---: | ---: | --- |"]
+            tl = r.get('timing') or provenance.timing_labels(r['provenance'], r.get('stretches'),
+                                                              r.get('calibration'))
+            out += ["", "Timing sources and scope:", "",
+                    f"- {tl['picosim']}", f"- {tl['target']}", f"- Scope: {tl['scope']}",
+                    f"- Unit: {tl['unit']}"]
+            out += ["", f"| Region | picosim cycles (Table 81 model) | {sd} cycles | Difference | "
+                        f"Per instruction | Code (picosim → {sd}) | Notes |",
+                    "| --- | ---: | ---: | ---: | ---: | --- | --- |"]
             for g in r['regions']:
                 per = f"{g['per']:+.2f}" if 'per' in g else ''
                 diff = f"{g['diff']:+d}" if g.get('diff') is not None else ''
+                site, stop = g.get('site'), g.get('stop_site')
+                addr = ''
+                if isinstance(site, int) and isinstance(stop, int):
+                    addr = (f"0x{site:08X}–0x{stop:08X} → 0x{img_to_hw(site):08X}–0x{img_to_hw(stop):08X}"
+                            f" ({'last instruction' if r.get('stretches') else 'bl bench_stop'} "
+                            f"{'word' if stop % 4 == 0 else 'halfword'}-aligned)")
                 out.append(f"| {g['name']} | {g.get('sim', '')} | {g.get('hw', '')} | {diff} | {per} | "
-                           f"{' '.join(g.get('notes', []))} |")
-    for r in data['results']:
+                           f"{addr} | {' '.join(g.get('notes', []))} |")
+    for r in results:
         rows = r.get('diff_rows') or []
+        sd = provenance.side(r.get('provenance'))
         if rows:
             out += ["", f"### Differences in {r['title']}", ""]
             for row in rows[:30]:
-                out.append(f"- step {row['n']}, 0x{row['addr']:08X} `{row['text']}` "
-                           f"(line {row['line']}): {', '.join(row['diffs'])}")
+                out.append(f"- step {row['n']}, 0x{row['addr']:08X} (0x{img_to_hw(row['addr']):08X} on the "
+                           f"{sd}) `{row['text']}` (line {row['line']}): {', '.join(row['diffs'])}")
                 for k in ('sim', 'hw'):
+                    if not row.get(k):
+                        continue
                     regs = row[k]['regs']
-                    out.append(f"  - {'picosim' if k == 'sim' else 'RP2040 '}: " +
+                    raw = (f" (raw PC after the step on the {sd}: 0x{row[k]['raw_pc']:08X})"
+                           if k == 'hw' and row[k].get('raw_pc') is not None else '')
+                    out.append(f"  - {'picosim' if k == 'sim' else sd}: " +
                                ' '.join(f"R{i}={_hex(regs[i])}" for i in range(16)) +
-                               f" {fmt_flags(row[k]['flags'])}")
+                               f" {fmt_flags(row[k]['flags'])}{raw}")
     return '\n'.join(out) + '\n'
+
+
+def img_to_hw(addr):
+    from .image import to_hw
+    return to_hw(addr)

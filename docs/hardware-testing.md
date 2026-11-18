@@ -22,10 +22,58 @@ python3 -m picosim.hwtest --report results.md      # …and save a report (+ res
 python3 -m picosim.hwtest --target standin         # no hardware: the stand-in emulator
 python3 -m picosim.hwtest hwtests/t02_shifts.s     # one test
 python3 -m picosim.hwtest --bench my_program.s     # time the regions of your own program
+python3 -m picosim.hwtest --max-steps 200 --accept-bounded my_loop.s   # a capped trace on purpose
 ```
 
-The exit status is 0 when every test is identical, so the suite can run in
-scripts.
+### What a result says
+
+A step-by-step result is one of four:
+
+| CLI | Window | Meaning |
+| --- | --- | --- |
+| `IDENTICAL` | ✓ same | **Complete agreement.** The program ran to its end (or both machines faulted at the same instruction) and nothing differed. |
+| `BOUNDED` | ✓ so far | **Agreement through a prefix.** Nothing differed, but the step limit (`--max-steps`, the window's *Steps* box) stopped the run before the program ended, so the rest was never compared. The headline says how far: `Agreement through 2 steps · step limit reached`. A program that never ends (Blink) always ends up here. |
+| `INCONCLUSIVE` | ? not finished | Nothing differed, but too little was compared to say: you stopped the run, or no step ran. |
+| `DIFFERENT` | ✗ differs | A disagreement in a step, the final memory, the output or the GPIO registers. A difference found before the step limit still fails. |
+
+Every result also shows its **stop reason**, the **number of rows compared**
+and how the two machines were **normalized** before comparing: calls to
+`putchar`/`getchar` count as one step each (the test runner does the I/O on
+the chip), peripheral values the chip read differently are taken from the
+chip, and code addresses are compared as picosim's (see
+[The same addresses, moved](#the-same-addresses-moved)). Benchmarks keep
+their verdicts (`identical`, `different`, `no regions`).
+
+Exit status of `python3 -m picosim.hwtest`:
+
+| Status | When |
+| --- | --- |
+| 0 | Every test is identical. With `--accept-bounded`, a `BOUNDED` trace counts too: use it when you cap the steps on purpose. |
+| 1 | A test differs or could not run, or you pressed Ctrl+C. |
+| 2 | picosim could not connect. |
+| 3 | Nothing differed, but at least one result is `BOUNDED` or `INCONCLUSIVE`, so a capped run never passes as a full one by accident. |
+
+### Where a result came from
+
+Each result is stamped when it runs with where it came from, and the
+command line, the window and the report all label it from that stamp, never
+from whatever is connected later. A result run on the stand-in still says
+"stand-in" after you disconnect or connect a real board.
+
+| Field (`provenance` in the JSON) | What it holds |
+| --- | --- |
+| `evidence` | `standin` (the emulator, never a measurement), `physical` (a real RP2040; through a GDB server you started, picosim takes this on trust), or `unknown` for a result saved without a stamp. Level 5's offline replays are `replay`. |
+| `target` | The connection's description, how it ran (`executed_on`), the SWD speed. The chip's ID is not read: `not recorded`. |
+| `run_id`, `run_at` | A name for the run and its time with the UTC offset. |
+| `source` | The file's name (its path inside the picosim folder, or just its file name) and its SHA-256; with GUI settings changed, the SHA-256 of the file actually assembled too. |
+| `image` | A digest of exactly what was written to the target's SRAM. |
+| `picosim` | Version, git commit, and whether the checkout had uncommitted changes. |
+| `calibration` | For benchmarks: the overhead, Table 81's prediction, when it was taken and its status. On the stand-in it equals the prediction by construction. |
+| `compared`, `model`, `conditions`, `address_map` | What was compared, the model's assumptions, the conditions (code in SRAM, clock, samples) and the code address mapping. |
+
+Reports are made to be shared: a source file appears by name and SHA-256,
+never by its full path on your computer. `--local-paths` adds the full
+path when you want it.
 
 ---
 
@@ -57,7 +105,11 @@ links the same source for it there:
 | RP2040 | `0x20020000` (`picosim/hwtest/os_hw.s`) | `0x20020100` | `0x20000000` | `0x20042000` |
 
 A code address on the chip is picosim's address + `0x10020000`; data and
-stack addresses are the same on both. A register or memory word holding a
+stack addresses are the same on both. (Only code moves: the chip's address
+is not picosim's + `0x20000000`.) Every trace says so in the command line
+output, the report (`address_map` in the JSON) and under each step in the
+window, which shows the chip's raw PC after the step next to picosim's:
+`0x20020108` on the chip is picosim's `0x10000108`. A register or memory word holding a
 code address differs by exactly that, and the comparison allows for it.
 Everything else must be equal bit for bit. Before every run,
 `picosim/hwtest/image.py` checks that the two builds really are laid out
@@ -185,6 +237,26 @@ same bytes as before.
 SysTick counts processor clock cycles at whatever clock the chip runs.
 After `reset halt` that is the ring oscillator (about 6 MHz). Cycle counts
 do not depend on the clock speed.
+
+Wherever Testing shows a cycle count it says where the number comes from
+and what it covers (the command line under each benchmark, the report's
+*Timing sources and scope*, the window's header and region details):
+
+- **picosim**: Table 81 cycles added up per instruction, code in SRAM,
+  APB wait cycles as measured on a real RP2040.
+- **RP2040**: SysTick counted on the chip at full speed, minus the
+  calibration.
+- **stand-in**: the emulator's SysTick, which counts picosim's own Table 81
+  model. It agrees with picosim by construction, so it is **not a
+  measurement**: use it to learn the workflow, not to check timing.
+- **Scope**: a region runs from the return from `bench_start` up to, not
+  including, the `bl bench_stop`; a stretch from the start of main or the
+  return from a call up to and including the next call or main's return.
+- **Multi-cycle teaching machine** (region details only): the course's
+  datapath, not the RP2040's timing.
+
+The lab [Timing and accuracy](lab-timing-accuracy.md) walks through all of
+these with a loop and the branch benchmark.
 
 ---
 
@@ -407,5 +479,5 @@ tests after it show "not run".
 | No debug probe was found | The probe Pico is not plugged in, or is not running `debugprobe_on_pico.uf2`. |
 | The probe is there but cannot reach the target | Check the three SWD wires and that the target is powered. |
 | SRAM did not keep the program | Lower **SWD kHz** (try 1000) and use shorter wires. |
-| A test stops with "still running when the time limit ran out" | The program never returns (an LED blinker). Traces stop at the step limit, benchmarks after 20 s; finished regions are still reported. |
+| A test stops with "still running when the time limit ran out" | The program never returns (an LED blinker). Traces stop at the step limit and read `BOUNDED` (agreement as far as they ran), benchmarks stop after 20 s; finished regions are still reported. |
 | The target resets in the middle of a run | A program in its flash may have started the watchdog. Hold BOOTSEL while powering the target, then connect. |

@@ -348,7 +348,7 @@ class Target:
     @property
     def description(self):
         if self.kind == 'standin':
-            return "Stand-in RP2040 (emulator, no hardware)"
+            return "Stand-in (an emulator in place of an RP2040, no hardware)"
         if self.kind == 'openocd':
             return f"RP2040 through OpenOCD ({os.path.basename(self.ocd.exe)}, SWD)"
         return "RP2040 through a GDB server"

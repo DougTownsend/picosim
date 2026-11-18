@@ -492,8 +492,9 @@ func _mark(key: String) -> void:
 		col = "error"
 	elif r.has("summary"):
 		var v: String = r["summary"].get("verdict", "")
-		text = {"identical": "✓ same", "different": "✗ differs"}.get(v, v)
-		col = {"identical": "green", "different": "error"}.get(v, "dim")
+		text = {"identical": "✓ same", "different": "✗ differs", "bounded": "✓ so far",
+			"inconclusive": "? not finished"}.get(v, v)
+		col = {"identical": "green", "different": "error", "bounded": "yellow", "inconclusive": "yellow"}.get(v, "dim")
 	elif r.get("state", "") == "not run":
 		text = "not run"
 	elif key in _queue:
@@ -614,6 +615,10 @@ func _on_hw(msg: Dictionary) -> void:
 				var r: Dictionary = results[running]
 				r["state"] = "running"
 				r["path_run"] = msg.get("path", "")
+				# what the run is compared with (the stand-in or a real RP2040), kept with it
+				for k in ["evidence", "side", "evidence_label", "address_map"]:
+					if msg.has(k):
+						r[k] = msg[k]
 				_mark(running)
 				if shown == "" or shown == running or not results.get(shown, {}).has("summary"):
 					_select(running)
@@ -751,12 +756,12 @@ func _show(key: String) -> void:
 	table.clear()
 	_row_items = []
 	if r["kind"] == "bench":
-		_setup_columns(["#", "Region", "picosim", "RP2040", "Difference", "Per instr.", "Instructions"], [1, 6, 2, 2, 2, 2, 2])
+		_setup_columns(["#", "Region", "picosim", _side(r), "Difference", "Per instr.", "Instructions"], [1, 6, 2, 2, 2, 2, 2])
 		var root := table.create_item()
 		for g in _regions(r):
 			_add_region(root, g)
 	else:
-		_setup_columns(["Step", "Address", "Instruction", "picosim", "RP2040", ""], [1, 1, 4, 5, 5, 1])
+		_setup_columns(["Step", "Address", "Instruction", "picosim", _side(r), ""], [1, 1, 4, 5, 5, 1])
 		table.create_item()
 		_append_rows()
 	_show_head()
@@ -876,18 +881,31 @@ func _show_head() -> void:
 		var n: int = (r["rows"] as Array).size() if r["kind"] != "bench" else (r["regions"] as Array).size()
 		head.text = t + "[color=%s]%s… %d %s so far[/color]" % [Palette.hex("accent"),
 			"running" if r.get("state", "") == "running" else "waiting", n, "steps" if r["kind"] != "bench" else "regions"]
+		if r["kind"] == "bench":
+			head.text += "\n[color=%s]Cycles: the picosim column is picosim's Table 81 model; the %s column is %s.[/color]" % [
+				Palette.hex("dim"), _side(r), "SysTick counted on the chip, minus the calibration" if _evidence(r) == "physical"
+				else "the stand-in's SysTick, which counts picosim's own model (not a measurement)"]
 		return
 	var s: Dictionary = r["summary"]
 	var v: String = s.get("verdict", "")
-	t += "[color=%s][b]%s[/b][/color]   " % [Palette.hex({"identical": "green", "different": "error"}.get(v, "dim")),
-		{"identical": "✓ identical", "different": "✗ different"}.get(v, v)]
+	var vcol: String = {"identical": "green", "different": "error", "bounded": "yellow", "inconclusive": "yellow"}.get(v, "dim")
+	var vtext: String = str(s.get("headline", "")) if str(s.get("headline", "")) != "" else \
+		{"identical": "✓ identical", "different": "✗ different"}.get(v, v)
+	t += "[color=%s][b]%s[/b][/color]   " % [Palette.hex(vcol), _esc(vtext)]
 	t += "[color=%s]%s[/color]\n" % [Palette.hex("muted"), _esc(str(s.get("note", "")))]
+	t += "[color=%s]Ran on: %s[/color]\n" % [Palette.hex("yellow" if _evidence(r) != "physical" else "dim"),
+		_esc(_evidence_label(r))]
 	if r["kind"] == "bench":
+		var tl: Dictionary = s.get("timing", {})
+		if not tl.is_empty():
+			# always shown: where each cycle count comes from and what it covers
+			t += "[color=%s]Cycles from — %s · %s\nScope: %s. Unit: %s.[/color]" % [Palette.hex("dim"),
+				_esc(str(tl.get("picosim", ""))), _esc(str(tl.get("target", ""))),
+				_esc(str(tl.get("scope", ""))), _esc(str(tl.get("unit", "")))]
 		var cal = s.get("calibration")
-		if cal is Dictionary:
-			var ov: Dictionary = cal.get("overhead", {})
-			t += "[color=%s]Each region's RP2040 count has the measuring overhead taken off: %s cycles (Table 81 predicts %d). Positive differences mean the chip is slower than picosim's model.[/color]" % [
-				Palette.hex("dim"), ", ".join(ov.values().map(func(x): return str(int(x)))), int(cal.get("predicted", 0))]
+		if cal is Dictionary and _evidence(r) == "physical":
+			t += "\n[color=%s]Positive differences mean the chip is slower than picosim's model (Table 81 predicts %d cycles of measuring overhead).[/color]" % [
+				Palette.hex("dim"), int(cal.get("predicted", 0))]
 	else:
 		var c: Dictionary = s.get("counts", {})
 		var m: Dictionary = s.get("memory", {})
@@ -902,6 +920,10 @@ func _show_head() -> void:
 		var g: Dictionary = s.get("gpio", {})
 		if not g.get("diffs", []).is_empty():
 			t += "   [color=%s]GPIO registers differ: %s[/color]" % [Palette.hex("error"), ", ".join(g["diffs"])]
+		var nm: Dictionary = s.get("normalization", {})
+		if s.has("stop"):
+			t += "\n[color=%s]Stop: %s · %d rows compared · %s[/color]" % [Palette.hex("dim"),
+				_esc(str(s["stop"].get("text", ""))), int(s.get("rows_compared", s.get("steps", 0))), _esc(str(nm.get("text", "")))]
 	head.text = t
 
 
@@ -932,8 +954,9 @@ func _show_step(row: Dictionary) -> void:
 		t += "[color=%s]%s[/color]\n" % [Palette.hex("yellow" if row["status"] == "io" else "muted"), _esc(str(row["note"]))]
 	if row.has("fault"):
 		var f: Dictionary = row["fault"]
-		t += "[color=%s]picosim: %s\nRP2040: %s[/color]\n" % [Palette.hex("error"),
-			_esc(str(f.get("sim"))) if f.get("sim") != null else "no fault", _esc(str(f.get("hw"))) if f.get("hw") != null else "no fault"]
+		t += "[color=%s]picosim: %s\n%s: %s[/color]\n" % [Palette.hex("error"),
+			_esc(str(f.get("sim"))) if f.get("sim") != null else "no fault", _side(results.get(shown, {})),
+			_esc(str(f.get("hw"))) if f.get("hw") != null else "no fault"]
 	if row.has("os"):
 		t += _os_call(row["os"]) + "\n"
 	var sim: Dictionary = row.get("sim", {})
@@ -942,7 +965,8 @@ func _show_step(row: Dictionary) -> void:
 		detail.text = t
 		return
 	var cells := "[table=6]"
-	for h in ["Register", "picosim", "RP2040", "Register", "picosim", "RP2040"]:
+	var other := _side(results.get(shown, {}))
+	for h in ["Register", "picosim", other, "Register", "picosim", other]:
 		cells += "[cell bg=%s padding=8,3,14,3][b]%s[/b][/cell]" % [Palette.hex("box_active"), h]
 	var names := []
 	for i in 16:
@@ -967,7 +991,7 @@ func _show_step(row: Dictionary) -> void:
 	t += cells
 	var writes: Array = sim.get("writes", [])
 	if not writes.is_empty():
-		t += "\n[b]Memory written[/b]   (address: picosim / RP2040 read back)\n"
+		t += "\n[b]Memory written[/b]   (address: picosim / %s read back)\n" % other
 		var hws: Array = hw.get("writes", [])
 		for i in writes.size():
 			var w: Array = writes[i]
@@ -981,8 +1005,7 @@ func _show_step(row: Dictionary) -> void:
 		for w in sim["io"]:
 			parts.append("[code]%08X ← %s[/code]" % [int(w[0]), _hex(int(w[2]))])
 		t += ", ".join(parts) + "\n"
-	t += "\n[color=%s]On the chip every address is picosim's + 0x20000000 (the program runs from SRAM); the RP2040 column shows those as picosim's addresses, so the two columns can be compared directly. The chip's real PC here: 0x%08X.[/color]" % [
-		Palette.hex("dim"), int(hw.get("raw_pc", 0))]
+	t += "\n[color=%s]%s[/color]" % [Palette.hex("dim"), _esc(_address_note(results.get(shown, {}), row))]
 	detail.text = t
 
 
@@ -993,10 +1016,22 @@ func _show_region(g: Dictionary) -> void:
 	elif int(g.get("line", 0)) > 0:
 		t += "   [color=%s]bench_start on line %d[/color]" % [Palette.hex("dim"), int(g["line"])]
 	t += "\n"
-	t += "picosim's RP2040 model (datasheet Table 81): [b]%s[/b] cycles   ·   measured on the chip: [b]%s[/b] cycles (SysTick %s, minus the calibration)   ·   picosim's multi-cycle teaching machine: %s cycles\n" % [
-		_num(g.get("sim")), _num(g.get("hw")), _num(g.get("raw")), _num(g.get("multicycle"))]
+	var r: Dictionary = results.get(shown, {})
+	var physical := _evidence(r) == "physical"
+	var where := ""
+	if physical:
+		where = "measured on the chip: [b]%s[/b] cycles (SysTick %s, minus the calibration)" % [_num(g.get("hw")), _num(g.get("raw"))]
+	else:
+		where = "counted by the %s: [b]%s[/b] cycles (its SysTick %s, minus the calibration; it counts picosim's own Table 81 model, so this is not a measurement)" % [
+			_side(r), _num(g.get("hw")), _num(g.get("raw"))]
+	t += "picosim's RP2040 model (datasheet Table 81): [b]%s[/b] cycles   ·   %s   ·   picosim's multi-cycle teaching machine (not the RP2040's timing): %s cycles\n" % [
+		_num(g.get("sim")), where, _num(g.get("multicycle"))]
+	var tl: Dictionary = r.get("summary", {}).get("timing", {})
+	if not tl.is_empty():
+		t += "[color=%s]Scope: %s. Unit: %s.[/color]\n" % [Palette.hex("dim"), _esc(str(tl.get("scope", ""))), _esc(str(tl.get("unit", "")))]
 	if g.has("per"):
-		t += "%d repetitions: the chip takes [b]%+.2f[/b] cycles per repetition more than the model.\n" % [int(g["reps"]), float(g["per"])]
+		t += "%d repetitions: the %s takes [b]%+.2f[/b] cycles per repetition more than the model.\n" % [
+			int(g["reps"]), "chip" if physical else _side(r), float(g["per"])]
 	var mix: Array = g.get("mix", [])
 	if not mix.is_empty():
 		t += "\n[b]Instructions in the region[/b] (Table 81 rows)\n"
@@ -1536,6 +1571,52 @@ func _on_discover(msg: Dictionary) -> void:
 
 
 # ── formatting ──────────────────────────────────────────────────────────────
+
+## What a result was compared with, from what the run said when it started
+## (or its summary's provenance): "stand-in", "RP2040" …
+func _side(r: Dictionary) -> String:
+	var p: Dictionary = r.get("summary", {}).get("provenance", {})
+	if p.has("side"):
+		return str(p["side"])
+	if r.has("side"):
+		return str(r["side"])
+	return "stand-in" if status.get("kind", "") == "standin" else "RP2040"
+
+
+func _evidence(r: Dictionary) -> String:
+	var p: Dictionary = r.get("summary", {}).get("provenance", {})
+	return str(p.get("evidence", r.get("evidence", "unknown")))
+
+
+func _evidence_label(r: Dictionary) -> String:
+	var p: Dictionary = r.get("summary", {}).get("provenance", {})
+	var label := str(p.get("evidence_label", r.get("evidence_label", "unknown")))
+	var desc := str(p.get("target", {}).get("description", ""))
+	return label + (" (%s)" % desc if desc != "" else "")
+
+
+## The address footer of a step: code runs at a different address on the
+## target, data and the stack do not; the PC after the step, both ways.
+func _address_note(r: Dictionary, row: Dictionary) -> String:
+	var other := _side(r)
+	var am: Dictionary = r.get("summary", {}).get("provenance", {}).get("address_map", r.get("address_map", {}))
+	var code: Dictionary = am.get("code", {})
+	var off := int(code.get("offset", 0x10020000))
+	var pic: Array = code.get("picosim", [0x10000000, 0x1000C000])
+	var chip: Array = code.get("chip", [0x20020000, 0x2002C000])
+	var same: Dictionary = am.get("same_on_both", {})
+	var t := ("On the %s the program's code runs from SRAM: picosim's 0x%08X–0x%08X is at 0x%08X–0x%08X (picosim's address + 0x%08X). " +
+		"Data (from 0x%08X) and the stack (top 0x%08X) are at the same addresses on both. " +
+		"The %s column shows code addresses as picosim's, so the two columns compare directly.") % [
+		other, int(pic[0]), int(pic[1]) - 1, int(chip[0]), int(chip[1]) - 1, off,
+		int(same.get("data", 0x20000000)), int(same.get("stack_top", 0x20042000)), other]
+	var hw: Dictionary = row.get("hw", {})
+	if hw.has("raw_pc"):
+		var raw := int(hw["raw_pc"])
+		var norm := int((hw.get("regs", []) as Array)[15]) if (hw.get("regs", []) as Array).size() == 16 else raw
+		t += " PC after this step: 0x%08X on the %s (raw), which is picosim's 0x%08X." % [raw, other, norm]
+	return t
+
 
 static func _reg_name(i: int) -> String:
 	return "R%d" % i if i < 13 else ["SP", "LR", "PC"][i - 13]

@@ -25,6 +25,8 @@ except ImportError:
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EX = os.path.join(ROOT, 'examples')
+ENDLESS_ECHO = (".syntax unified\n.cpu cortex-m0plus\n.thumb\n"
+                "main:\n  push {r7, lr}\nloop:\n  bl getchar\n  bl putchar\n  b loop\n")
 
 
 class ImageTest(unittest.TestCase):
@@ -122,7 +124,9 @@ class StandInTest(unittest.TestCase):
     def test_examples_are_identical(self):
         for p in sorted(glob.glob(os.path.join(EX, '*.s'))):
             s = Lockstep(self.t, p, 'hi\n', max_steps=800).run()
-            self.assertEqual(s['verdict'], 'identical', p)
+            # a program that never ends (Blink) agrees as far as the cap: bounded, not identical
+            want = 'bounded' if s['end'] == 'limit' else 'identical'
+            self.assertEqual(s['verdict'], want, p)
             self.assertEqual(s['output']['sim'], s['output']['hw'])
 
     def test_calibration(self):
@@ -150,7 +154,12 @@ class StandInTest(unittest.TestCase):
         self.assertIn(f"{start} − {stop} = {r['raw']}", r['os']['how'])
 
     def test_a_program_that_never_ends_stops_after_the_limit(self):
-        s = Bench(self.t, os.path.join(EX, '06_echo.s'), 'hi\n').run()
+        # an echo loop that ignores the end of input (06_echo.s now stops there)
+        with tempfile.TemporaryDirectory() as d:
+            src = os.path.join(d, 'endless_echo.s')
+            with open(src, 'w') as f:
+                f.write(ENDLESS_ECHO)
+            s = Bench(self.t, src, 'hi\n').run()
         self.assertEqual(s['verdict'], 'identical')
         self.assertEqual((s['end'], s['sim_end']), ('limit', 'limit'))
         self.assertEqual(len(s['regions']), STRETCH_MAX)
@@ -200,6 +209,23 @@ class StandInTest(unittest.TestCase):
         self.assertEqual(bad[0]['addr'], target + 6)
         self.assertEqual(s['end'], 'halted')       # picosim took the chip's value and went on
         self.assertEqual(s['output']['sim'], s['output']['hw'])
+
+    def test_an_early_difference_fails_a_capped_run(self):
+        src = os.path.join(EX, '03_count_loop.s')
+
+        def corrupt(chip, pc):
+            chip.write_reg(7, chip.read_reg(7) + 1)
+        self._sabotage(corrupt)
+        s = Lockstep(self.t, src, max_steps=2).run()
+        self.assertEqual(s['end'], 'limit')
+        self.assertEqual(s['verdict'], 'different')
+        self.assertTrue(s['headline'].startswith('Different'))
+
+    def test_a_full_run_is_complete_agreement(self):
+        s = Lockstep(self.t, os.path.join(EX, '03_count_loop.s')).run()
+        self.assertEqual((s['verdict'], s['steps'], s['counts']['call']), ('identical', 43, 6))
+        self.assertEqual(s['normalization']['os_calls'], 6)
+        self.assertEqual(s['provenance']['evidence'], 'standin')
 
     def test_stop_at_first_difference(self):
         src = os.path.join(EX, '03_count_loop.s')
@@ -350,6 +376,166 @@ class StandInTest(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE_STANDIN, "the stand-in needs Unicorn (pip install unicorn)")
+class VerdictTest(unittest.TestCase):
+    """RES-05: a trace is complete, bounded, inconclusive or different."""
+
+    def test_states(self):
+        from picosim.hwtest.lockstep import verdict, headline
+        self.assertEqual(verdict(True, 'halted', 43), 'identical')
+        self.assertEqual(verdict(True, 'fault', 5), 'identical')
+        self.assertEqual(verdict(True, 'limit', 2), 'bounded')
+        self.assertEqual(verdict(True, 'limit', 0), 'inconclusive')
+        self.assertEqual(verdict(True, 'stopped', 7), 'inconclusive')
+        self.assertEqual(verdict(False, 'limit', 2), 'different')
+        self.assertEqual(verdict(False, 'halted', 43), 'different')
+        self.assertEqual(verdict(True, 'diff', 3), 'different')
+        self.assertEqual(headline('bounded', 'limit', 2), "Agreement through 2 steps · step limit reached")
+        self.assertIn("Complete agreement", headline('identical', 'halted', 43))
+
+    def test_old_results_are_unknown(self):
+        # a result saved before results carried provenance is reported as unknown
+        from picosim.hwtest.session import report_data, report_markdown
+        old = {'title': 'Old', 'kind': 'bench', 'source': '/home/someone/old.s', 'verdict': 'identical',
+               'regions': [{'name': 'r', 'sim': 4, 'hw': 4, 'diff': 0}], 'calibration': None}
+        data = report_data([old])
+        r = data['results'][0]
+        self.assertEqual(r['provenance']['evidence'], 'unknown')
+        self.assertEqual(r['source'], 'old.s')
+        md = report_markdown(data)
+        self.assertIn('Unknown', md)
+        self.assertNotIn('/home/someone', md + json.dumps(data))
+        self.assertNotIn('RP2040 cycles', md)
+
+    def test_source_names(self):
+        from picosim.hwtest.provenance import source_name
+        self.assertEqual(source_name(os.path.join(ROOT, 'hwtests', 'b03_branch_timing.s')),
+                         'hwtests/b03_branch_timing.s')
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(source_name(os.path.join(d, 'a', 'b', 'mine.s')), 'mine.s')
+
+
+class _FakeTarget:
+    """A different, physical target connected later (nothing is run on it)."""
+    kind = 'openocd'
+    description = "RP2040 through OpenOCD (openocd, SWD)"
+    calibration = {'overhead': {0: 99}, 'predicted': 21, 'steady': True}
+    log_path = ''
+    args = ('127.0.0.1', 3333, None, 5000)
+
+    def close(self):
+        pass
+
+
+@unittest.skipUnless(HAVE_STANDIN, "the stand-in needs Unicorn (pip install unicorn)")
+class ProvenanceTest(unittest.TestCase):
+    """RES-01, RES-03, RES-05 and SEC-03 through the Session and the CLI."""
+
+    def _session_run(self, tests, max_steps=20000):
+        from picosim.hwtest.session import Session
+        s = Session()
+        s.connect('standin')
+        s.thread.join()
+        self.assertTrue(s.target, s.error)
+        s.run(tests, max_steps=max_steps)
+        s.thread.join(120)
+        s.drain()
+        return s
+
+    def test_a_result_keeps_its_own_target_and_calibration(self):
+        with tempfile.TemporaryDirectory() as d:
+            nested = os.path.join(d, 'scratch', 'nested')
+            os.makedirs(nested)
+            src = os.path.join(nested, 'b03_branch_timing.s')
+            with open(os.path.join(ROOT, 'hwtests', 'b03_branch_timing.s')) as f, open(src, 'w') as g:
+                g.write(f.read())
+            s = self._session_run([{'path': src, 'kind': 'bench'}])
+            exports = [s.export(os.path.join(d, 'now.md'))]
+            s.disconnect()
+            exports.append(s.export(os.path.join(d, 'after_disconnect.md')))
+            s.target = _FakeTarget()            # "connected" to another board
+            exports.append(s.export(os.path.join(d, 'after_reconnect.md')))
+            s.target = None
+            provs, mds = [], []
+            for md, js in exports:
+                with open(js) as f:
+                    data = json.load(f)
+                with open(md) as f:
+                    text = f.read()
+                mds.append(text)
+                r = data['results'][0]
+                p = r['provenance']
+                provs.append(p)
+                self.assertEqual(p['evidence'], 'standin')
+                self.assertIn('Stand-in', p['target']['description'])
+                self.assertEqual(p['calibration']['overhead'], {'0': 21, '2': 21})
+                self.assertIn('not a measurement', p['calibration']['status'])
+                self.assertEqual(data['targets'], [p['target']['description']])
+                # SEC-03: a readable name and the digests, never the local path
+                self.assertEqual(r['source'], 'b03_branch_timing.s')
+                self.assertEqual(p['source']['name'], 'b03_branch_timing.s')
+                self.assertEqual(len(p['source']['sha256']), 64)
+                self.assertTrue(r['image'])
+                self.assertNotIn(d, text + json.dumps(data))
+                self.assertNotIn(os.path.expanduser('~'), text + json.dumps(data))
+                # the stand-in is never called the chip
+                self.assertNotIn('RP2040 cycles', text)
+                self.assertNotIn('measured on the chip', text)
+                self.assertIn('| stand-in |', text)
+                self.assertIn('stand-in cycles', text)
+                self.assertIn("not a measurement", text)
+                self.assertIn(p['run_id'], text)
+                self.assertIn(p['source']['sha256'], text)
+            self.assertEqual(provs[0], provs[1])
+            self.assertEqual(provs[0], provs[2])
+            # the local path only when asked for, and the file still runs from where it is
+            s.target = None
+            md, js = s.export(os.path.join(d, 'local.md'), local_paths=True)
+            with open(js) as f:
+                self.assertEqual(json.load(f)['results'][0]['source_path'], os.path.abspath(src))
+            self.assertTrue(os.path.exists(s.order[0]))
+
+    def test_bounded_and_complete_traces(self):
+        src = os.path.join(EX, '03_count_loop.s')
+        s = self._session_run([{'path': src, 'kind': 'trace'}], max_steps=2)
+        r = s.results[src]
+        self.assertEqual(r['verdict'], 'bounded')
+        self.assertEqual(r['headline'], "Agreement through 2 steps · step limit reached")
+        self.assertEqual((r['stop']['reason'], r['rows_compared']), ('limit', 2))
+        with tempfile.TemporaryDirectory() as d:
+            md, js = s.export(os.path.join(d, 'capped.md'))
+            with open(md) as f:
+                text = f.read()
+            self.assertIn("Agreement through 2 steps · step limit reached", text)
+            # RES-03: the code mapping, data and stack unchanged
+            self.assertIn("0x10000100 in picosim and 0x20020100 on the stand-in", text)
+            self.assertIn("are at the same addresses on both", text)
+            with open(js) as f:
+                p = json.load(f)['results'][0]['provenance']
+            self.assertEqual(p['address_map']['code']['program_start'], {'picosim': 0x10000100, 'chip': 0x20020100})
+            self.assertEqual(p['address_map']['same_on_both'], {'data': 0x20000000, 'stack_top': 0x20042000})
+        s.disconnect()
+
+    def test_cli_exit_status_and_headline(self):
+        import contextlib
+        import io
+        from picosim.hwtest.__main__ import main
+        src = os.path.join(EX, '03_count_loop.s')
+        with tempfile.TemporaryDirectory() as d:
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = main(['--target', 'standin', '--max-steps', '2', src, '--report', os.path.join(d, 'r.md')])
+            self.assertEqual(code, 3, out.getvalue())
+            self.assertIn("BOUNDED  Agreement through 2 steps · step limit reached", out.getvalue())
+            self.assertIn("0x20020100 on the stand-in", out.getvalue())
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(main(['--target', 'standin', '--max-steps', '2', '--accept-bounded', src]), 0)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(main(['--target', 'standin', src]), 0)
+            self.assertIn("IDENTICAL  Complete agreement · 43 steps", out.getvalue())
+            self.assertIn("6 OS calls", out.getvalue())
+
+
 class ServerTest(unittest.TestCase):
     def test_hw_commands(self):
         import threading

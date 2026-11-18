@@ -178,3 +178,16 @@ def bench_stretch(row, n_regions):
                    "stay at the same offsets as in os.s, so the program's machine code is byte for "
                    "byte the same on both machines.",
             'when': when}
+
+
+STANDIN_NOTE = ("This run is on the stand-in, an emulator playing the chip's part, so \"the chip\" "
+                "below means the stand-in; its SysTick counts picosim's own model. ")
+
+
+def on_target(info, kind):
+    """The explanation for a run on Target kind `kind`: on the stand-in, say
+    that "the chip" in it means the emulator."""
+    if kind == 'standin' and info:
+        info = dict(info)
+        info['how'] = STANDIN_NOTE + info['how']
+    return info
