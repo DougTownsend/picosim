@@ -6,16 +6,63 @@ An ARMv6-M (Cortex-M0+) simulator for learning ARM assembly.
 
 ## Installation
 
-Install Python 3, a C++ compiler and `arm-none-eabi-gcc`, then run from the
-repository folder:
+Install Python 3, a C++ compiler and `arm-none-eabi-gcc`, then from a
+checkout of this repository:
 
 ```bash
-pip install -e .
+python3 -m venv .venv            # a private Python for picosim
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+python3 -m pip install -e .      # this Python's pip, whatever `pip` means here
+picosim --run examples/01_hello.s
 ```
 
+The last line should print `Hi!` (after a few "Assembling..." lines).
 Use `-e` (editable): the graphical simulator and the examples are read from
-this folder. See [installation.md](installation.md) for platform-specific
+this folder. The graphical simulator also needs Godot 4; the terminal does
+not. See [installation.md](installation.md) for platform-specific
 instructions and [DEPENDENCIES.md](DEPENDENCIES.md) for the full list.
+
+---
+
+## Your first five minutes (at the terminal)
+
+Open the first lesson at the prompt:
+
+```text
+$ picosim examples/01_hello.s
+ARMv6-M Simulator  (type 'h' for help)
+  The next instruction is in _start: picosim's start-up code, which runs
+  first (as on a Pico) and then calls your main. ...
+  PC 0x10000000: ldr      r0, [pc, #8]
+  PC Label: _start
+```
+
+The first instruction is not in your file. Like a real Pico, the chip runs
+some start-up code first (picosim's is `picosim/os.s`, three instructions),
+and that code calls your `main`. Skip it with a breakpoint:
+
+```text
+sim> b main             # stop when the program reaches main
+sim> r                  # run until then
+  Breakpoint hit at 0x10000100
+  PC 0x10000100: push     {r7, lr}
+  Next line: 01_hello.s line 20: push    {r7, lr} ...
+sim> s 2                # step two instructions: push, then movs r0, #'H'
+  Next line: 01_hello.s line 23: bl      putchar ...
+sim> p r0
+  r0 = 0x00000048 = 72 = 'H'
+```
+
+`Next line` is the line that runs when you step again. R0 now holds the
+letter H as a number: its ASCII code is 72, which is 0x48 in hex. `putchar`
+prints the character whose code is in R0, so stepping over the `bl` prints
+`H`. Type `r` to run to the end (`Hi!`), `reset` to start again, and `q` to
+quit. If you edit the file, `reload` builds it again without quitting.
+
+Next: a branch in [03_count_loop.s](examples/03_count_loop.s) (`b loop`,
+then `r` and `p r4` each time round), and memory in
+[04_memory.s](examples/04_memory.s) (`x numbers 4`, then `r`, then
+`x total 1`).
 
 ---
 
@@ -24,7 +71,8 @@ instructions and [DEPENDENCIES.md](DEPENDENCIES.md) for the full list.
 ```bash
 picosim <file.s>           # step through it at an interactive prompt
 picosim --run <file.s>     # run to completion
-picosim --trace --run <file.s>   # run, printing each instruction
+picosim --trace --run <file.s>   # run, printing each instruction (to stderr)
+picosim -q --run <file.s>  # run; print only the program's output
 picosim -n 100 <file.s>    # run 100 instructions, then print the registers
 picosim --time <file.s>    # run to completion and report instructions/second
 picosim --uf2 <file.s>     # build a .uf2 for the Raspberry Pi Pico
@@ -33,10 +81,23 @@ picosim --gui [file.s]     # open the graphical simulator (Godot 4)
 picosim --cycle-table      # print per-instruction cycle counts
 ```
 
-The simulator assembles and links your `.s` file automatically. Without
-`--run`, `-n` or `--time` it stops before the first instruction and gives you
-a prompt where you can step, run to a breakpoint and inspect registers and
-memory; the prompt stays open after the program halts.
+The simulator assembles and links your `.s` file automatically, into a
+private folder (your cache folder, or `PICOSIM_BUILD_DIR`), so it never
+writes next to your file and read-only lesson folders work; `--elf PATH` also
+saves the linked program. `.include` finds files next to the `.s` file.
+Without `--run`, `-n` or `--time` it stops before the first instruction and
+gives you a prompt where you can step, run to a breakpoint and inspect
+registers and memory; the prompt stays open after the program halts.
+
+For scripts: **stdout is only what the program prints**. picosim's own
+messages ("Assembling..."), the `--trace` rows, `--time`'s report and errors
+go to stderr, and `-q` leaves out the status messages, so
+`picosim -q --run examples/01_hello.s | cat` prints exactly `Hi!`. The exit
+status is the program's exit code (0 when `main` returns), 1 for a build
+error or a fault, and 130 when stopped with Ctrl+C. `--time` measures how
+fast this computer simulates (host time), not the Pico; `--cycle-table` is
+the teaching multi-cycle datapath's table, not RP2040 timing (the Testing
+window and `docs/hardware-testing.md` cover the chip's own cycles).
 
 ### Interactive commands
 
@@ -44,10 +105,13 @@ memory; the prompt stays open after the program halts.
 |---------|-------------|
 | `s [n]` | Step one instruction (or n) |
 | `r` | Run until the program halts or reaches a breakpoint |
-| `p` | Print registers, flags and the current instruction |
-| `x <addr> [n]` | Show n words of memory (default 8) at a hex address or label; I/O registers work too |
+| Ctrl+C while running | Stop after the current instruction and come back to the prompt |
+| `p [rN]` | Print registers, flags and the next instruction and source line (or one register in hex, decimal and as a character) |
+| `x <addr> [n]` | Show n words of memory (default 8) at a hex address or any label, code or data (`x total 1`); I/O registers work too |
 | `d [addr] [n]` | Disassemble n instructions (default 10) from addr (default: the PC) |
-| `b <addr>` / `db <addr>` | Set / delete a breakpoint at a hex address or label |
+| `b <addr>` / `db <addr>` | Set / delete a breakpoint at a hex address or code label (not data) |
+| `reset` | Start the same build over from its first instruction; breakpoints stay |
+| `reload` | Build the file again after an edit and start over; breakpoints stay where their label still is. If the edit does not build, the old build stays loaded |
 | `lb` | List breakpoints |
 | `reg <rN> <value>` | Set a register, e.g. `reg r0 42` or `reg pc 0x10000100` |
 | `gpio <pin> 0\|1\|z` | Drive an input pin high, low or floating |
@@ -67,10 +131,20 @@ explanation wherever a real Pico would crash with a HardFault:
   there and names the branch that went there; `bx pc` and `blx pc` stop at the
   instruction itself, as the chip does;
 - an instruction the M0+ does not have (e.g. code assembled for a Cortex-M4);
-- an address that is neither memory (ROM, flash or SRAM, below) nor a simulated
-  I/O register (SIO, IO_BANK0, PADS_BANK0, RESETS);
+- an address where the RP2040 has nothing either (past SRAM at `0x20042000`,
+  `0x21040000`, `0x30000000`…): "Bus fault", a HardFault on the Pico too;
 - a store into flash or ROM (on a Pico the store would simply be lost): put
   variables after `.data` or `.bss`, which go in SRAM.
+
+picosim says when a stop is its own limit rather than the chip's. An access
+to a part of the Pico that picosim does not simulate (TIMER, UART,
+SysTick/NVIC, DMA, PIO, the XIP cache's other views of flash) stops with
+"Not simulated: … a limit of picosim, not a mistake in the program". A store
+into ROM or flash is a teaching stop: the Pico ignores it. Every stop
+carries one of these reasons (`picosim.cpu.stop_reason()`): `hardware-fault`
+(a HardFault on the Pico too), `model-limit` (works on the Pico) or
+`teaching-stop` (the Pico would go on); the terminal prints it after the
+error.
 
 Encodings the ARM manual calls UNPREDICTABLE, which the assembler never
 writes but hand-made `.hword` data can (an empty register list such as
@@ -87,7 +161,8 @@ picosim uses the RP2040's own addresses (`picosim/memmap.py`):
 | `0x10000000`–`0x100000FF` | flash: picosim's built-in OS (`_start`, `putchar`, `getchar`) |
 | `0x10000100` upward | flash: the program's code and constants (`.text`, `.rodata`), read-only |
 | `0x20000000`–`0x20041FFF` | SRAM: the program's variables (`.data`, `.bss`) from the bottom, the stack from the top (SP starts at `0x20042000`) |
-| anything else | the simulated I/O registers, or a bus fault |
+| `0x21000000`–`0x2103FFFF` | SRAM0–3 again, without striping: bank N at `0x21000000 + N×0x10000`, the same memory as `0x20000000`–`0x2003FFFF` (datasheet §2.6.2; measured on a Pico) |
+| anything else | the simulated I/O registers; elsewhere a bus fault where the Pico has nothing either, or "Not simulated" where the Pico has something picosim lacks |
 
 The OS sits in flash, where a Pico's start-up code and `putchar` also are,
 so a `bl putchar` reaches it directly. Code runs from flash with no wait
@@ -183,11 +258,16 @@ programs in [examples/](examples/). One click opens one, starting with
 `01_hello.s`. Each example begins with comments that say what it does and
 what to watch. The toolbar's **Examples** menu opens them later too.
 
-Clicking an example saves the student's own copy of it in `Documents/picosim`
-(only the first time; after that their copy is kept), loads that copy and
-opens it in a text editor (VS Code when installed, otherwise the system's
-editor for `.s` files), so they can change it straight away for its challenge.
-The files in `examples/` are never changed. **Examples → Start … over from the
+Clicking an example's title runs it as it is, with no editor. Its **Edit my
+copy** button saves the student's own copy in `Documents/picosim` (only the
+first time; after that their copy is kept; the page shows where), loads that
+copy and opens it in a text editor (VS Code when installed, otherwise the
+system's editor for `.s` files), so they can change it for its challenge. If
+the copy cannot be saved, picosim offers to choose another folder or just run
+the example; it never opens the original for editing. A classroom can set
+`PICOSIM_COPIES_DIR` (where copies go) and `PICOSIM_EDITOR` (an editor
+command, or `none`). An example meant for a higher level offers to open at
+that level first. The files in `examples/` are never changed. **Examples → Start … over from the
 original** puts the original back over a copy.
 
 The **Level** menu (top right, remembered between runs) controls how much of

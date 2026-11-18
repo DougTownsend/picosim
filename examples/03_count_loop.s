@@ -10,6 +10,7 @@
 @ Your turn (picosim checks it when the program finishes)
 @ Challenge: Make it count up to 9, printing 123456789.
 @ Expect: output "123456789\n"
+@ Hint: R4 reaches 6, but 6 is never printed: cmp stops the loop first. Which number stops it after 9?
 
         .syntax unified
         .cpu cortex-m0plus

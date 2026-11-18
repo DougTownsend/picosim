@@ -5,8 +5,10 @@ load_program() assembles a .s file (or takes an .elf), merges it with the
 simulator OS image and returns a ready-to-run CPU plus its symbol tables.
 """
 
+import hashlib
 import os
 import struct
+import sys
 from dataclasses import dataclass, field
 
 from .cpu import CPU, SimulatorError
@@ -31,13 +33,19 @@ class Program:
     os_entry: int = 0
     # the program's sections: name ('text', 'data', 'bss') -> (start, end)
     sections: dict = field(default_factory=dict)
+    # every name the OS and the program define -> its address, code and data
+    # (label_map has only the names of instructions; several names may share
+    # an address, which sym_map cannot show)
+    names: dict = field(default_factory=dict)
+    elf: str = ''              # the linked program file (in build_dir() for a .s)
 
     def clone(self):
         """A fresh copy of this program, exactly as it was just after loading
         (no assembling: Step back rebuilds the machine from this)."""
         cpu = _build_cpu(self.image, self.os_entry, self.asm_map, self.sym_map)
         return Program(self.path, cpu, self.asm_map, self.sym_map, self.label_map,
-                       self.main_addr, self.source, self.image, self.os_entry, self.sections)
+                       self.main_addr, self.source, self.image, self.os_entry, self.sections,
+                       self.names, self.elf)
 
     def run_to_main(self, limit=64):
         """Run the built-in OS's start-up (_start up to the call of main), so
@@ -55,24 +63,55 @@ def _script_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
+def build_dir(*sub):
+    """picosim's private folder for files it builds (ELF files of the
+    programs it runs and of its OS), in the user's cache folder: never next to
+    the student's file or inside the package, so read-only lesson folders and
+    installs work.  PICOSIM_BUILD_DIR moves it.  Only this user can read it."""
+    base = os.environ.get('PICOSIM_BUILD_DIR')
+    if not base:
+        try:
+            from platformdirs import user_cache_dir
+            base = os.path.join(user_cache_dir("picosim"), "build")
+        except ImportError:
+            base = os.path.expanduser("~/.cache/picosim/build")
+    d = os.path.join(base, *sub)
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    return d
+
+
+def _digest(*paths, extra=b''):
+    h = hashlib.sha256(extra)
+    for p in paths:
+        h.update(p.encode() + b'\0')
+        if os.path.exists(p):
+            with open(p, 'rb') as f:
+                h.update(f.read())
+    return h.hexdigest()[:16]
+
+
+def program_elf_path(s_path):
+    """Where the ELF built from the student's `s_path` goes: one folder per
+    source file (by its full path) in build_dir(), named after the file."""
+    full = os.path.abspath(s_path)
+    key = hashlib.sha256(full.encode()).hexdigest()[:16]
+    stem = os.path.splitext(os.path.basename(full))[0]
+    return os.path.join(build_dir('programs', key), stem + '.elf')
+
+
 def build_os_elf(verbose=False):
-    """Compile os.s → os.elf if missing or stale.  Returns path to os.elf."""
+    """Compile os.s → os.elf if not built yet.  Returns path to os.elf, in
+    build_dir(), named by the contents of os.s and os.ld."""
     from .sim import assemble
     sd     = _script_dir()
     os_s   = os.path.join(sd, 'os.s')
     os_ld  = os.path.join(sd, 'os.ld')
-    os_elf = os.path.join(sd, 'os.elf')
     if not os.path.exists(os_s):
         raise LoadError(f"OS source '{os_s}' not found.")
-    need_build = (
-        not os.path.exists(os_elf) or
-        not _has_lines(os_elf) or       # built before line info was added
-        os.path.getmtime(os_s) > os.path.getmtime(os_elf) or
-        (os.path.exists(os_ld) and os.path.getmtime(os_ld) > os.path.getmtime(os_elf))
-    )
-    if need_build:
+    os_elf = os.path.join(build_dir('os'), f'os-{_digest(os_s, os_ld)}.elf')
+    if not os.path.exists(os_elf) or not _has_lines(os_elf):
         if verbose:
-            print("Compiling OS...", flush=True)
+            print("Compiling OS...", file=sys.stderr, flush=True)
         ok, msg = assemble(os_s, os_elf, os_ld)
         if not ok:
             raise LoadError(f"OS build failed:\n{msg}")
@@ -119,7 +158,7 @@ def _sections(elf_path):
 def load_program(path, trace=False, verbose=False):
     """Assemble (if needed), load and link `path` with the OS; return a Program."""
     from elftools.common.exceptions import ELFError
-    from .sim import assemble, load_elf, elf_symbol
+    from .sim import assemble, load_elf, elf_symbol, elf_names
 
     os_elf_path = build_os_elf(verbose)
 
@@ -128,13 +167,13 @@ def load_program(path, trace=False, verbose=False):
     if input_file.endswith('.s'):
         if not os.path.exists(input_file):
             raise LoadError(f"File not found: {input_file}")
-        elf_out     = input_file[:-2] + '.elf'
+        elf_out     = program_elf_path(input_file)
         ld_file     = os.path.join(_script_dir(), 'link.ld')
         peripherals = os.path.join(_script_dir(), 'peripherals.s')
         # --just-symbols lets the linker resolve putchar/getchar from the OS
         just_syms = f'-Wl,--just-symbols={os_elf_path}'
         if verbose:
-            print(f"Assembling '{input_file}'...", flush=True)
+            print(f"Assembling '{input_file}'...", file=sys.stderr, flush=True)
         ok, msg = assemble(input_file, elf_out, ld_file,
                            extra_s_files=[peripherals], extra_ld_flags=[just_syms])
         if not ok:
@@ -175,8 +214,8 @@ def load_program(path, trace=False, verbose=False):
     sym_map = {**os_syms, **user_syms}
 
     if verbose:
-        print(f"Loaded '{input_file}'  main={fmt(user_entry)}  "
-              f"{len(asm_map)} instructions disassembled")
+        print(f"Loaded '{path}'  main={fmt(user_entry)}  "
+              f"{len(asm_map)} instructions disassembled", file=sys.stderr)
 
     image = memory
     cpu = _build_cpu(memory, os_entry, asm_map, sym_map, trace)
@@ -188,8 +227,10 @@ def load_program(path, trace=False, verbose=False):
     if s_source:
         source.update(_source_map(input_file, s_source))
 
+    names = {**elf_names(os_elf_path), **elf_names(input_file)}
+
     return Program(path, cpu, asm_map, sym_map, label_map, user_entry, source, image, os_entry,
-                   _sections(input_file))
+                   _sections(input_file), names, input_file)
 
 
 def _build_cpu(memory, os_entry, asm_map, sym_map, trace=False):

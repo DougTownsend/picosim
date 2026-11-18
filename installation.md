@@ -57,15 +57,23 @@ Install the [Visual Studio Build Tools](https://visualstudio.microsoft.com/visua
 
 ## 3. Install the simulator
 
-From the root of the repository:
+From the root of the repository, make a virtual environment (a private
+Python for picosim, so nothing clashes with other projects) and install into
+it with that Python's own pip:
 
 ```bash
-pip install -e .
+python3 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+python3 -m pip install -e .
 ```
+
+`python3 -m pip` works even where there is no `pip` command (or where `pip`
+belongs to a different Python). Activate the environment again in each new
+terminal before running `picosim`.
 
 This builds the C++ core, installs the `picosim` command and pulls in the required Python packages (`pyelftools`, `capstone`, `pyserial`, `cmake`, `ninja`). The `-e` (editable install) matters: the graphical simulator and the example programs are read from this folder, so keep it where it is.
 
-On Linux you may need `pip3` instead of `pip`. If you change `picosim/picosim_core.cpp`, run the command again to rebuild the core.
+If you change `picosim/picosim_core.cpp`, run the command again to rebuild the core.
 
 ---
 
@@ -181,7 +189,12 @@ After installing everything, run these commands to confirm:
 python3 --version              # Python 3.8 or newer
 picosim --help                 # simulator installed and on PATH
 arm-none-eabi-gcc --version    # cross-compiler found
+picosim --run examples/01_hello.s   # prints Hi! : everything works together
 ```
+
+Godot is needed only for the graphical simulator (`picosim --gui`); the
+terminal simulator works without it. The README's "Your first five minutes"
+is a good next step.
 
 To use the `--flash` option (and the GUI's Flash button) without holding BOOTSEL, install `picotool` as well:
 

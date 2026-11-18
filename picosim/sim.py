@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
 """
 ARMv6-M (Cortex-M0+) Simulator
-The RP2040's memory map (memmap.py): the OS in ROM at 0x00000000, the program
-in flash at 0x10000000, its variables and stack in SRAM at 0x20000000.
+The RP2040's memory map (memmap.py): picosim's OS in the first 256 bytes of
+flash at 0x10000000, the program after it at 0x10000100, its variables and
+stack in SRAM at 0x20000000.
 Loads ELF files compiled with arm-none-eabi-gcc -mthumb -mcpu=cortex-m0plus.
 """
 
+import contextlib
 import os
+import signal
 import sys
 import struct
+import time
 from elftools.elf.elffile import ELFFile
 from elftools.elf.sections import SymbolTableSection
 import capstone
 
-from .cpu import CPU, SimulatorError
-from .memmap import Image, span, fmt
+from .cpu import CPU, SimulatorError, stop_reason, STOP_LABELS
+from .memmap import Image, span, fmt, OS_BASE, OS_END
 
 
 # ── ELF loader ─────────────────────────────────────────────────────────────────
@@ -197,12 +201,38 @@ def elf_symbol(path, names):
     return None
 
 
+def elf_names(path):
+    """{name: address} of every label the ELF at `path` defines in memory,
+    code or data (not .equ constants or the $t/$d mapping symbols)."""
+    out = {}
+    with open(path, 'rb') as f:
+        for section in ELFFile(f).iter_sections():
+            if not isinstance(section, SymbolTableSection):
+                continue
+            for sym in section.iter_symbols():
+                shndx = sym['st_shndx']
+                if not sym.name or sym.name.startswith('$') or shndx in ('SHN_ABS', 'SHN_UNDEF'):
+                    continue
+                addr = sym['st_value']
+                if sym['st_info']['type'] == 'STT_FUNC':
+                    addr &= 0xFFFFFFFE
+                if span(addr, 1) is not None:
+                    out.setdefault(sym.name, addr)
+    return out
+
+
 # ── Display ────────────────────────────────────────────────────────────────────
 
 REG_NAMES = ['r0','r1','r2','r3','r4','r5','r6','r7',
              'r8','r9','r10','r11','r12','sp','lr','pc']
 
-def print_state(cpu, asm_map, sym_map):
+
+def _char(v):
+    """' = 'H'' when v is a printable ASCII code, else ''."""
+    return f" = '{chr(v)}'" if 32 <= v < 127 else ""
+
+
+def print_state(cpu, asm_map, sym_map, source=None, file_name=''):
     # registers
     for i in range(0, 16, 4):
         parts = []
@@ -211,12 +241,16 @@ def print_state(cpu, asm_map, sym_map):
         print("  " + "   ".join(parts))
     # flags
     print(f"  NZCV: {cpu.N}{cpu.Z}{cpu.C}{cpu.V}")
-    # current instruction
+    # the instruction that runs next
     pc = cpu.pc
     label = sym_map.get(pc, "")
     asm = asm_map.get(pc, "???")
     print(f"  PC {fmt(pc)}: {asm}")
     print(f"  PC Label: {label if label else 'N/A'}")
+    if source and pc in source:
+        n, text = source[pc]
+        where = 'os.s (picosim\'s start-up code and OS)' if OS_BASE <= pc < OS_END else file_name
+        print(f"  Next line: {where} line {n}: {text}")
     # GPIO (only shown when pins have been configured)
     if cpu.gpio is not None and cpu.gpio.any_configured():
         print(cpu.gpio.display())
@@ -224,192 +258,362 @@ def print_state(cpu, asm_map, sym_map):
 
 # ── Interactive shell ──────────────────────────────────────────────────────────
 
-_BREAKPOINTS = set()
+HELP = """\
+  s / step [n]      step n instructions (default 1)
+  r / run           run until halt, breakpoint or Ctrl+C
+  p / print [rN]    print registers (or one register in hex, decimal and as a character)
+  x <addr> [n]      examine memory: n words at a hex address or any label (code or data)
+  b <addr|label>    set a breakpoint on an instruction
+  db <addr|label>   delete breakpoint
+  lb                list breakpoints
+  d [addr] [n]      disassemble n instructions at addr
+  reg <rN> <val>    set register (e.g.  reg r0 42)
+  gpio <pin> 0|1|z  drive an input pin high/low/floating
+  check             check the lesson's challenge (@ Expect lines) once the program has finished
+  reset             start the same build over from the beginning (breakpoints kept)
+  reload            assemble the file again (after you edit it) and start over
+  q / quit          quit
+  <enter>           repeat last command
+  Ctrl+C            while running: stop at the next instruction and come back here"""
 
 
-def run_interactive(cpu, asm_map, sym_map, label_map):
-    print("ARMv6-M Simulator  (type 'h' for help)")
-    print_state(cpu, asm_map, sym_map)
+class CommandError(ValueError):
+    """A command the student can fix; the message says how."""
 
-    last_cmd = ""
-    while True:
+
+class Session:
+    """One interactive prompt: the loaded program, its breakpoints, and how
+    to start over (reset: the same build; reload: build the file again)."""
+
+    def __init__(self, prog, trace=False):
+        self.prog = prog
+        self.trace = trace
+        self.breakpoints = {}        # address -> what was typed for it ('loop', '10000104')
+        self.loaded_at = time.strftime('%H:%M:%S')
+        self._interrupted = False
+
+    @property
+    def cpu(self):
+        return self.prog.cpu
+
+    def show(self):
+        p = self.prog
+        print_state(p.cpu, p.asm_map, p.sym_map, p.source, os.path.basename(p.path))
+
+    # ── names and addresses ───────────────────────────────────────────────────
+
+    def _own_labels(self):
+        return sorted((a, n) for n, a in self.prog.label_map.items() if a >= OS_END)
+
+    def data_addr(self, text):
+        """A hex address or any label, code or data (for x)."""
         try:
-            prompt = "\nsim(halted)> " if cpu.halted else "\nsim> "
-            raw = input(prompt).strip()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            break
+            return int(text, 16)
+        except ValueError:
+            pass
+        if text in self.prog.names:
+            return self.prog.names[text]
+        raise CommandError(f"'{text}' is not a hex address or a label in this program")
 
-        cmd = raw if raw else last_cmd
-        last_cmd = cmd
-        parts = cmd.split()
-        if not parts:
-            continue
-        op = parts[0].lower()
-        if op in ('q', 'quit', 'exit'):
-            break
+    def code_addr(self, text):
+        """A hex address or label of an instruction (for b, db and d)."""
+        p = self.prog
         try:
-            _command(cpu, asm_map, sym_map, label_map, op, parts)
-        except ValueError as e:
-            print(f"  Bad argument ({e}).  Type 'h' for help.")
-        except (SimulatorError, RuntimeError) as e:
-            print(f"  ERROR: {e}")
+            a = int(text, 16)
+        except ValueError:
+            if text in p.label_map:
+                return p.label_map[text]
+            if text in p.names:
+                a = p.names[text]
+                raise CommandError(f"'{text}' is data at {fmt(a)}, not an instruction. Breakpoints and "
+                                 f"d need code; to see the data type: x {text}")
+            own = ', '.join(n for _, n in self._own_labels())
+            raise CommandError(f"no label named '{text}'" + (f" (your program's code labels: {own})"
+                                                           if own else ""))
+        if a not in p.asm_map:
+            raise CommandError(f"no instruction starts at {fmt(a)}")
+        return a
 
+    # ── running ───────────────────────────────────────────────────────────────
 
-def _parse_addr(text, label_map):
-    """A hex address (0x10000004 or 10000004) or a label name."""
-    try:
-        return int(text, 16)
-    except ValueError:
-        if text in label_map:
-            return label_map[text]
-        raise ValueError(f"'{text}' is not a hex address or a label")
+    @contextlib.contextmanager
+    def _ctrl_c(self):
+        """While the program runs, Ctrl+C only asks it to stop: the run loop
+        stops after the instruction it is in, so the machine is never left
+        half way through one."""
+        self._interrupted = False
+        def ask(sig, frame):
+            self._interrupted = True
+        try:
+            old = signal.signal(signal.SIGINT, ask)
+        except ValueError:          # not the main thread
+            old = None
+        try:
+            yield
+        finally:
+            if old is not None:
+                signal.signal(signal.SIGINT, old)
 
-
-def _command(cpu, asm_map, sym_map, label_map, op, parts):
-    if op in ('h', 'help', '?'):
-        print(
-            "  s / step [n]      step n instructions (default 1)\n"
-            "  r / run           run until halt or breakpoint\n"
-            "  p / print         print registers\n"
-            "  x <addr> [n]      examine memory: n words at hex addr (or label)\n"
-            "  b <addr|label>    set breakpoint at hex addr or label\n"
-            "  db <addr|label>   delete breakpoint\n"
-            "  lb                list breakpoints\n"
-            "  d [addr] [n]      disassemble n instructions at addr\n"
-            "  reg <rN> <val>    set register (e.g.  reg r0 42)\n"
-            "  gpio <pin> 0|1|z  drive an input pin high/low/floating\n"
-            "  q / quit          quit\n"
-            "  <enter>           repeat last command"
-        )
-
-    elif op in ('s', 'step'):
-        n = int(parts[1]) if len(parts) > 1 else 1
-        for _ in range(n):
-            if cpu.halted: break
+    def execute(self, count=None):
+        """Run `count` instructions (None: until halt, a breakpoint or Ctrl+C)."""
+        cpu = self.cpu
+        n = 0
+        with self._ctrl_c():
             try:
-                cpu.step()
-            except SimulatorError as e:
-                print(f"  ERROR: {e}")
-                cpu.halted = True
-                break
-            except SystemExit as e:
-                print(f"  Program exited with code {e.code}")
-                cpu.halted = True
-                break
-            cpu.check_halt()
-            if cpu.halted: print("  Program halted.")
-        print_state(cpu, asm_map, sym_map)
-
-    elif op in ('r', 'run'):
-        if cpu.halted:
-            print("  Program is halted.  Use 'q' to quit.")
-        else:
-            breakpoints = _BREAKPOINTS
-            try:
-                while not cpu.halted:
+                while not cpu.halted and (count is None or n < count):
                     cpu.step()
                     cpu.check_halt()
-                    if cpu.pc in breakpoints:
+                    n += 1
+                    if cpu.halted:
+                        print("  Program halted.")
+                    elif self._interrupted:
+                        print(f"  Stopped (Ctrl+C) at {fmt(cpu.pc)} after {n:,} instructions. "
+                              f"You can step, look around, or type r to carry on.")
+                    elif count is None and cpu.pc in self.breakpoints:
                         print(f"  Breakpoint hit at {fmt(cpu.pc)}")
-                        break
-            except SimulatorError as e:
-                print(f"  ERROR: {e}")
+                    else:
+                        continue
+                    break
+            except (SimulatorError, RuntimeError) as e:
+                print(f"  ERROR: {_error(e)}")
                 cpu.halted = True
             except SystemExit as e:
                 print(f"  Program exited with code {e.code}")
                 cpu.halted = True
-            print_state(cpu, asm_map, sym_map)
+        self.show()
 
-    elif op in ('p', 'print'):
-        print_state(cpu, asm_map, sym_map)
-
-    elif op in ('x', 'mem'):
-        if len(parts) < 2:
-            print("  Usage: x <addr_hex|label> [count]"); return
-        base = _parse_addr(parts[1], label_map)
-        count = int(parts[2]) if len(parts) > 2 else 8
-        for i in range(count):
-            a = (base + i * 4) & 0xFFFFFFFF
-            v = cpu.mem_read32(a)    # memory, or a simulated I/O register
-            sym = sym_map.get(a, "")
-            sym_str = f" <{sym}>" if sym else ""
-            print(f"  {fmt(a)}{sym_str}: 0x{v:08X}  ({v})")
-
-    elif op == 'b':
-        if len(parts) < 2:
-            print("  Usage: b <addr_hex|label>"); return
-        addr_b = _parse_addr(parts[1], label_map)
-        _BREAKPOINTS.add(addr_b)
-        lbl = sym_map.get(addr_b, "")
-        lbl_str = f" <{lbl}>" if lbl else ""
-        print(f"  Breakpoint set at {fmt(addr_b)}{lbl_str}")
-
-    elif op == 'db':
-        bp = _BREAKPOINTS
-        if len(parts) < 2:
-            print("  Usage: db <addr_hex>"); return
-        addr_b = _parse_addr(parts[1], label_map)
-        bp.discard(addr_b)
-        print(f"  Breakpoint removed at {fmt(addr_b)}")
-
-    elif op == 'lb':
-        bp = _BREAKPOINTS
-        if not bp: print("  No breakpoints.")
-        for a in sorted(bp): print(f"  {fmt(a)}")
-
-    elif op in ('d', 'dis', 'disasm'):
-        base = _parse_addr(parts[1], label_map) if len(parts) > 1 else cpu.pc
-        count = int(parts[2]) if len(parts) > 2 else 10
-        shown = 0
-        a = base
-        while shown < count and span(a, 2) is not None:
-            sym = sym_map.get(a, "")
-            if sym: print(f"  <{sym}>:")
-            asm = asm_map.get(a)
-            if asm:
-                marker = "=>" if a == cpu.pc else "  "
-                print(f"  {marker} {fmt(a)}: {asm}")
-                shown += 1
-                # advance: peek at instruction size
-                hw = cpu.mem_read16(a)
-                a += 4 if cpu.is_32bit_thumb(hw) else 2
-            else:
-                a += 2
-
-    elif op == 'reg':
-        if len(parts) < 3:
-            print("  Usage: reg <rN> <value>"); return
-        rname = parts[1].lower()
-        val   = int(parts[2], 0)
-        if rname in REG_NAMES:
-            cpu.set_reg(REG_NAMES.index(rname), val)
-            print(f"  {rname} = 0x{val:08X}")
-        else:
-            print(f"  Unknown register: {rname}")
-
-    elif op == 'gpio':
-        if cpu.gpio is None:
-            print("  GPIO not enabled."); return
-        if len(parts) < 3:
-            print("  Usage: gpio <pin> 0|1|z"); return
+    def check(self):
+        """The lesson's challenge (its @ Challenge and @ Expect lines), checked
+        against the finished program, as the GUI does when a program halts."""
+        from . import challenge
+        path = self.prog.path
         try:
-            pin = int(parts[1])
-            arg = parts[2].lower()
-            if arg == 'z':
-                value = None
-            elif arg in ('0', '1'):
-                value = int(arg)
-            else:
-                print("  Value must be 0, 1, or z"); return
-            cpu.gpio.set_external(pin, value)
-            state = 'Z' if value is None else str(value)
-            print(f"  GP{pin} = {state}")
-        except ValueError as e:
-            print(f"  {e}")
+            with open(path, encoding='utf-8', errors='replace') as f:
+                ch = challenge.parse(f.read()) if path.endswith('.s') else None
+        except (OSError, ValueError) as e:
+            print(f"  Cannot read the challenge: {e}")
+            return
+        if ch is None:
+            print("  This program has no challenge (@ Challenge and @ Expect lines) to check.")
+            return
+        print(f"  Challenge: {ch['task']}")
+        if not self.cpu.halted:
+            print("  The program has not finished yet: type r to run it to the end, then check.")
+            return
+        cpu = self.cpu
+        results = challenge.run(ch, cpu.regs, ''.join(cpu.printed), self.prog.names,
+                                cpu.mem_read32)
+        for r in results:
+            print(f"  {'pass' if r['ok'] else 'FAIL'}  {r['text']}: {r['got']}")
+        if all(r['ok'] for r in results):
+            print("  Challenge passed.")
+        elif ch.get('hint'):
+            print(f"  Hint: {ch['hint']}")
 
-    else:
-        print(f"  Unknown command '{op}'.  Type 'h' for help.")
+    def reset(self):
+        self.prog = self.prog.clone()
+        self.cpu.trace = self.trace
+        print(f"  Started over: the build loaded at {self.loaded_at}, from its first "
+              f"instruction. Breakpoints are kept.")
+        self.show()
+
+    def reload(self):
+        from .loader import load_program, LoadError
+        print(f"  Building '{self.prog.path}' again...")
+        try:
+            new = load_program(self.prog.path, trace=self.trace)
+        except LoadError as e:
+            print(f"  {e}")
+            print(f"  That edit did not build, so nothing changed: you are still on the build "
+                  f"loaded at {self.loaded_at}, where you were.")
+            return
+        self.prog = new
+        self.loaded_at = time.strftime('%H:%M:%S')
+        old, self.breakpoints, lost = self.breakpoints, {}, []
+        for spec in old.values():
+            try:
+                self.breakpoints[self.code_addr(spec)] = spec
+            except ValueError:
+                lost.append(spec)
+        print(f"  Rebuilt at {self.loaded_at} and started over from the first instruction.")
+        if self.breakpoints:
+            print("  Breakpoints kept: " + ', '.join(f"{s} ({fmt(a)})" for a, s in
+                                                      sorted(self.breakpoints.items())))
+        if lost:
+            print("  Removed (no longer an instruction in the new build): " + ', '.join(lost))
+        self.show()
+
+    # ── the prompt ────────────────────────────────────────────────────────────
+
+    def loop(self):
+        print("ARMv6-M Simulator  (type 'h' for help)")
+        if OS_BASE <= self.cpu.pc < OS_END and self.prog.main_addr >= OS_END:
+            print("  The next instruction is in _start: picosim's start-up code, which runs\n"
+                  "  first (as on a Pico) and then calls your main. To go to your own\n"
+                  "  program, type  b main  then  r.")
+        self.show()
+        last_cmd = ""
+        while True:
+            try:
+                prompt = "\nsim(halted)> " if self.cpu.halted else "\nsim> "
+                raw = input(prompt).strip()
+            except EOFError:
+                print()
+                break
+            except KeyboardInterrupt:
+                print("\n  (Type q to quit.)")
+                last_cmd = ""
+                continue
+            cmd = raw if raw else last_cmd
+            last_cmd = cmd
+            parts = cmd.split()
+            if not parts:
+                continue
+            op = parts[0].lower()
+            if op in ('q', 'quit', 'exit'):
+                break
+            try:
+                self.command(op, parts)
+            except CommandError as e:
+                print(f"  {str(e)[0].upper()}{str(e)[1:]}.")
+            except ValueError as e:
+                print(f"  Bad argument ({e}).  Type 'h' for help.")
+            except (SimulatorError, RuntimeError) as e:
+                print(f"  ERROR: {e}")
+
+    def command(self, op, parts):
+        cpu = self.cpu
+        if op in ('h', 'help', '?'):
+            print(HELP)
+
+        elif op in ('s', 'step'):
+            if cpu.halted:
+                print("  Program is halted.  Type reset to start over, reload after an edit, "
+                      "or q to quit.")
+                return
+            self.execute(int(parts[1]) if len(parts) > 1 else 1)
+
+        elif op in ('r', 'run'):
+            if cpu.halted:
+                print("  Program is halted.  Type reset to start over, reload after an edit, "
+                      "or q to quit.")
+                return
+            self.execute()
+
+        elif op in ('p', 'print'):
+            if len(parts) > 1:
+                r = parts[1].lower()
+                if r not in REG_NAMES:
+                    raise CommandError(f"no register named '{parts[1]}'")
+                v = cpu.regs[REG_NAMES.index(r)]
+                signed = v - (1 << 32) if v & 0x80000000 else v
+                dec = f"{v}" + (f" (or {signed} signed)" if signed < 0 else "")
+                print(f"  {r} = 0x{v:08X} = {dec}{_char(v)}")
+            else:
+                self.show()
+
+        elif op in ('x', 'mem'):
+            if len(parts) < 2:
+                print("  Usage: x <addr_hex|label> [count]"); return
+            base = self.data_addr(parts[1])
+            count = int(parts[2]) if len(parts) > 2 else 8
+            names = {}
+            for n, a in self.prog.names.items():
+                names.setdefault(a, []).append(n)
+            for i in range(count):
+                a = (base + i * 4) & 0xFFFFFFFF
+                v = cpu.mem_read32(a)    # memory, or a simulated I/O register
+                here = names.get(a) or ([self.prog.sym_map[a]] if a in self.prog.sym_map else [])
+                sym_str = f" <{', '.join(sorted(here))}>" if here else ""
+                print(f"  {fmt(a)}{sym_str}: 0x{v:08X}  ({v})")
+
+        elif op == 'b':
+            if len(parts) < 2:
+                print("  Usage: b <addr_hex|label>"); return
+            a = self.code_addr(parts[1])
+            self.breakpoints[a] = parts[1]
+            lbl = self.prog.sym_map.get(a, "")
+            print(f"  Breakpoint set at {fmt(a)}" + (f" <{lbl}>" if lbl else ""))
+
+        elif op == 'db':
+            if len(parts) < 2:
+                print("  Usage: db <addr_hex|label>"); return
+            a = self.code_addr(parts[1])
+            self.breakpoints.pop(a, None)
+            print(f"  Breakpoint removed at {fmt(a)}")
+
+        elif op == 'lb':
+            if not self.breakpoints:
+                print("  No breakpoints.")
+            for a, spec in sorted(self.breakpoints.items()):
+                lbl = self.prog.sym_map.get(a, "")
+                print(f"  {fmt(a)}" + (f" <{lbl}>" if lbl else ""))
+
+        elif op in ('d', 'dis', 'disasm'):
+            p = self.prog
+            base = self.code_addr(parts[1]) if len(parts) > 1 else cpu.pc
+            count = int(parts[2]) if len(parts) > 2 else 10
+            shown = 0
+            a = base
+            while shown < count and span(a, 2) is not None:
+                sym = p.sym_map.get(a, "")
+                if sym: print(f"  <{sym}>:")
+                asm = p.asm_map.get(a)
+                if asm:
+                    marker = "=>" if a == cpu.pc else "  "
+                    print(f"  {marker} {fmt(a)}: {asm}")
+                    shown += 1
+                    hw = cpu.mem_read16(a)
+                    a += 4 if cpu.is_32bit_thumb(hw) else 2
+                else:
+                    a += 2
+
+        elif op == 'reg':
+            if len(parts) < 3:
+                print("  Usage: reg <rN> <value>"); return
+            rname = parts[1].lower()
+            val   = int(parts[2], 0)
+            if rname in REG_NAMES:
+                cpu.set_reg(REG_NAMES.index(rname), val)
+                print(f"  {rname} = 0x{val:08X}")
+            else:
+                print(f"  Unknown register: {rname}")
+
+        elif op == 'gpio':
+            if cpu.gpio is None:
+                print("  GPIO not enabled."); return
+            if len(parts) < 3:
+                print("  Usage: gpio <pin> 0|1|z"); return
+            try:
+                pin = int(parts[1])
+                arg = parts[2].lower()
+                if arg == 'z':
+                    value = None
+                elif arg in ('0', '1'):
+                    value = int(arg)
+                else:
+                    print("  Value must be 0, 1, or z"); return
+                cpu.gpio.set_external(pin, value)
+                state = 'Z' if value is None else str(value)
+                print(f"  GP{pin} = {state}")
+            except ValueError as e:
+                print(f"  {e}")
+
+        elif op == 'check':
+            self.check()
+
+        elif op == 'reset':
+            self.reset()
+
+        elif op == 'reload':
+            self.reload()
+
+        else:
+            print(f"  Unknown command '{op}'.  Type 'h' for help.")
+
+
+def run_interactive(prog, trace=False):
+    Session(prog, trace).loop()
 
 
 # ── Assembler / linker helpers ─────────────────────────────────────────────────
@@ -418,7 +622,45 @@ def _script_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-def assemble(s_file, elf_file, ld_file, extra_s_files=None, extra_ld_flags=None):
+BUILD_TIMEOUT = 60          # seconds the assembler and linker may take
+
+# Variables that make GCC load its programs or libraries from somewhere else;
+# the build never needs them, so they are not passed on.
+_GCC_ENV = ('GCC_EXEC_PREFIX', 'COMPILER_PATH', 'LIBRARY_PATH', 'DEPENDENCIES_OUTPUT',
+            'SUNPRO_DEPENDENCIES', 'GCC_COMPARE_DEBUG')
+
+
+def toolchain():
+    """The full path of arm-none-eabi-gcc (PICOSIM_GCC, else the one on PATH), or None."""
+    import shutil
+    gcc = os.environ.get('PICOSIM_GCC') or shutil.which('arm-none-eabi-gcc')
+    return os.path.abspath(gcc) if gcc and os.path.isfile(gcc) else None
+
+
+def _run_bounded(cmd, timeout):
+    """Run `cmd` in its own process group; on timeout or Ctrl+C kill the whole
+    group (gcc starts as and ld) and raise.  Returns the CompletedProcess."""
+    import subprocess, signal
+    env = {k: v for k, v in os.environ.items() if k not in _GCC_ENV}
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            env=env, start_new_session=(os.name == 'posix'))
+    try:
+        out, err = proc.communicate(timeout=timeout)
+    except BaseException:
+        try:
+            if os.name == 'posix':
+                os.killpg(proc.pid, signal.SIGKILL)
+            else:
+                proc.kill()
+        except (ProcessLookupError, PermissionError):
+            pass
+        proc.communicate()
+        raise
+    return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+
+
+def assemble(s_file, elf_file, ld_file, extra_s_files=None, extra_ld_flags=None,
+             timeout=BUILD_TIMEOUT):
     """Assemble and link a .s file.  Returns (ok, message).  Line-number debug
     info (-g) is always included, so the GUI can show each instruction's
     source line (see source_lines).
@@ -426,13 +668,18 @@ def assemble(s_file, elf_file, ld_file, extra_s_files=None, extra_ld_flags=None)
     The linker writes a private temporary file that then replaces elf_file in
     one step, so another picosim process building the same file at the same
     time (Testing in one window, a test run in another) never reads it half
-    written."""
-    import subprocess, shutil, threading
-    if shutil.which('arm-none-eabi-gcc') is None:
+    written, and a failed build leaves the last good elf_file as it was.
+    `.include` finds files next to the source file.  The build is stopped
+    after `timeout` seconds."""
+    import subprocess, threading
+    gcc = toolchain()
+    if gcc is None:
         return False, ("arm-none-eabi-gcc not found on PATH.\n"
-                       "See DEPENDENCIES.md for installation instructions.")
+                       "Install it (installation.md, step 5), then check with: "
+                       "picosim --run examples/01_hello.s")
     cmd = [
-        'arm-none-eabi-gcc',
+        gcc,
+        f'-Wa,-I{os.path.dirname(os.path.abspath(s_file))}',   # .include next to the source
         '-mcpu=cortex-m0plus', '-mthumb',
         '-nostdlib',
         '-g',                   # DWARF line table: address -> source line
@@ -448,7 +695,18 @@ def assemble(s_file, elf_file, ld_file, extra_s_files=None, extra_ld_flags=None)
         cmd.extend(extra_s_files)
     if extra_ld_flags:
         cmd.extend(extra_ld_flags)
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        result = _run_bounded(cmd, timeout)
+    except subprocess.TimeoutExpired:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        return False, (f"The assembler took longer than {timeout} seconds and was stopped. "
+                       f"Is an .include or .incbin reading something very large, or a .rept "
+                       f"repeating forever?")
+    except BaseException:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
     combined = (result.stderr + result.stdout).strip().replace(tmp, elf_file)
     if result.returncode == 0:
         os.replace(tmp, elf_file)
@@ -512,20 +770,70 @@ def run_gui(input_file):
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 
+RUN_CHUNK = 100_000     # instructions per native run() call: Ctrl+C is seen between calls
+
+
+def _error(e):
+    """An error that stopped the program, with what it means on a real Pico."""
+    r = stop_reason(e)
+    return f"{e}" + (f"\n  [{STOP_LABELS[r]}]" if r in STOP_LABELS else "")
+
+
+def _status(msg):
+    """A message from picosim itself (not the program): always on stderr, so
+    stdout carries only what the program prints."""
+    print(msg, file=sys.stderr, flush=True)
+
+
+def _batch(cpu, count=None, trace=False):
+    """Run without the prompt.  Returns (instructions run, why it stopped:
+    'halt', 'count' or 'ctrl-c').  Faults raise SimulatorError/RuntimeError;
+    the program's exit raises SystemExit.  Without tracing it uses the C++
+    run loop, in chunks so that Ctrl+C stops it between two instructions."""
+    stop = {'ctrl-c': False}
+    def ask(sig, frame):
+        stop['ctrl-c'] = True
+    old = signal.signal(signal.SIGINT, ask)
+    n = 0
+    try:
+        while not cpu.halted and (count is None or n < count):
+            if stop['ctrl-c']:
+                return n, 'ctrl-c'
+            if trace:
+                cpu.step()
+                cpu.check_halt()
+                n += 1
+            else:
+                left = RUN_CHUNK if count is None else min(RUN_CHUNK, count - n)
+                n += cpu._core.run(left)
+        return n, 'halt' if cpu.halted else 'count'
+    finally:
+        signal.signal(signal.SIGINT, old)
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(
-        description="ARMv6-M (Cortex-M0+) Simulator — the RP2040 memory map"
-    )
+        description="ARMv6-M (Cortex-M0+) Simulator — the RP2040 memory map",
+        epilog="Output: stdout is only what the program prints; picosim's own messages, the "
+               "--trace rows and errors go to stderr. Exit status: the program's exit code "
+               "(0 when main returns), 1 for a build error or a fault, 130 when stopped with "
+               "Ctrl+C.")
     parser.add_argument("input", nargs="?", help=".s assembly file or .elf binary to load")
     parser.add_argument("--run", "-r", action="store_true",
                         help="run to completion without interactive prompt")
     parser.add_argument("--steps", "-n", type=int, default=0,
-                        help="execute exactly N steps then stop")
+                        help="execute exactly N steps then stop and print the registers")
     parser.add_argument("--trace", "-t", action="store_true",
-                        help="print instruction trace during execution")
+                        help="print each instruction (to stderr) as it runs; works with --run "
+                             "and -n")
+    parser.add_argument("--quiet", "-q", action="store_true",
+                        help="no status messages (Assembling..., Loaded...)")
+    parser.add_argument("--elf", "-o", metavar="PATH",
+                        help="also save the linked program (ELF) to PATH")
     parser.add_argument("--time", action="store_true",
-                        help="run to completion and print execution time and instructions/second")
+                        help="run to completion and report how fast this computer simulated "
+                             "it (instructions per second of host time; not Pico cycles)")
     parser.add_argument("--uf2", action="store_true",
                         help="build a .uf2 image for the Raspberry Pi Pico and exit")
     parser.add_argument("--flash", action="store_true",
@@ -533,7 +841,8 @@ def main():
     parser.add_argument("--gui", action="store_true",
                         help="open the graphical simulator (requires Godot 4)")
     parser.add_argument("--cycle-table", action="store_true",
-                        help="print the per-instruction cycle table (Markdown) and exit")
+                        help="print the teaching multi-cycle datapath's cycles per instruction "
+                             "(Markdown) and exit")
     args = parser.parse_args()
 
     if args.cycle_table:
@@ -558,44 +867,38 @@ def main():
 
     from .loader import load_program, LoadError
     try:
-        prog = load_program(args.input, trace=args.trace, verbose=True)
+        prog = load_program(args.input, trace=args.trace, verbose=not args.quiet)
     except LoadError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
-    cpu, asm_map, sym_map, label_map = prog.cpu, prog.asm_map, prog.sym_map, prog.label_map
+    if args.elf:
+        import shutil
+        shutil.copyfile(prog.elf, args.elf)
+        if not args.quiet:
+            _status(f"Saved the linked program to '{args.elf}'")
+    cpu = prog.cpu
 
+    if not (args.time or args.run or args.steps):
+        run_interactive(prog, args.trace)
+        return
+
+    t_start = time.perf_counter()
+    try:
+        n, why = _batch(cpu, args.steps or None, args.trace)
+    except (RuntimeError, SimulatorError) as e:
+        print(f"ERROR: {_error(e)}", file=sys.stderr); sys.exit(1)
+    except SystemExit as e:
+        sys.exit(e.code)
+    elapsed = time.perf_counter() - t_start
+    if why == 'ctrl-c':
+        _status(f"Stopped (Ctrl+C) at {fmt(cpu.pc)} after {n:,} instructions.")
+        sys.exit(130)
     if args.time:
-        import time
-        t_start = time.perf_counter()
-        try:
-            insn_count = cpu._core.run()
-        except (RuntimeError, SimulatorError) as e:
-            print(f"ERROR: {e}", file=sys.stderr); sys.exit(1)
-        except SystemExit as e:
-            sys.exit(e.code)
-        elapsed = time.perf_counter() - t_start
-        ips = insn_count / elapsed if elapsed > 0 else float('inf')
-        print(f"Executed {insn_count:,} instructions in {elapsed:.4f}s  ({ips:,.0f} insn/s)")
-    elif args.run:
-        try:
-            cpu._core.run()
-        except (RuntimeError, SimulatorError) as e:
-            print(f"ERROR: {e}", file=sys.stderr); sys.exit(1)
-        except SystemExit as e:
-            sys.exit(e.code)
-    elif args.steps:
-        for _ in range(args.steps):
-            if cpu.halted: break
-            try:
-                cpu.step()
-            except SimulatorError as e:
-                print(f"ERROR: {e}", file=sys.stderr); sys.exit(1)
-            except SystemExit as e:
-                sys.exit(e.code)
-            cpu.check_halt()
-        print_state(cpu, asm_map, sym_map)
-    else:
-        run_interactive(cpu, asm_map, sym_map, label_map)
+        ips = n / elapsed if elapsed > 0 else float('inf')
+        _status(f"Executed {n:,} instructions in {elapsed:.4f}s of host time ({ips:,.0f} insn/s "
+                f"on this computer: the simulator's speed, not the Pico's)")
+    if args.steps:
+        print_state(cpu, prog.asm_map, prog.sym_map, prog.source, os.path.basename(prog.path))
 
 
 if __name__ == "__main__":
